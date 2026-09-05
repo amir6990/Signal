@@ -107,6 +107,87 @@ SOURCES = {s.key: s for s in [
            "ژئوپلیتیک", Status.NARRATIVE,
            "ساکولوم ۸۰ تا ۱۰۰ ساله و چهار چرخش نسلی. نقدهای جدی روش‌شناختی "
            "به آن وارد شده؛ به‌عنوان چارچوب روایی بخوانید، نه تقویم."),
+
+    # ---------------- روش‌شناسی پیش‌بینی و ارزیابی (افزوده — فراتر از منابع کاربر) ----------------
+    Source("tetlock_epj", "Philip E. Tetlock", "Expert Political Judgment", 2005,
+           "پیش‌بینی", Status.EMPIRICAL,
+           "بیست سال ردیابی ۲۸ هزار پیش‌بینی از ۲۸۴ کارشناس: دقت کارشناسان سیاسی "
+           "به‌سختی از حدس تصادفی بهتر بود و کارشناسان مشهورتر بدتر عمل کردند. "
+           "این مطالعه، پایه‌ی تصمیمِ ما برای نساختن «مدل پیش‌بینی رویداد سیاسی» است."),
+    Source("tetlock_super", "Philip E. Tetlock & Dan Gardner", "Superforecasting", 2015,
+           "پیش‌بینی", Status.EMPIRICAL,
+           "یافته تورنمنت IARPA: آنچه دقت را بالا می‌برد مدل نیست — تجزیه سؤال، "
+           "شروع از نرخ پایه، احتمال عددی صریح، به‌روزرسانی مکرر و کوچک، و "
+           "سنجش کالیبراسیون است. معماری ماژول judgment از همین‌جا می‌آید."),
+    Source("brier", "Glenn W. Brier",
+           "Verification of Forecasts Expressed in Terms of Probability", 1950,
+           "پیش‌بینی", Status.EMPIRICAL,
+           "امتیاز بریر: تنها راه صادقانه سنجش پیش‌بینی احتمالاتی. "
+           "بدون آن، هر پیش‌بینی‌کننده‌ای می‌تواند خودش را موفق بداند."),
+    Source("murphy", "Allan H. Murphy",
+           "A New Vector Partition of the Probability Score", 1973,
+           "پیش‌بینی", Status.EMPIRICAL,
+           "تجزیه بریر به سه جزء: کالیبراسیون، تفکیک‌پذیری و عدم‌قطعیت ذاتی. "
+           "نشان می‌دهد یک پیش‌بینی می‌تواند کالیبره ولی بی‌فایده باشد."),
+    Source("hamilton", "James D. Hamilton",
+           "A New Approach to the Economic Analysis of Nonstationary Time Series "
+           "and the Business Cycle", 1989, "چرخه اقتصادی", Status.EMPIRICAL,
+           "مدل مارکوف رژیم‌سوئیچینگ. روش استاندارد جریان اصلی برای تخمین "
+           "احتمال قرارگرفتن اقتصاد/بازار در رژیم رکودی. مبنای ماژول regime."),
+    Source("estrella_mishkin", "Arturo Estrella & Frederic S. Mishkin",
+           "Predicting U.S. Recessions: Financial Variables as Leading Indicators",
+           1998, "چرخه اقتصادی", Status.EMPIRICAL,
+           "شیب منحنی بازده بهترین پیش‌بین منفرد رکود آمریکاست، با افق ۱۲ تا ۱۸ ماه "
+           "— نه سه ماه. برای ایران معادل تقریبی آن ساختار زمانی بازدهی اخزاست."),
+    Source("welch_goyal", "Ivo Welch & Amit Goyal",
+           "A Comprehensive Look at the Empirical Performance of Equity Premium "
+           "Prediction", 2008, "پیش‌بینی", Status.EMPIRICAL,
+           "بررسی گسترده متغیرهای پیش‌بین بازده سهام: تقریباً همه در خارج از نمونه "
+           "شکست می‌خورند و از میانگین ساده تاریخی بدتر عمل می‌کنند. "
+           "این مقاله، دلیل اصلی وجود بخش «مقایسه با معیار بی‌اثر» در بک‌تستر ماست."),
+    Source("lopez_de_prado", "David H. Bailey, Jonathan Borwein, "
+           "Marcos López de Prado & Qiji Jim Zhu",
+           "Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest "
+           "Overfitting on Out-of-Sample Performance", 2014,
+           "بک‌تست", Status.EMPIRICAL,
+           "با کافی‌بودن تعداد تلاش، همیشه می‌توان یک استراتژی با شارپ بالا در "
+           "نمونه ساخت که خارج از نمونه بی‌ارزش است. مبنای «نسبت شارپ تعدیل‌شده» "
+           "و ثبت تعداد تلاش در بک‌تستر."),
+    Source("dsr", "David H. Bailey & Marcos López de Prado",
+           "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest "
+           "Overfitting and Non-Normality", 2014, "بک‌تست", Status.EMPIRICAL,
+           "شارپ تعدیل‌شده بابت تعداد تلاش، چولگی و کشیدگی. عددی که در این "
+           "پکیج به‌جای شارپ خام گزارش می‌شود."),
+    Source("white_rc", "Halbert White", "A Reality Check for Data Snooping", 2000,
+           "بک‌تست", Status.EMPIRICAL,
+           "آزمون معناداری وقتی چندین استراتژی روی یک داده امتحان شده‌اند. "
+           "معادل تصحیح چندگانگی، ولی برای بک‌تست."),
+    Source("engle_arch", "Robert F. Engle", "Autoregressive Conditional "
+           "Heteroscedasticity with Estimates of the Variance of United Kingdom "
+           "Inflation", 1982, "نوسان", Status.EMPIRICAL,
+           "خوشه‌ای‌بودن نوسان. یکی از مستحکم‌ترین یافته‌های مالی: نوسان "
+           "پیش‌بینی‌پذیر است حتی وقتی جهت بازده نیست."),
+    Source("bollerslev", "Tim Bollerslev", "Generalized Autoregressive Conditional "
+           "Heteroskedasticity", 1986, "نوسان", Status.EMPIRICAL,
+           "GARCH — تعمیم ARCH. مبنای برآورد احتمال افت شدید در افق کوتاه."),
+    Source("campbell_shiller", "John Y. Campbell & Robert J. Shiller",
+           "Stock Prices, Earnings, and Expected Dividends", 1988,
+           "پیش‌بینی", Status.EMPIRICAL,
+           "نسبت‌های ارزش‌گذاری بازده بلندمدت را پیش‌بینی می‌کنند، نه کوتاه‌مدت. "
+           "افق مهم است: آنچه در ۱۰ سال کار می‌کند در ۳ ماه کار نمی‌کند."),
+    Source("lo_amh", "Andrew W. Lo", "The Adaptive Markets Hypothesis", 2004,
+           "پیش‌بینی", Status.DEBATED,
+           "کارایی بازار مطلق نیست بلکه به شرایط و رقابت بستگی دارد؛ "
+           "لبه‌ها وجود دارند ولی فرسوده می‌شوند. توضیح می‌دهد چرا یک استراتژی "
+           "که در گذشته کار کرده ممکن است دیگر کار نکند."),
+    Source("diebold_mariano", "Francis X. Diebold & Roberto S. Mariano",
+           "Comparing Predictive Accuracy", 1995, "پیش‌بینی", Status.EMPIRICAL,
+           "آزمون معناداری تفاوت دقت دو پیش‌بینی. بدون آن، «مدل من بهتر است» "
+           "یک ادعای بدون پشتوانه آماری است."),
+    Source("taleb", "Nassim Nicholas Taleb", "The Black Swan / Dynamic Hedging", 2007,
+           "ریسک", Status.DEBATED,
+           "دم‌های ضخیم و ناارگودیک‌بودن. برای بازار ایران به‌ویژه مهم: توزیع "
+           "بازده به‌شدت غیرنرمال است و معیارهای مبتنی بر واریانس ریسک را کم‌برآورد می‌کنند."),
 ]}
 
 

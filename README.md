@@ -27,8 +27,11 @@ src/timeframe/               ★ موتور تحلیل ابعاد زمانی (پ
     macro/                     چرخه‌های بلند، ایران، طلا، منابع
     analysis.py report.py      خط لوله و گزارش
     excel_export.py cli.py     خروجی اکسل و رابط خط فرمان
-tests/test_timeframe.py      ۳۶ تست، شامل کنترل‌های منفی
-docs/TIME_LAYER.md           مستند کامل لایه زمانی
+    backtest/                  بک‌تست پیش‌رونده با محافظت از بیش‌برازش
+    forecast/                  رژیم مارکوف، نرخ پایه، دفتر پیش‌بینی تتلاک
+tests/test_timeframe.py      ۶۳ تست، شامل کنترل‌های منفی
+docs/TIME_LAYER.md           مستند لایه زمانی
+docs/FORECAST_AND_BACKTEST.md مستند بک‌تست و پیش‌بینی
 requirements.txt
 ```
 
@@ -41,7 +44,10 @@ python -m timeframe all    --workbook ../Iran_Stock_Signals.xlsx
 python -m timeframe macro  --asset geopolitics     # یا iran_equity, gold, fx, all
 python -m timeframe gold   --ounce 3400 --usd-irr 950000 --market 900000000
 python -m timeframe sources
-python -m timeframe export --workbook ../Iran_Stock_Signals.xlsx
+python -m timeframe export   --workbook ../Iran_Stock_Signals.xlsx
+python -m timeframe backtest --csv data.csv --name فولاد
+python -m timeframe outlook  --workbook ../Iran_Stock_Signals.xlsx --name فولاد
+python -m timeframe judgment --seed-deadline 2026-12-05
 python ../tests/test_timeframe.py
 ```
 
@@ -70,6 +76,7 @@ python src/build_workbook.py Iran_Stock_Signals.xlsx
 | **Market_Index** | شاخص کل و هم‌وزن + امتیاز رژیم بازار |
 | **Time_Cycles** | لایه زمانی: هرست، گن، فیبوناچی، الیوت + ۱۷ ستون محاسبه پایتون |
 | **Macro_Cycles** | چرخه‌های بلند اقتصادی و ژئوپلیتیک، تقویم ساختاری ایران، منابع |
+| **Forecast** | چشم‌انداز احتمالاتی سه‌ماهه هر نماد + دفتر پیش‌بینی قضاوتی |
 | **Watchlist** | نمادهای تحت نظر + وضعیت تأیید کدها |
 | **Settings** | همه پارامترها و وزن‌ها (Defined Name دارند) |
 | **API_Map** | نگاشت هر ستون ↔ فیلد JSON ↔ endpoint |
@@ -200,11 +207,36 @@ python scripts/tse_updater.py --workbook Iran_Stock_Signals.xlsx --history 300
 
 ---
 
+## بک‌تست و پیش‌بینی
+
+جزئیات کامل در [`docs/FORECAST_AND_BACKTEST.md`](docs/FORECAST_AND_BACKTEST.md).
+
+**بک‌تست** با تأخیر اجرا، هزینه واقعی بازار ایران، محدودیت صف، و چهار سنجه
+ضدبیش‌برازش: شارپ تعدیل‌شده، p آزمون تهی، پایداری پارامتر، کارایی خارج‌نمونه.
+
+اعتبارسنجی خودِ بک‌تستر:
+
+| آزمون | استراتژی FLD | حکم |
+|---|---|---|
+| سری با چرخه واقعی ۶۰ کندلی | +۱۱۸٪ · شارپ تعدیل‌شده ۰٫۹۹۶ · p=۰٫۰۰۳ | لبه واقعی را می‌یابد |
+| گشت تصادفی خالص | −۶۷٪ · شارپ تعدیل‌شده ۰٫۰۰۰ · p=۰٫۸۳۷ | لبه جعلی نمی‌سازد |
+
+**پیش‌بینی** سه لایه: مدل رژیم مارکوف همیلتون (۹۵٪ دقت تشخیص رژیم روی داده
+با پارامتر معلوم)، نرخ پایه تجربی با اندازه نمونه **مؤثر**، و توزیع افت.
+هر رویداد با سه روش مستقل برآورد و اختلافشان گزارش می‌شود.
+
+**رویداد سیاسی از داده قیمت قابل استخراج نیست.** تتلاک با ردیابی ۲۸ هزار
+پیش‌بینی نشان داد دقت کارشناسان سیاسی به‌سختی از حدس تصادفی بهتر است. به‌جای
+مدل، دفتر ثبت پیش‌بینی با سنجش بریر ساخته شده — سؤال بدون معیار حل‌شدن رد
+می‌شود.
+
+---
+
 ## وضعیت راستی‌آزمایی
 
 - ۵۱٬۶۲۲ فرمول با LibreOffice محاسبه مجدد شد: **صفر خطا** (پس از افزودن لایه
   زمانی هم دوباره بررسی شد).
-- ۳۶ تست خودکار موتور زمانی، همه موفق — شامل کنترل‌های منفی، تطبیق Goertzel با
+- ۶۳ تست خودکار، همه موفق — شامل کنترل‌های منفی، تطبیق Goertzel با
   DFT مستقیم، رفت‌وبرگشت ۴۰۰۰ روزه تقویم شمسی، و کنترل دستی محاسبه طلا.
 - `MA20`، `MA200`، میانگین حجم، `ATR`، سقف/کف ۶۰ روزه، سرانه خرید و قدرت خریدار
   به‌صورت مستقل در پایتون بازمحاسبه و با خروجی فرمول‌ها مطابقت داده شد — از جمله

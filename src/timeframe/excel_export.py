@@ -29,6 +29,7 @@ HDR_BG = "1F3864"
 SEC_BG = "2E5C8A"
 CALC_FG = "008000"      # سبز = محاسبه‌شده توسط پایتون
 WARN_BG = "FFF2CC"
+K_BLUE = "0000FF"
 THIN = Side(style="thin", color="BFBFBF")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
@@ -285,6 +286,113 @@ def _write_macro(wb, today):
     return ws
 
 
+# ------------------------------------------------------------------ Forecast
+def _write_forecast(wb, workbook_path, horizon=63, horizon_label="سه ماه"):
+    """شیت Forecast: چشم‌انداز احتمالاتی هر نماد + دفتر پیش‌بینی قضاوتی."""
+    from . import series as _series
+    from .forecast import outlook as OL
+
+    if "Forecast" in wb.sheetnames:
+        del wb["Forecast"]
+    ws = wb.create_sheet("Forecast")
+    ws.sheet_view.rightToLeft = True
+    ws.sheet_view.showGridLines = False
+
+    ws["A1"] = "چشم‌انداز احتمالاتی — افق %s" % horizon_label
+    ws["A1"].font = Font(name=FONT, bold=True, size=15, color="FFFFFF")
+    ws["A1"].fill = PatternFill("solid", fgColor=HDR_BG)
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.merge_cells("A1:N1")
+    ws.row_dimensions[1].height = 28
+
+    r = 2
+    _text(ws, r, "این اعداد احتمال‌اند، نه پیش‌بینی. «۳۰٪» یعنی اگر صد بار در چنین "
+                 "وضعیتی باشیم حدود سی بار رخ می‌دهد. هر رویداد با سه روش مستقل "
+                 "برآورد شده؛ اختلاف زیاد بین روش‌ها یعنی نتیجه به فرض‌ها حساس است.",
+          ncol=14, size=9, bold=True, color="C00000", fill=WARN_BG)
+    ws.row_dimensions[r].height = 32
+    r += 2
+
+    _section(ws, r, "۱) برآورد احتمال به تفکیک نماد", 14)
+    r += 1
+    _hdr(ws, r, ["نماد", "کندل", "رژیم جاری", "احتمال رژیم پرتنش اکنون",
+                 "ورود به رژیم پرتنش در افق", "بازده منفی — مدل",
+                 "بازده منفی — نرخ پایه", "افت >۱۰٪ — مدل", "افت >۱۰٪ — نرخ پایه",
+                 "بیشینه‌افت >۲۰٪ — مدل", "بیشینه‌افت >۲۰٪ — تجربی",
+                 "بازده میانه شبیه‌سازی", "نمونه مستقل", "هشدار"],
+         [11, 8, 12, 13, 14, 12, 13, 12, 13, 14, 14, 13, 11, 46])
+    r += 1
+    names = _series.workbook_symbols(workbook_path)
+    for name in names:
+        ts = _series.from_workbook(workbook_path, name)
+        if len(ts) < 150:
+            continue
+        o = OL.build(ts, horizon, horizon_label)
+        sim = o.sim or {}
+        vals = [
+            name, len(ts),
+            ("پرتنش" if (o.p_stress_now or 0) > 0.5 else "آرام") if o.regime and o.regime.mu else "—",
+            o.p_stress_now, o.p_enter_stress,
+            sim.get("p_negative"), o.base.p_negative if o.base else None,
+            sim.get("p_below_10"), o.base.p_below_10 if o.base else None,
+            sim.get("p_dd_20"),
+            (o.dd.p_exceed.get(0.20) if o.dd else None),
+            sim.get("median_return"),
+            round(o.base.n_effective, 0) if o.base else None,
+            " | ".join(o.warnings),
+        ]
+        for j, v in enumerate(vals, start=1):
+            c = ws.cell(row=r, column=j, value=v)
+            c.font = Font(name=FONT, size=8, color=CALC_FG if j > 3 else "000000")
+            c.alignment = Alignment(horizontal="center", vertical="center",
+                                    wrap_text=(j == 14))
+            c.border = BORDER
+            if j in (4, 5, 6, 7, 8, 9, 10, 11, 12):
+                c.number_format = "0%"
+        ws.row_dimensions[r].height = 26
+        r += 1
+
+    r += 1
+    _section(ws, r, "۲) دفتر پیش‌بینی قضاوتی — روش تتلاک", 14)
+    r += 1
+    _text(ws, r, "رویداد سیاسی از داده قیمت قابل استخراج نیست. تتلاک با ردیابی "
+                 "۲۸ هزار پیش‌بینی نشان داد دقت کارشناسان سیاسی به‌سختی از حدس "
+                 "تصادفی بهتر است. آنچه دقت را بالا می‌برد: نرخ پایه، احتمال عددی "
+                 "صریح، به‌روزرسانی مکرر و سنجش کالیبراسیون. ستون‌های زیر را "
+                 "خودتان پر کنید و با scripts زیر امتیاز بریرتان را بگیرید.",
+          ncol=14, size=9, color="404040")
+    ws.row_dimensions[r].height = 44
+    r += 1
+    _hdr(ws, r, ["شناسه", "سؤال", "معیار حل‌شدن (الزامی)", "دسته", "مهلت",
+                 "نرخ پایه", "پیش‌بینی شما", "تاریخ برآورد", "دلیل",
+                 "حل شد؟", "نتیجه (۰/۱)"],
+         [18, 40, 66, 12, 13, 10, 12, 13, 34, 10, 12])
+    r += 1
+    from .forecast.judgment import TEMPLATES
+    for t in TEMPLATES:
+        vals = [t["qid"], t["text"], t["resolution_criteria"], t["category"],
+                "", "", "", "", "", "خیر", ""]
+        for j, v in enumerate(vals, start=1):
+            c = ws.cell(row=r, column=j, value=v)
+            c.font = Font(name=FONT, size=8,
+                          color=K_BLUE if j in (5, 6, 7, 8, 9, 10, 11) else "000000")
+            c.alignment = Alignment(horizontal="right" if j in (2, 3, 9) else "center",
+                                    vertical="center", wrap_text=True)
+            c.border = BORDER
+            if j in (5, 6, 7, 8, 9, 10, 11):
+                c.fill = PatternFill("solid", fgColor=WARN_BG)
+        ws.row_dimensions[r].height = 46
+        r += 1
+    r += 1
+    _text(ws, r, "قاعده سخت: سؤالی که معیار حل‌شدن روشن ندارد، پیش‌بینی نیست — یک "
+                 "نظر است. «بازار بد می‌شود» قابل سنجش نیست؛ «شاخص کل تا تاریخ X "
+                 "بیش از ۱۵٪ زیر سقف ۲۵۲ روزه‌اش بسته می‌شود» قابل سنجش است.",
+          ncol=14, size=9, bold=True, color="C00000", fill=WARN_BG)
+    ws.row_dimensions[r].height = 30
+    ws.freeze_panes = "A3"
+    return ws
+
+
 def export(workbook_path: str, strict: bool = False,
            today: datetime.date = None, cfg: TimeframeConfig = None) -> int:
     cfg = cfg or TimeframeConfig()
@@ -292,8 +400,10 @@ def export(workbook_path: str, strict: bool = False,
     wb = load_workbook(workbook_path)
     n = _write_time_cycles(wb, workbook_path, cfg, strict)
     _write_macro(wb, today)
+    _write_forecast(wb, workbook_path)
     wb.save(workbook_path)
     print("✓ Time_Cycles برای %d نماد به‌روز شد." % n)
     print("✓ شیت Macro_Cycles ساخته شد.")
+    print("✓ شیت Forecast ساخته شد.")
     print("توجه: فایل را در اکسل باز کنید تا فرمول‌ها دوباره محاسبه شوند.")
     return 0

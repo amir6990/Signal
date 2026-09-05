@@ -226,11 +226,228 @@ def test_scoring():
           unval.reliability != "بالا", unval.reliability)
 
 
+
+
+# ------------------------------------------------------------------ بک‌تست و پیش‌بینی
+def test_backtest_engine():
+    section("۱۶) موتور بک‌تست — تفکیک لبه واقعی از شانس")
+    from timeframe.backtest import Backtester, Costs, summarize
+    from timeframe.backtest.benchmark import random_timing_null
+
+    def rising(ts, period=60):
+        return [1.0 if math.cos(2 * math.pi * i / period) > 0 else -1.0
+                for i in range(len(ts))]
+
+    bt = Backtester(costs=Costs())
+    cyc = series.synthetic("c", 1200, [(60, 14, 0.0)], noise=1.0, trend=0.0, base=1000)
+    r = bt.run(cyc, rising(cyc))
+    p = summarize(r.returns, r.equity, r.positions, r.trade_pnls)
+    check("روی چرخه واقعی سود می‌گیرد", p.total_return > 0.10,
+          "%+.1f%%" % (p.total_return * 100))
+    nt = random_timing_null(cyc, r, bt, n_samples=200)
+    check("از زمان‌بندی تصادفی بهتر است", nt.p_value <= 0.05, "p=%.4f" % nt.p_value)
+
+    bad = 0
+    for seed in range(5):
+        rng = random.Random(700 + seed)
+        px, bars = 1000.0, []
+        for i in range(1200):
+            px *= 1 + rng.gauss(0.0002, 0.018)
+            bars.append(series.Bar(datetime.date(2020, 1, 1) + datetime.timedelta(days=i),
+                                   px, px * 1.01, px * 0.99))
+        rw = series.TimeSeries("rw", bars)
+        rr = bt.run(rw, rising(rw))
+        n2 = random_timing_null(rw, rr, bt, n_samples=150)
+        if n2.p_value <= 0.05:
+            bad += 1
+    check("روی ۵ گشت تصادفی لبه پیدا نمی‌کند", bad == 0, "مثبت کاذب: %d" % bad)
+
+
+def test_backtest_no_lookahead():
+    section("۱۷) نبود نگاه به آینده و اثر هزینه")
+    from timeframe.backtest import Backtester, Costs
+
+    def rising(ts, period=60):
+        return [1.0 if math.cos(2 * math.pi * i / period) > 0 else -1.0
+                for i in range(len(ts))]
+
+    cyc = series.synthetic("c", 1200, [(60, 14, 0.0)], noise=1.0, base=1000)
+    outs = []
+    for lag in (1, 2, 5, 10):
+        r = Backtester(costs=Costs(), execution_lag=lag).run(cyc, rising(cyc))
+        outs.append(r.equity[-1] - 1.0)
+    check("تأخیر بیشتر اجرا، بازده کمتر", outs[0] > outs[-1],
+          "تأخیر۱ %+.1f%% ← تأخیر۱۰ %+.1f%%" % (outs[0] * 100, outs[-1] * 100))
+    costs_out = []
+    for slip in (0, 15, 50, 150):
+        r = Backtester(costs=Costs(slippage_bps=slip)).run(cyc, rising(cyc))
+        costs_out.append(r.equity[-1] - 1.0)
+    check("هزینه بیشتر، بازده کمتر",
+          all(costs_out[i] > costs_out[i + 1] for i in range(len(costs_out) - 1)),
+          " → ".join("%+.0f%%" % (v * 100) for v in costs_out))
+
+
+def test_deflated_sharpe():
+    section("۱۸) شارپ تعدیل‌شده و توابع آماری")
+    from timeframe.backtest import metrics as M
+    for pr, z in ((0.975, 1.959964), (0.995, 2.575829), (0.5, 0.0)):
+        check("norm_ppf(%.3f)" % pr, abs(M.norm_ppf(pr) - z) < 2e-4)
+    check("norm_cdf(1.96) = 0.975", abs(M.norm_cdf(1.959964) - 0.975) < 1e-5)
+    vals = [M.deflated_sharpe(0.08, 500, -0.3, 6.0, n) for n in (1, 10, 100, 1000)]
+    check("تلاش بیشتر، شارپ تعدیل‌شده کمتر",
+          all(vals[i] > vals[i + 1] for i in range(len(vals) - 1)),
+          " → ".join("%.3f" % v for v in vals))
+
+
+def test_regime_model():
+    section("۱۹) مدل رژیم مارکوف — بازیابی پارامتر")
+    from timeframe.forecast import regime as RG
+    rng = random.Random(5)
+    P = [[0.98, 0.02], [0.06, 0.94]]
+    mu = [0.0012, -0.0025]
+    sd = [0.010, 0.028]
+    st, rets, truth = 0, [], []
+    for _ in range(2500):
+        rets.append(rng.gauss(mu[st], sd[st]))
+        truth.append(st)
+        st = 0 if rng.random() < P[st][0] else 1
+    m = RG.fit(rets)
+    s, c = m.stress_state, m.calm_state
+    check("میانگین رژیم آرام بازیابی شد", abs(m.mu[c] - mu[0]) < 0.0005,
+          "%+.5f در برابر %+.5f" % (m.mu[c], mu[0]))
+    check("نوسان رژیم پرتنش بازیابی شد", abs(m.sigma[s] - sd[1]) < 0.005,
+          "%.5f در برابر %.5f" % (m.sigma[s], sd[1]))
+    acc = sum(1 for t in range(len(rets)) if (m.smoothed[t][s] > 0.5) == (truth[t] == 1))
+    check("دقت تشخیص رژیم بالای ۸۵٪", acc / len(rets) > 0.85,
+          "%.1f%%" % (100 * acc / len(rets)))
+    check("احتمال‌ها در بازه مجاز", 0 <= m.prob_enter_stress(63) <= 1)
+    sim = RG.simulate(m, 63, n_paths=800)
+    check("مونت‌کارلو احتمال معتبر می‌دهد",
+          0 <= sim["p_dd_20"] <= 1 and sim["n_paths"] == 800)
+
+
+def test_base_rates():
+    section("۲۰) نرخ پایه و اندازه نمونه مؤثر")
+    from timeframe.forecast import base_rates as BR, drawdown as DD
+    rng = random.Random(3)
+    px, bars = 1000.0, []
+    for i in range(2500):
+        px *= 1 + rng.gauss(0.0004, 0.017)
+        bars.append(series.Bar(datetime.date(2016, 1, 1) + datetime.timedelta(days=i),
+                               px, px * 1.012, px * 0.988))
+    ts = series.TimeSeries("t", bars)
+    d = BR.unconditional(ts, 63)
+    check("اندازه نمونه مؤثر ≈ خام ÷ افق",
+          abs(d.n_effective - d.n_raw / 63) < 1e-6,
+          "خام %d ← مؤثر %.0f" % (d.n_raw, d.n_effective))
+    check("احتمال‌ها در بازه مجاز",
+          all(0 <= x <= 1 for x in (d.p_negative, d.p_below_10, d.p_below_20)))
+    fr = BR.forward_returns(ts, 10)
+    manual = ts.closes[10] / ts.closes[0] - 1.0
+    check("بازده آتی درست محاسبه شده", abs(fr[0] - manual) < 1e-12)
+    check("انتهای سری بازده آتی ندارد", fr[-1] is None)
+    dd = DD.forward_max_drawdown(ts, 63)
+    check("افت‌ها منفی یا صفرند", dd.median_dd <= 0 and dd.worst <= dd.q95_dd)
+
+
+def test_brier():
+    section("۲۱) امتیاز بریر و تجزیه مرفی")
+    from timeframe.forecast.scoring import brier
+    check("پیش‌بین کامل بریر صفر می‌گیرد",
+          abs(brier([1.0, 0.0, 1.0], [1, 0, 1]).brier) < 1e-12)
+    check("پیش‌بین کاملاً غلط بریر ۱ می‌گیرد",
+          abs(brier([0.0, 1.0], [1, 0]).brier - 1.0) < 1e-12)
+    check("گفتن همیشگی ۵۰٪ بریر ۰٫۲۵ می‌دهد",
+          abs(brier([0.5] * 10, [1, 0] * 5).brier - 0.25) < 1e-12)
+    rng = random.Random(1)
+    cf, co, of, oo = [], [], [], []
+    for _ in range(300):
+        pt = rng.random()
+        o = 1 if rng.random() < pt else 0
+        cf.append(pt); co.append(o)
+        of.append(min(0.99, max(0.01, pt * 1.6 - 0.3))); oo.append(o)
+    bc, bo = brier(cf, co), brier(of, oo)
+    check("کالیبره از بیش‌اعتماد بهتر تشخیص داده می‌شود",
+          bc.reliability < bo.reliability,
+          "کالیبراسیون %.4f در برابر %.4f" % (bc.reliability, bo.reliability))
+    check("اتحاد مرفی روی بریر سطل‌بندی‌شده دقیق است",
+          abs((bc.reliability - bc.resolution + bc.uncertainty) - bc.brier_binned) < 1e-9,
+          "باقی‌مانده %.2e" % abs((bc.reliability - bc.resolution + bc.uncertainty)
+                                  - bc.brier_binned))
+    disc_f = [round(x * 10) / 10 for x in cf]
+    bd = brier(disc_f, co, n_bins=11)
+    check("با پیش‌بینی گسسته، اتحاد روی بریر خام هم برقرار است",
+          abs((bd.reliability - bd.resolution + bd.uncertainty) - bd.brier) < 1e-9,
+          "باقی‌مانده %.2e" % abs((bd.reliability - bd.resolution + bd.uncertainty)
+                                  - bd.brier))
+
+
+def test_judgment_register():
+    section("۲۲) دفتر پیش‌بینی")
+    import tempfile
+    from timeframe.forecast.judgment import Register, seed_templates
+    path = os.path.join(tempfile.mkdtemp(), "fc.json")
+    reg = Register(path)
+    check("سؤال بدون معیار حل رد می‌شود",
+          _raises(lambda: reg.add("X", "بازار بد می‌شود", "", "2026-12-01")))
+    added = seed_templates(reg, "2026-12-05")
+    check("الگوهای آماده افزوده شدند", len(added) >= 5)
+    reg.forecast("MKT-DRAWDOWN-3M", 0.25, "نرخ پایه")
+    reg.forecast("MKT-DRAWDOWN-3M", 0.35, "به‌روزرسانی")
+    q = reg.questions["MKT-DRAWDOWN-3M"]
+    check("به‌روزرسانی ثبت شد", len(q.forecasts) == 2 and abs(q.drift - 0.10) < 1e-9)
+    reg.forecast("MKT-REGIME-3M", 1.0)
+    check("قطعیت مطلق به ۰٫۹۹۵ محدود می‌شود",
+          abs(reg.questions["MKT-REGIME-3M"].current - 0.995) < 1e-9)
+    reg.resolve("MKT-DRAWDOWN-3M", 1)
+    check("سؤال حل‌شده پیش‌بینی جدید نمی‌پذیرد",
+          _raises(lambda: reg.forecast("MKT-DRAWDOWN-3M", 0.5)))
+    reg.save()
+    reg2 = Register(path)
+    check("ذخیره و بارگذاری سالم است",
+          len(reg2.questions) == len(reg.questions)
+          and reg2.questions["MKT-DRAWDOWN-3M"].resolved)
+
+
+def _raises(fn):
+    try:
+        fn()
+        return False
+    except Exception:
+        return True
+
+
+def test_outlook():
+    section("۲۳) چشم‌انداز احتمالاتی")
+    from timeframe.forecast import outlook as OL
+    rng = random.Random(11)
+    px, bars, reg = 1_000_000.0, [], 0
+    for i in range(2000):
+        if rng.random() < (0.012 if reg == 0 else 0.05):
+            reg = 1 - reg
+        px *= 1 + rng.gauss(0.0012 if reg == 0 else -0.0022,
+                            0.010 if reg == 0 else 0.026)
+        bars.append(series.Bar(datetime.date(2018, 1, 1) + datetime.timedelta(days=i),
+                               px, px * 1.012, px * 0.988))
+    o = OL.build(series.TimeSeries("idx", bars), 63)
+    check("مدل رژیم برازش شد", o.regime is not None and bool(o.regime.mu))
+    check("مونت‌کارلو اجرا شد", o.sim is not None)
+    check("همه احتمال‌ها در بازه مجازند",
+          all(0 <= v <= 1 for v in (o.p_stress_now, o.p_enter_stress,
+                                    o.sim["p_below_10"], o.base.p_negative)))
+    check("گزارش تولید می‌شود", "جمع‌بندی" in o.report())
+    short = OL.build(series.TimeSeries("s", bars[:100]), 63)
+    check("داده کم هشدار می‌دهد", bool(short.warnings))
+
+
 def main():
     for fn in (test_spectral_recovery, test_spectral_two_cycles, test_noise_control,
                test_random_walk_control, test_goertzel_matches_dft, test_filters,
                test_hurst, test_gann, test_fib, test_elliott, test_jalali,
-               test_gold, test_macro, test_iran_calendar, test_scoring):
+               test_gold, test_macro, test_iran_calendar, test_scoring,
+               test_backtest_engine, test_backtest_no_lookahead, test_deflated_sharpe,
+               test_regime_model, test_base_rates, test_brier,
+               test_judgment_register, test_outlook):
         fn()
     print("\n" + "═" * 70)
     if FAILS:

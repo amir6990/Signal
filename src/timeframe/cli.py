@@ -96,6 +96,105 @@ def cmd_gold(args):
     return 0
 
 
+def cmd_outlook(args):
+    from .forecast import outlook as OL
+    ts = _load(args)
+    if not len(ts):
+        print("داده‌ای برای «%s» یافت نشد." % args.name)
+        return 1
+    print(OL.build(ts, args.horizon, args.label).report())
+    return 0
+
+
+def cmd_backtest(args):
+    from .backtest import Backtester, Costs, summarize
+    from .backtest import walkforward as WF
+    from .backtest.benchmark import random_timing_null
+    from .backtest.strategies import STRATEGIES
+
+    ts = _load(args)
+    if len(ts) < 300:
+        print("داده کمتر از ۳۰۰ کندل — بک‌تست معنادار نیست (%d کندل)." % len(ts))
+        return 1
+    bt = Backtester(costs=Costs(slippage_bps=args.slippage),
+                    execution_lag=args.lag)
+    print("بک‌تست %s — %d کندل، %s تا %s"
+          % (ts.name, len(ts), ts.bars[0].date, ts.last_date))
+    print("هزینه: خرید %.2f٪ | فروش %.2f٪ | لغزش %.2f٪ هر طرف | تأخیر اجرا %d روز"
+          % (bt.costs.buy_bps / 100, bt.costs.sell_bps / 100,
+             bt.costs.slippage_bps / 100, bt.execution_lag))
+    print("─" * 96)
+    print("%-14s %-9s %-9s %-9s %-8s %-8s %-7s %s"
+          % ("استراتژی", "بازده", "شارپ", "شارپ‌تعدیل", "افت", "معامله", "پایداری", "p تهی"))
+    print("─" * 96)
+
+    bh = bt.buy_and_hold(ts)
+    pb = summarize(bh.returns, bh.equity, bh.positions, bh.trade_pnls)
+    print("%-14s %+8.1f%% %+8.2f %9s %7.1f%% %7d %8s %s"
+          % ("خرید‌ونگهداری", pb.total_return * 100, pb.sharpe, "—",
+             pb.max_drawdown * 100, pb.n_trades, "—", "—"))
+
+    rows = []
+    for name, (fn, grid) in STRATEGIES.items():
+        if name == "buy_and_hold":
+            continue
+        wf = WF.run(ts, fn, grid, is_bars=args.is_bars, oos_bars=args.oos_bars, bt=bt)
+        if not wf.stitched or not wf.stitched.equity:
+            print("%-14s داده برای walk-forward کافی نیست" % name)
+            continue
+        st = wf.stitched
+        p = summarize(st.returns, st.equity, st.positions, st.trade_pnls,
+                      n_trials=len(grid))
+        nt = random_timing_null(ts, st, bt, n_samples=args.null_samples)
+        print("%-14s %+8.1f%% %+8.2f %+9.3f %7.1f%% %7d %7.0f%% %s"
+              % (name, p.total_return * 100, p.sharpe,
+                 p.deflated_sharpe if p.deflated_sharpe is not None else 0.0,
+                 p.max_drawdown * 100, p.n_trades,
+                 wf.param_stability * 100,
+                 ("%.3f" % nt.p_value) if nt else "—"))
+        rows.append((name, wf, p, nt))
+
+    print("─" * 96)
+    print("\nتفسیر:")
+    print("  • «شارپ تعدیل‌شده» احتمال واقعی‌بودن لبه است، پس از تصحیح بابت تعداد")
+    print("    ترکیب پارامتری آزموده‌شده. زیر ۰٫۹ یعنی به‌احتمال زیاد نویز است.")
+    print("  • «پایداری» درصد پنجره‌هایی که پارامتر بهینه ثابت مانده. زیر ۴۰٪ یعنی")
+    print("    آنچه بهینه می‌شود نویز است، نه ساختار.")
+    print("  • «p تهی» احتمال دیدن این بازده با همان تعداد و مدت معامله ولی")
+    print("    زمان‌بندی تصادفی. بالای ۰٫۰۵ یعنی زمان‌بندی ارزشی اضافه نکرده.")
+    for name, wf, p, nt in rows:
+        eff = wf.oos_efficiency
+        if eff is not None:
+            print("\n  %s — کارایی خارج‌نمونه %.2f" % (name, eff))
+        for w in wf.warnings:
+            print("      ⚠ " + w)
+        for w in p.notes:
+            print("      ⓘ " + w)
+    return 0
+
+
+def cmd_judgment(args):
+    from .forecast.judgment import Register, seed_templates
+    reg = Register(args.file)
+    if args.seed_deadline:
+        added = seed_templates(reg, args.seed_deadline)
+        reg.save()
+        print("سؤال افزوده‌شده: %s" % ("، ".join(added) if added else "هیچ (از قبل بودند)"))
+    if args.forecast:
+        qid, prob = args.forecast[0], float(args.forecast[1])
+        reg.forecast(qid, prob, args.rationale or "")
+        reg.save()
+        print("پیش‌بینی ثبت شد: %s = %.0f%%" % (qid, prob * 100))
+    if args.resolve:
+        qid, out = args.resolve[0], int(args.resolve[1])
+        reg.resolve(qid, out, args.rationale or "")
+        reg.save()
+        print("سؤال %s با نتیجه %d حل شد." % (qid, out))
+    print()
+    print(reg.report())
+    return 0
+
+
 def cmd_sources(_args):
     print(report.sources_report())
     return 0
@@ -140,6 +239,32 @@ def build_parser():
     s.add_argument("--instrument", default="سکه تمام بهار آزادی",
                    choices=list(gold_mod.COIN_SPECS))
     s.set_defaults(func=cmd_gold)
+
+    s = sub.add_parser("outlook", help="چشم‌انداز احتمالاتی افق کوتاه")
+    common(s)
+    s.add_argument("--name", required=True)
+    s.add_argument("--horizon", type=int, default=63, help="افق به کندل (۶۳ ≈ سه ماه)")
+    s.add_argument("--label", default="سه ماه")
+    s.set_defaults(func=cmd_outlook)
+
+    s = sub.add_parser("backtest", help="بک‌تست پیش‌رونده با آزمون تهی")
+    common(s)
+    s.add_argument("--name", required=True)
+    s.add_argument("--is-bars", type=int, default=500, dest="is_bars")
+    s.add_argument("--oos-bars", type=int, default=125, dest="oos_bars")
+    s.add_argument("--slippage", type=float, default=15.0, help="لغزش (bps هر طرف)")
+    s.add_argument("--lag", type=int, default=1, help="تأخیر اجرا (روز)")
+    s.add_argument("--null-samples", type=int, default=300, dest="null_samples")
+    s.set_defaults(func=cmd_backtest)
+
+    s = sub.add_parser("judgment", help="دفتر ثبت پیش‌بینی و سنجش کالیبراسیون")
+    s.add_argument("--file", default="forecasts.json")
+    s.add_argument("--seed-deadline", default=None, dest="seed_deadline",
+                   help="افزودن سؤال‌های نمونه با این مهلت (YYYY-MM-DD)")
+    s.add_argument("--forecast", nargs=2, metavar=("QID", "PROB"), default=None)
+    s.add_argument("--resolve", nargs=2, metavar=("QID", "OUTCOME"), default=None)
+    s.add_argument("--rationale", default=None)
+    s.set_defaults(func=cmd_judgment)
 
     s = sub.add_parser("sources", help="فهرست منابع و جایگاه علمی هر چارچوب")
     s.set_defaults(func=cmd_sources)
