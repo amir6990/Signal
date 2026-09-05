@@ -232,21 +232,38 @@ def build_watchlist(wb):
 
     dv = DataValidation(type="list", formula1='"بله,خیر"', allow_blank=True)
     ws.add_data_validation(dv)
-    dv.add("G5:G%d" % (last + 40))
+    dv.add("G5:G%d" % (4 + N_SYM_ROWS))
     dv2 = DataValidation(type="list", formula1='"بله,خیر"', allow_blank=True)
     ws.add_data_validation(dv2)
-    dv2.add("H5:H%d" % (last + 40))
+    dv2.add("H5:H%d" % (4 + N_SYM_ROWS))
 
     ws.conditional_formatting.add("G5:G%d" % last, CellIsRule(
         operator="equal", formula=['"خیر"'],
         fill=PatternFill("solid", fgColor="FFE699"), font=Font(color="7F6000")))
 
-    note(ws, "A%d" % (last + 2),
+    spare_last = 4 + N_SYM_ROWS
+    for rr in range(last + 1, spare_last + 1):        # ردیف‌های ذخیره برای نمادهای جدید
+        for cc in (1, 2, 3, 4, 5, 6, 7, 8):
+            cell = ws.cell(row=rr, column=cc)
+            cell.border = BORDER
+            if cc in (1, 3, 4, 7, 8):
+                cell.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
+                cell.font = Font(name=FONT, size=9, color=K.C_BLUE_INPUT)
+            if cc in (3, 4):
+                cell.number_format = "@"
+    note(ws, "A%d" % (spare_last + 2),
          "⚠️ کدهای InsCode و ISIN بالا تأییدنشده‌اند. اسکریپت tse_updater.py آن‌ها را با "
          "endpoint جستجوی نماد بررسی و در صورت مغایرت اصلاح می‌کند و ستون «کد تأیید شده؟» را «بله» می‌کند.")
-    ws.merge_cells(start_row=last + 2, start_column=1, end_row=last + 2, end_column=len(WL_COLS))
+    ws.merge_cells(start_row=spare_last + 2, start_column=1,
+                   end_row=spare_last + 2, end_column=len(WL_COLS))
+    note(ws, "A%d" % (spare_last + 3),
+         "ردیف‌های زردرنگ خالی، ظرفیت آماده‌اند: نماد جدید را همین‌جا اضافه کنید — همه شیت‌های "
+         "Calculations، Signals و Time_Cycles تا ردیف %d از قبل فرمول دارند و نیازی به کشیدن دستی نیست."
+         % spare_last, size=9, color="404040")
+    ws.merge_cells(start_row=spare_last + 3, start_column=1,
+                   end_row=spare_last + 3, end_column=len(WL_COLS))
     ws.freeze_panes = "A5"
-    dn("WL_SYM", "Watchlist", "$A$5:$A$%d" % (last + 40))
+    dn("WL_SYM", "Watchlist", "$A$5:$A$%d" % (4 + N_SYM_ROWS))
     return ws, last
 
 
@@ -377,28 +394,39 @@ DH_RAW = [
 ]
 
 # (برچسب، توضیح، عرض، قالب، قالب فرمول با {r})
+# (برچسب، توضیح، عرض، قالب، الگوی فرمول، عمق نگاه به عقب)
+# {lo}/{k}: بازه INDEX عمداً فقط به‌اندازه‌ای که فرمول لازم دارد باز می‌شود؛ ارجاع به کل
+# ستون، گراف وابستگی را چند ده میلیون سلولی می‌کند و محاسبه مجدد را از کار می‌اندازد.
 DH_CALC = [
-    ("شمارنده ردیف نماد", "n", 10, "0", '=IF($A{r}=$A{p},$U{p}+1,1)'),
-    ("MA کوتاه", "MA_SHORT", 12, F_PRICE, '=IF($U{r}>=MA_SHORT,AVERAGE(INDEX($I$1:$I$5000,ROW()-MA_SHORT+1):$I{r}),"")'),
-    ("MA میان‌مدت", "MA_MED", 12, F_PRICE, '=IF($U{r}>=MA_MED,AVERAGE(INDEX($I$1:$I$5000,ROW()-MA_MED+1):$I{r}),"")'),
-    ("MA بلند ۱", "MA_LONG1", 12, F_PRICE, '=IF($U{r}>=MA_LONG1,AVERAGE(INDEX($I$1:$I$5000,ROW()-MA_LONG1+1):$I{r}),"")'),
-    ("MA بلند ۲", "MA_LONG2", 12, F_PRICE, '=IF($U{r}>=MA_LONG2,AVERAGE(INDEX($I$1:$I$5000,ROW()-MA_LONG2+1):$I{r}),"")'),
-    ("میانگین حجم", "MA_SHORT", 14, F_INT, '=IF($U{r}>=MA_SHORT,AVERAGE(INDEX($L$1:$L$5000,ROW()-MA_SHORT+1):$L{r}),"")'),
-    ("دامنه واقعی (TR)", "True Range", 12, F_PRICE, '=IF($U{r}=1,$G{r}-$H{r},MAX($G{r}-$H{r},ABS($G{r}-$I{p}),ABS($H{r}-$I{p})))'),
-    ("ATR", "ATR_PER", 12, F_PRICE, '=IF($U{r}>=ATR_PER,AVERAGE(INDEX($AA$1:$AA$5000,ROW()-ATR_PER+1):$AA{r}),"")'),
-    ("خالص حجم حقیقی", "buy_I − sell_I", 14, F_INT, '=$O{r}-$P{r}'),
-    ("خالص ارزش حقیقی (ریال)", "net × pClosing", 17, F_INT, '=$AC{r}*$I{r}'),
-    ("سرانه خرید حقیقی (م.ریال)", "value/buy_CountI", 15, F_NUM1, '=IF($Q{r}>0,$O{r}*$I{r}/$Q{r}/1000000,"")'),
-    ("سرانه فروش حقیقی (م.ریال)", "value/sell_CountI", 15, F_NUM1, '=IF($R{r}>0,$P{r}*$I{r}/$R{r}/1000000,"")'),
-    ("قدرت خریدار", "AE/AF", 12, F_X, '=IF(AND(ISNUMBER($AE{r}),ISNUMBER($AF{r}),$AF{r}>0),$AE{r}/$AF{r},"")'),
-    ("خالص ورود پول ۵ روزه", "sum 5d", 17, F_INT, '=IF($U{r}>=5,SUM(INDEX($AD$1:$AD$5000,ROW()-4):$AD{r}),"")'),
-    ("سقف پنجره کوتاه", "STRUCT_S", 13, F_PRICE, '=IF($U{r}>=STRUCT_S,MAX(INDEX($G$1:$G$5000,ROW()-STRUCT_S+1):$G{r}),"")'),
-    ("کف پنجره کوتاه", "STRUCT_S", 13, F_PRICE, '=IF($U{r}>=STRUCT_S,MIN(INDEX($H$1:$H$5000,ROW()-STRUCT_S+1):$H{r}),"")'),
-    ("سقف پنجره بلند", "STRUCT_L", 13, F_PRICE, '=IF($U{r}>=STRUCT_L,MAX(INDEX($G$1:$G$5000,ROW()-STRUCT_L+1):$G{r}),"")'),
-    ("کف پنجره بلند", "STRUCT_L", 13, F_PRICE, '=IF($U{r}>=STRUCT_L,MIN(INDEX($H$1:$H$5000,ROW()-STRUCT_L+1):$H{r}),"")'),
-    ("آخرین ردیف نماد؟", "flag", 11, "0", '=IF($A{r}<>$A{n},1,0)'),
-    ("کلید آخرین ردیف", "lookup key", 13, None, '=IF($AM{r}=1,$A{r},"")'),
+    ("شمارنده ردیف نماد", "n", 10, "0", '=IF($A{r}=$A{p},$U{p}+1,1)', 0),
+    ("MA کوتاه", "MA_SHORT", 12, F_PRICE, '=IF($U{r}>=MA_SHORT,AVERAGE(INDEX($I${lo}:$I{r},{k}-MA_SHORT):$I{r}),"")', 400),
+    ("MA میان‌مدت", "MA_MED", 12, F_PRICE, '=IF($U{r}>=MA_MED,AVERAGE(INDEX($I${lo}:$I{r},{k}-MA_MED):$I{r}),"")', 400),
+    ("MA بلند ۱", "MA_LONG1", 12, F_PRICE, '=IF($U{r}>=MA_LONG1,AVERAGE(INDEX($I${lo}:$I{r},{k}-MA_LONG1):$I{r}),"")', 400),
+    ("MA بلند ۲", "MA_LONG2", 12, F_PRICE, '=IF($U{r}>=MA_LONG2,AVERAGE(INDEX($I${lo}:$I{r},{k}-MA_LONG2):$I{r}),"")', 400),
+    ("میانگین حجم", "MA_SHORT", 14, F_INT, '=IF($U{r}>=MA_SHORT,AVERAGE(INDEX($L${lo}:$L{r},{k}-MA_SHORT):$L{r}),"")', 120),
+    ("دامنه واقعی (TR)", "True Range", 12, F_PRICE, '=IF($U{r}=1,$G{r}-$H{r},MAX($G{r}-$H{r},ABS($G{r}-$I{p}),ABS($H{r}-$I{p})))', 0),
+    ("ATR", "ATR_PER", 12, F_PRICE, '=IF($U{r}>=ATR_PER,AVERAGE(INDEX($AA${lo}:$AA{r},{k}-ATR_PER):$AA{r}),"")', 120),
+    ("خالص حجم حقیقی", "buy_I − sell_I", 14, F_INT, '=$O{r}-$P{r}', 0),
+    ("خالص ارزش حقیقی (ریال)", "net × pClosing", 17, F_INT, '=$AC{r}*$I{r}', 0),
+    ("سرانه خرید حقیقی (م.ریال)", "value/buy_CountI", 15, F_NUM1, '=IF($Q{r}>0,$O{r}*$I{r}/$Q{r}/1000000,"")', 0),
+    ("سرانه فروش حقیقی (م.ریال)", "value/sell_CountI", 15, F_NUM1, '=IF($R{r}>0,$P{r}*$I{r}/$R{r}/1000000,"")', 0),
+    ("قدرت خریدار", "AE/AF", 12, F_X, '=IF(AND(ISNUMBER($AE{r}),ISNUMBER($AF{r}),$AF{r}>0),$AE{r}/$AF{r},"")', 0),
+    ("خالص ورود پول ۵ روزه", "sum 5d", 17, F_INT, '=IF($U{r}>=5,SUM(INDEX($AD${lo}:$AD{r},{k}-5):$AD{r}),"")', 30),
+    ("سقف پنجره کوتاه", "STRUCT_S", 13, F_PRICE, '=IF($U{r}>=STRUCT_S,MAX(INDEX($G${lo}:$G{r},{k}-STRUCT_S):$G{r}),"")', 150),
+    ("کف پنجره کوتاه", "STRUCT_S", 13, F_PRICE, '=IF($U{r}>=STRUCT_S,MIN(INDEX($H${lo}:$H{r},{k}-STRUCT_S):$H{r}),"")', 150),
+    ("سقف پنجره بلند", "STRUCT_L", 13, F_PRICE, '=IF($U{r}>=STRUCT_L,MAX(INDEX($G${lo}:$G{r},{k}-STRUCT_L):$G{r}),"")', 250),
+    ("کف پنجره بلند", "STRUCT_L", 13, F_PRICE, '=IF($U{r}>=STRUCT_L,MIN(INDEX($H${lo}:$H{r},{k}-STRUCT_L):$H{r}),"")', 250),
+    ("آخرین ردیف نماد؟", "flag", 11, "0", '=IF($A{r}<>$A{n},1,0)', 0),
+    ("کلید آخرین ردیف", "lookup key", 13, None, '=IF($AM{r}=1,$A{r},"")', 0),
 ]
+
+DH_FIRST_ROW = 5
+
+
+def dh_formula(tmpl, back, r):
+    """{lo} = ابتدای بازه نگاه به عقب، {k} = r − lo + 2 تا اندیس INDEX نسبی درست شود."""
+    lo = max(DH_FIRST_ROW, r - back)
+    return tmpl.format(r=r, p=r - 1, n=r + 1, lo=lo, k=r - lo + 2)
 
 
 def build_daily_history(wb, hist):
@@ -427,9 +455,9 @@ def build_daily_history(wb, hist):
                 c = ws.cell(row=r, column=i + 1, value=v)
                 if DH_RAW[i][3]:
                     c.number_format = DH_RAW[i][3]
-            for j, (_lbl, _d, _w, fmt, tmpl) in enumerate(DH_CALC):
+            for j, (_lbl, _d, _w, fmt, tmpl, back) in enumerate(DH_CALC):
                 c = ws.cell(row=r, column=len(DH_RAW) + 1 + j,
-                            value=tmpl.format(r=r, p=r - 1, n=r + 1))
+                            value=dh_formula(tmpl, back, r))
                 if fmt:
                     c.number_format = fmt
             r += 1
@@ -450,6 +478,16 @@ def build_daily_history(wb, hist):
 
 
 COLREF = {}   # نگاشت کلید ستون‌ها بین شیت‌ها (پر می‌شود حین ساخت)
+
+# ردیف‌های ذخیره: فایل از ابتدا برای این تعداد نماد/قرارداد فرمول دارد تا افزودن
+# نماد جدید نیازی به کشیدن دستی فرمول نداشته باشد.
+N_SYM_ROWS = 60
+N_OPT_ROWS = 120
+
+
+def guard(formula, r, key="$A"):
+    """فرمول را به‌گونه‌ای می‌پیچد که ردیف‌های خالی ذخیره، خالی بمانند."""
+    return '=IF(%s%d="","",%s)' % (key, r, formula.lstrip("="))
 
 
 # =====================================================================
@@ -521,9 +559,10 @@ def build_market_index(wb, idx_hist):
                     ).number_format = F_PCT2
         for col, src, per in ((6, "D", "MA_SHORT"), (7, "D", "MA_MED"), (8, "D", "MA_LONG2"),
                               (11, "I", "MA_SHORT"), (12, "I", "MA_MED"), (13, "I", "MA_LONG2")):
+            lo = max(5, r - 400)
             ws.cell(row=r, column=col,
-                    value='=IF($N{r}>={p},AVERAGE(INDEX(${s}$1:${s}$5000,ROW()-{p}+1):${s}{r}),"")'.format(
-                        r=r, s=src, p=per)).number_format = '#,##0'
+                    value='=IF($N{r}>={p},AVERAGE(INDEX(${s}${lo}:${s}{r},{k}-{p}):${s}{r}),"")'.format(
+                        r=r, s=src, p=per, lo=lo, k=r - lo + 2)).number_format = '#,##0'
         r += 1
     last = r - 1
     style_data(ws, 5, last, 1, len(MI_COLS), size=8)
@@ -682,7 +721,7 @@ def build_calculations(wb, symbols, tc_score_col):
     ws.sheet_view.rightToLeft = True
     cm = _colmap(CALC_COLS)
     COLREF["calc"] = cm
-    n = len(symbols)
+    n = N_SYM_ROWS
     first, lastrow = 5, 4 + n
     title_block(ws, "محاسبات (Calculations)",
                 "همه ستون‌ها فرمول‌اند. شش زیرنمره (T/S/M/V/K/Z) با وزن‌های شیت Settings ترکیب می‌شوند و امتیاز کل را می‌سازند.",
@@ -690,11 +729,12 @@ def build_calculations(wb, symbols, tc_score_col):
     widths(ws, [c[3] for c in CALC_COLS])
     hdr(ws, 3, [c[1] for c in CALC_COLS], [c[2] for c in CALC_COLS])
 
-    for i, sym in enumerate(symbols):
+    for i in range(n):
         r = first + i
-        ws.cell(row=r, column=1, value='=IFERROR(Watchlist!$A${w},"")'.format(w=5 + i))
+        ws.cell(row=r, column=1,
+                value='=IF(COUNTA(Watchlist!$A${w})=0,"",Watchlist!$A${w})'.format(w=5 + i))
         for j, (key, _lbl, _d, _w, fmt, tmpl) in enumerate(CALC_COLS[1:], start=2):
-            f = tmpl.format(r=r, last=lastrow, TCS=tc_score_col, **cm)
+            f = guard(tmpl.format(r=r, last=lastrow, TCS=tc_score_col, **cm), r)
             c = ws.cell(row=r, column=j, value=f)
             if fmt:
                 c.number_format = fmt
@@ -773,7 +813,7 @@ def build_time_cycles(wb, symbols, hist):
     cm = _colmap(TC_COLS)
     COLREF["time"] = cm
     first = 5
-    lastrow = 4 + len(symbols)
+    lastrow = 4 + N_SYM_ROWS
     title_block(ws, "لایه زمانی — چرخه‌های هرست، گن، فیبوناچی زمانی و الیوت",
                 "این لایه امروز با وزن صفر ساخته شده است: ساختار و فرمول‌ها زنده‌اند ولی روی سیگنال اثر ندارند. "
                 "برای فعال‌سازی، W_TIME را در Settings بزرگ‌تر از صفر کنید.", len(TC_COLS))
@@ -786,7 +826,16 @@ def build_time_cycles(wb, symbols, hist):
         ws.cell(row=5 + i, column=28, value=g).font = Font(name=FONT, size=8)
     ws.column_dimensions["AB"].width = 12
 
-    import datetime as _dt
+    for i in range(N_SYM_ROWS):
+        r = first + i
+        ws.cell(row=r, column=1,
+                value='=IF(COUNTA(Watchlist!$A${w})=0,"",Watchlist!$A${w})'.format(w=5 + i))
+        for j, (key, _lbl, _d, _w2, fmt, tmpl) in enumerate(TC_COLS, start=1):
+            if tmpl is None:
+                continue
+            c = ws.cell(row=r, column=j, value=guard(tmpl.format(r=r, **cm), r))
+            if fmt:
+                c.number_format = fmt
     for i, sym in enumerate(symbols):
         r = first + i
         rows = hist[sym]
@@ -794,20 +843,10 @@ def build_time_cycles(wb, symbols, hist):
         w = closes[-120:]
         lo_i = len(closes) - 120 + w.index(min(w))
         hi_i = len(closes) - 120 + w.index(max(w))
-        ws.cell(row=r, column=1, value='=IFERROR(Watchlist!$A${w},"")'.format(w=5 + i))
         ws.cell(row=r, column=2, value=rows[lo_i]["date"]).number_format = F_DATE
         ws.cell(row=r, column=3, value=rows[hi_i]["date"]).number_format = F_DATE
         ws.cell(row=r, column=4, value=80)
         ws.cell(row=r, column=13, value=34)
-        ws.cell(row=r, column=16, value="")
-        ws.cell(row=r, column=17, value="")
-        ws.cell(row=r, column=18, value="")
-        for j, (key, _lbl, _d, _w2, fmt, tmpl) in enumerate(TC_COLS, start=1):
-            if tmpl is None:
-                continue
-            c = ws.cell(row=r, column=j, value=tmpl.format(r=r, **cm))
-            if fmt:
-                c.number_format = fmt
     style_data(ws, first, lastrow, 1, len(TC_COLS), size=9)
     for r in range(first, lastrow + 1):
         for j, (_k, _l, _d, _w2, fmt, _t) in enumerate(TC_COLS):
@@ -820,14 +859,14 @@ def build_time_cycles(wb, symbols, hist):
 
     dvw = DataValidation(type="list", formula1='"1,2,3,4,5,A,B,C"', allow_blank=True)
     ws.add_data_validation(dvw)
-    dvw.add("{c}{a}:{c}{b}".format(c=cm["wave"], a=first, b=lastrow + 30))
+    dvw.add("{c}{a}:{c}{b}".format(c=cm["wave"], a=first, b=lastrow))
     dvd = DataValidation(type="list",
                          formula1='"ریزموج,فرعی,میانی,اولیه,چرخه‌ای,ابرچرخه"', allow_blank=True)
     ws.add_data_validation(dvd)
-    dvd.add("{c}{a}:{c}{b}".format(c=cm["degree"], a=first, b=lastrow + 30))
+    dvd.add("{c}{a}:{c}{b}".format(c=cm["degree"], a=first, b=lastrow))
     dvc = DataValidation(type="whole", operator="between", formula1=1, formula2=5, allow_blank=True)
     ws.add_data_validation(dvc)
-    dvc.add("{c}{a}:{c}{b}".format(c=cm["conf"], a=first, b=lastrow + 30))
+    dvc.add("{c}{a}:{c}{b}".format(c=cm["conf"], a=first, b=lastrow))
 
     ws.conditional_formatting.add("{c}{a}:{c}{b}".format(c=cm["z_total"], a=first, b=lastrow),
                                   ColorScaleRule(start_type="num", start_value=-10, start_color=K.C_SSELL_BG,
@@ -857,7 +896,7 @@ def build_time_cycles(wb, symbols, hist):
 def build_signals(wb, symbols, calc_first, cm):
     ws = wb.create_sheet("Signals")
     ws.sheet_view.rightToLeft = True
-    n = len(symbols)
+    n = N_SYM_ROWS
     hrow, first = 3, 4
     lastrow = first + n - 1
     cols = [
@@ -890,7 +929,7 @@ def build_signals(wb, symbols, calc_first, cm):
         cr = calc_first + i          # ردیف متناظر در Calculations
         C = lambda key: "Calculations!$%s$%d" % (cm[key], cr)
         f = {
-            1: '=IFERROR(%s,"")' % C("sym"),
+            1: '=IF({s}="","",{s})'.format(s=C("sym")),
             2: '=IFERROR(INDEX(Watchlist!$B$1:$B$5000,MATCH($A{r},Watchlist!$A$1:$A$5000,0)),"")'.format(r=r),
             3: '=IFERROR(INDEX(Watchlist!$F$1:$F$5000,MATCH($A{r},Watchlist!$A$1:$A$5000,0)),"")'.format(r=r),
             4: '=IFERROR(INDEX(Watchlist!$E$1:$E$5000,MATCH($A{r},Watchlist!$A$1:$A$5000,0)),"")'.format(r=r),
@@ -925,7 +964,7 @@ def build_signals(wb, symbols, calc_first, cm):
             26: '=IFERROR(%s,"")' % C("liq"),
         }
         for ci, formula in f.items():
-            c = ws.cell(row=r, column=ci, value=formula)
+            c = ws.cell(row=r, column=ci, value=formula if ci == 1 else guard(formula, r))
             if cols[ci - 1][2]:
                 c.number_format = cols[ci - 1][2]
     style_data(ws, first, lastrow, 1, len(cols), size=9)
@@ -1029,14 +1068,15 @@ def build_options(wb):
     widths(ws, [c[2] for c in OPT_COLS])
     hdr(ws, hrow, [c[0] for c in OPT_COLS], [c[1] for c in OPT_COLS])
     first = hrow + 2
-    lastrow = first + len(OPT_SAMPLE) - 1
+    lastrow = first + N_OPT_ROWS - 1
 
-    for i, row in enumerate(OPT_SAMPLE):
+    for i in range(N_OPT_ROWS):
         r = first + i
-        for j, v in enumerate(row):
-            c = ws.cell(row=r, column=j + 1, value=v)
-            if OPT_COLS[j][3]:
-                c.number_format = OPT_COLS[j][3]
+        if i < len(OPT_SAMPLE):
+            for j, v in enumerate(OPT_SAMPLE[i]):
+                c = ws.cell(row=r, column=j + 1, value=v)
+                if OPT_COLS[j][3]:
+                    c.number_format = OPT_COLS[j][3]
         F = {
             15: '=IFERROR(INDEX(Calculations!$D$1:$D$5000,MATCH($D{r},Calculations!$A$1:$A$5000,0)),"")',
             16: '=IFERROR($O{r}/$E{r},"")',
@@ -1045,7 +1085,8 @@ def build_options(wb):
             18: '=IFERROR(IF($C{r}="Call",MAX(0,$O{r}-$E{r}),MAX(0,$E{r}-$O{r})),"")',
             19: '=IFERROR(MAX(0,$I{r}-$R{r}),"")',
             20: '=IFERROR($G{r}/365,"")',
-            21: '=IFERROR($I{r}/$O{r}*SQRT(2*PI()/$T{r}),"")',
+            21: '=IF(OR($P{r}="",ABS($P{r}-1)>3*OPT_ATM_BAND),"",'
+                'IFERROR($I{r}/$O{r}*SQRT(2*PI()/$T{r}),""))',
             22: '=IFERROR((LN($O{r}/$E{r})+(OPT_RF+OPT_VOL^2/2)*$T{r})/(OPT_VOL*SQRT($T{r})),"")',
             23: '=IFERROR($V{r}-OPT_VOL*SQRT($T{r}),"")',
             24: '=IFERROR(IF($C{r}="Call",NORMSDIST($V{r}),NORMSDIST($V{r})-1),"")',
@@ -1070,7 +1111,8 @@ def build_options(wb):
                 '&" | "&$G{r}&" روز تا سررسید"',
         }
         for ci, tmpl in F.items():
-            c = ws.cell(row=r, column=ci, value=tmpl.format(r=r, tot=COLREF["calc"]["total"]))
+            c = ws.cell(row=r, column=ci,
+                        value=guard(tmpl.format(r=r, tot=COLREF["calc"]["total"]), r))
             if OPT_COLS[ci - 1][3]:
                 c.number_format = OPT_COLS[ci - 1][3]
     style_data(ws, first, lastrow, 1, len(OPT_COLS), size=9)
@@ -1210,7 +1252,7 @@ def build_dashboard(wb, sig_first, sig_last, calc_first, calc_last, cm, wl_last)
     top_hdrs = ["رتبه", "نماد", "نام شرکت", "آخرین قیمت", "امتیاز کل", "سیگنال", "قدرت", "جریان پول هوشمند"]
     top_w = [7, 12, 26, 13, 11, 14, 8, 22]
 
-    def top_block(start_row, title, rank_col, n=10):
+    def top_block(start_row, title, rank_col, qualify, n=10):
         section(start_row, title)
         for i, h in enumerate(top_hdrs):
             c = ws.cell(row=start_row + 1, column=1 + i, value=h)
@@ -1224,7 +1266,11 @@ def build_dashboard(wb, sig_first, sig_last, calc_first, calc_last, cm, wl_last)
             r = start_row + 1 + k
             ws.cell(row=r, column=1, value=k).font = Font(name=FONT, size=9, bold=True)
             ws.cell(row=r, column=1).alignment = Alignment(horizontal="center", vertical="center")
-            sym = '=IFERROR(INDEX({sr},MATCH({k},{rr},0)),"")'.format(sr=symrng, rr=rng, k=k)
+            totrng = "Calculations!${c}${a}:${c}${b}".format(
+                c=cm["total"], a=calc_first, b=calc_last)
+            sym = ('=IFERROR(IF(INDEX({tr},MATCH({k},{rr},0)){q},'
+                   'INDEX({sr},MATCH({k},{rr},0)),""),"")').format(
+                sr=symrng, rr=rng, tr=totrng, k=k, q=qualify)
             ws.cell(row=r, column=2, value=sym)
             for ci, scol, fmt in ((3, "B", None), (4, "E", F_PRICE), (5, "T", F_NUM1),
                                   (6, "U", None), (7, "V", "0"), (8, "J", None)):
@@ -1249,8 +1295,10 @@ def build_dashboard(wb, sig_first, sig_last, calc_first, calc_last, cm, wl_last)
                                                      end_type="num", end_value=10, end_color=K.C_SBUY_BG))
         return start_row + 1 + n
 
-    end1 = top_block(18, "۳) ده نماد برتر برای خرید (بر اساس امتیاز کل)", cm["rank_buy"])
-    end2 = top_block(end1 + 2, "۴) ده نماد برتر برای فروش (بر اساس امتیاز کل)", cm["rank_sell"])
+    end1 = top_block(18, "۳) ده نماد برتر برای خرید (فقط امتیاز ≥ حد خرید)",
+                     cm["rank_buy"], ">=TH_BUY")
+    end2 = top_block(end1 + 2, "۴) ده نماد برتر برای فروش (فقط امتیاز ≤ حد فروش)",
+                     cm["rank_sell"], "<=TH_SELL")
 
     for i, w in enumerate(top_w):
         ws.column_dimensions[get_column_letter(i + 1)].width = max(

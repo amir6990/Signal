@@ -293,9 +293,9 @@ def update_daily_history(ws, targets, top):
                 c = ws.cell(row=r, column=i + 1, value=v)
                 if BW.DH_RAW[i][3]:
                     c.number_format = BW.DH_RAW[i][3]
-            for j, (_l, _d, _w, fmt, tmpl) in enumerate(BW.DH_CALC):
+            for j, (_l, _d, _w, fmt, tmpl, back) in enumerate(BW.DH_CALC):
                 c = ws.cell(row=r, column=nraw + 1 + j,
-                            value=tmpl.format(r=r, p=r - 1, n=r + 1))
+                            value=BW.dh_formula(tmpl, back, r))
                 if fmt:
                     c.number_format = fmt
             r += 1
@@ -333,9 +333,10 @@ def update_market_index(ws, top):
                 value='=IF($N{r}>1,${s}{r}/${s}{p}-1,"")'.format(r=r, p=r - 1, s=src))
     for col, src, per in ((6, "D", "MA_SHORT"), (7, "D", "MA_MED"), (8, "D", "MA_LONG2"),
                           (11, "I", "MA_SHORT"), (12, "I", "MA_MED"), (13, "I", "MA_LONG2")):
+        lo = max(5, r - 400)
         ws.cell(row=r, column=col,
-                value='=IF($N{r}>={p},AVERAGE(INDEX(${s}$1:${s}$5000,ROW()-{p}+1):${s}{r}),"")'.format(
-                    r=r, s=src, p=per))
+                value='=IF($N{r}>={p},AVERAGE(INDEX(${s}${lo}:${s}{r},{k}-{p}):${s}{r}),"")'.format(
+                    r=r, s=src, p=per, lo=lo, k=r - lo + 2))
     print("  ✓ Market_Index: ردیف %d به‌روز شد" % r)
     return 1
 
