@@ -1,0 +1,13 @@
+# فایل‌های قفل LibreOffice — هنگام باز بودن فایل ساخته می‌شوند
+.~lock.*#
+~$*.xlsx
+
+# پایتون
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# خروجی‌های محلی
+forecasts.json
+out/
