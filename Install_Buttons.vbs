@@ -23,6 +23,8 @@ Dim basTime
 basTime = fso.BuildPath(here, "vba\TimeCycles.bas")
 Dim basMacro
 basMacro = fso.BuildPath(here, "vba\MacroTime.bas")
+Dim basStats
+basStats = fso.BuildPath(here, "vba\MacroStats.bas")
 
 If Not fso.FileExists(basPath) Then
     MsgBox "فایل ماژول پیدا نشد:" & vbCrLf & basPath & vbCrLf & vbCrLf & _
@@ -88,10 +90,11 @@ For i = 0 To UBound(files)
 
             ' --- ماژول‌های قبلی را بردار تا نصب دوباره تمیز باشد ---
             Dim again
-            For again = 0 To 2
+            For again = 0 To 3
                 For Each vbc In wb.VBProject.VBComponents
                     If vbc.Name = "SignalRefresh" Or vbc.Name = "TimeCycles" _
-                       Or vbc.Name = "MacroTime" Then
+                       Or vbc.Name = "MacroTime" _
+                       Or vbc.Name = "MacroStats" Then
                         wb.VBProject.VBComponents.Remove vbc
                         Exit For
                     End If
@@ -101,6 +104,7 @@ For i = 0 To UBound(files)
 
             wb.VBProject.VBComponents.Import basPath
             If fso.FileExists(basTime) Then wb.VBProject.VBComponents.Import basTime
+            If fso.FileExists(basStats) Then wb.VBProject.VBComponents.Import basStats
             If fso.FileExists(basMacro) Then wb.VBProject.VBComponents.Import basMacro
 
             If Err.Number <> 0 Then

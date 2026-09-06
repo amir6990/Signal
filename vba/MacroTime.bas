@@ -408,6 +408,14 @@ Public Sub RefreshMacro()
         Next k
     End If
 
+    ' --- پانل آماری: هم‌انباشتگی، پیشرو/پیرو، مطالعه رویداد ---
+    ' اینها هم با همین یک کلیک به‌روز می‌شوند. رابطه بلندمدت کند تغییر
+    ' می‌کند، ولی این دلیلِ «کمتر کلیک کن» است، نه دلیلِ «دکمه نداشته باش».
+    Application.StatusBar = "پانل آماری ..."
+    On Error Resume Next
+    MacroStats.RefreshMacroStats
+    On Error GoTo 0
+
     Application.Calculate
     Application.StatusBar = False
     Application.ScreenUpdating = True
@@ -419,9 +427,8 @@ Public Sub RefreshMacro()
     For k = 1 To 7
         msg = msg & nm(k - 1) & ": " & IIf(got(k) > 0, got(k) & " روز", "دریافت نشد") & vbCrLf
     Next k
-    msg = msg & vbCrLf & "شیت Real_Index خودش حساب شد." & vbCrLf & _
-          "برای پانل هم‌انباشتگی و پیشرو/پیرو:" & vbCrLf & _
-          "python -m timeframe macro-panel"
+    msg = msg & vbCrLf & "شیت‌های Real_Index، Macro_Cycles، Lead_Lag، " & _
+          "Cointegration و Geo_Events همگی به‌روز شدند."
     MsgBox msg, vbInformation, "به‌روزرسانی کلان"
 End Sub
 

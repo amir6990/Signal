@@ -647,7 +647,8 @@ def main():
                test_weight_search_guards,
                test_vba_structure, test_vba_parsing_logic,
                test_cycle_detector_calibration, test_vba_cycle_port,
-               test_macro_series_analysis, test_macro_workbook_shape):
+               test_macro_series_analysis, test_macro_workbook_shape,
+               test_vba_macro_stats_port):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -1509,6 +1510,150 @@ def test_macro_workbook_shape():
     f9 = ws.cell(row=300, column=9).value
     check("ستون «توهم تورمی» = بازده ریالی منهای دلاری",
           isinstance(f9, str) and "$G" in f9 and "$H" in f9, str(f9)[:60])
+
+
+
+def test_vba_macro_stats_port():
+    section("۳۹) آمار کلان در ماکرو، در برابر موتور پایتون")
+    import random as _r
+    src = _vba_src("MacroStats.bas")
+    if src is None:
+        check("ماژول MacroStats موجود است", False)
+        return
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from timeframe.macro import series_analysis as SA
+
+    # مقادیر بحرانی مک‌کینون باید در هر دو یکی باشند، وگرنه دکمه اکسل و
+    # اسکریپت پایتون دو جواب متفاوت می‌دهند و معلوم نیست کدام درست است.
+    for want, kind in ((-3.33613, 1), (-2.86154, 0)):
+        m = re.search(r"MacKinnonCrit = (-?[0-9.]+)"
+                      if kind == 0 else r"MacKinnonCrit = (-?3\.33613)", src)
+        check("ثابت بحرانی %s در ماکرو هست" % want, str(abs(want)) in src,
+              "kind=%d" % kind)
+    check("پنجره رویداد [−۱،+۳] در ماکرو", "EventCAR(rets, nRow, idx, 1, 3, mu" in src)
+    check("تصحیح چندگانگی در ماکرو هست",
+          "1# - (1# - ALPHA_CCF) ^ (1# / nLag)" in src)
+    check("جدول هم‌انباشتگی جدا از ADF معمولی است",
+          "MacKinnonCrit(aN, 1)" in src)
+
+    # --- پورت وفادار توابع ماکرو ---
+    def solve(A, b, n):
+        M = [[A[i][j] for j in range(n)] + [b[i]] for i in range(n)]
+        for c in range(n):
+            piv = max(range(c, n), key=lambda r: abs(M[r][c]))
+            if abs(M[piv][c]) < 1e-12:
+                return None
+            M[c], M[piv] = M[piv], M[c]
+            pv = M[c][c]
+            for j in range(c, n + 1):
+                M[c][j] /= pv
+            for i in range(n):
+                if i != c and M[i][c] != 0:
+                    f = M[i][c]
+                    for j in range(c, n + 1):
+                        M[i][j] -= f * M[c][j]
+        return [M[i][n] for i in range(n)]
+
+    def inverse(A, n):
+        M = [[A[i][j] for j in range(n)]
+             + [1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+        for c in range(n):
+            piv = max(range(c, n), key=lambda r: abs(M[r][c]))
+            if abs(M[piv][c]) < 1e-12:
+                return None
+            M[c], M[piv] = M[piv], M[c]
+            pv = M[c][c]
+            for j in range(2 * n):
+                M[c][j] /= pv
+            for i in range(n):
+                if i != c and M[i][c] != 0:
+                    f = M[i][c]
+                    for j in range(2 * n):
+                        M[i][j] -= f * M[c][j]
+        return [row[n:] for row in M]
+
+    def ols(rows, tgt, n, k):
+        A = [[0.0] * k for _ in range(k)]
+        b = [0.0] * k
+        for t in range(n):
+            for i in range(k):
+                b[i] += rows[t][i] * tgt[t]
+                for j in range(k):
+                    A[i][j] += rows[t][i] * rows[t][j]
+        beta = solve([r[:] for r in A], b[:], k)
+        if beta is None:
+            return None, None
+        s2 = 0.0
+        for t in range(n):
+            e = tgt[t] - sum(beta[i] * rows[t][i] for i in range(k))
+            s2 += e * e
+        s2 /= (n - k)
+        inv = inverse(A, k)
+        if inv is None:
+            return beta, None
+        return beta, [math.sqrt(max(0.0, s2 * inv[i][i])) for i in range(k)]
+
+    def adf_stat(y, n):
+        if n < 25:
+            return 0.0, 0
+        dy = [y[i] - y[i - 1] for i in range(1, n)]
+        maxL = max(1, min(int(12 * (n / 100.0) ** 0.25), n // 5))
+        for L in range(maxL, -1, -1):
+            k = 2 + L
+            m = (n - 1) - (L + 1)
+            if m >= k + 10:
+                rows, tgt = [], []
+                for t in range(L + 1, n - 1):
+                    rows.append([1.0, y[t]] + [dy[t - j] for j in range(1, L + 1)])
+                    tgt.append(dy[t])
+                beta, se = ols(rows, tgt, m, k)
+                if beta and se and se[1] > 0:
+                    return beta[1] / se[1], m
+        return 0.0, 0
+
+    def vba_eg(y, x, n):
+        ly, lx = [], []
+        for i in range(n):
+            if y[i] > 0 and x[i] > 0:
+                ly.append(math.log(y[i]))
+                lx.append(math.log(x[i]))
+        m = len(ly)
+        if m < 60:
+            return None
+        beta, _ = ols([[1.0, v] for v in lx], ly, m, 2)
+        if not beta:
+            return None
+        resid = [ly[i] - (beta[0] + beta[1] * lx[i]) for i in range(m)]
+        st, aN = adf_stat(resid, m)
+        if aN == 0:
+            return None
+        return beta[1], st, -3.33613 - 6.1101 / aN - 6.823 / (aN * aN)
+
+    dif = 0
+    for k in range(8):
+        _r.seed(7000 + k)
+        n = 600
+        a = [100.0]
+        for _ in range(n - 1):
+            a.append(a[-1] * math.exp(0.0008 + _r.gauss(0, 0.011)))
+        e = 0.0
+        b = []
+        for v in a:
+            e = 0.9 * e + _r.gauss(0, 0.015)
+            b.append(math.exp(1.0 + 0.9 * math.log(v) + e))
+        v = vba_eg(b, a, n)
+        p = SA.engle_granger(b, a)
+        if v and p:
+            if (abs(v[0] - p.beta) > 1e-9 or abs(v[1] - p.adf_stat) > 1e-9
+                    or abs(v[2] - p.crit_5) > 1e-9):
+                dif += 1
+        # ADF ساده هم مقایسه شود
+        vs, _ = adf_stat(a, len(a))
+        ps = SA.adf(a)
+        if abs(vs - ps.stat) > 1e-9:
+            dif += 1
+    check("هم‌انباشتگی و ADF ماکرو با پایتون یکی‌اند", dif == 0,
+          "%d اختلاف از ۱۶ مقایسه" % dif)
 
 
 
