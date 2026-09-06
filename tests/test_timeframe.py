@@ -461,8 +461,11 @@ def test_workbook_split():
                    "Daily_History", "Market_Index", "Time_Link", "Watchlist",
                    "Settings", "API_Map", "Documentation"},
         "options": {"Options", "Underlying", "Settings", "API_Map", "Documentation"},
-        "time": {"Time_Cycles", "Macro_Cycles", "Forecast", "Sources",
-                 "Settings", "Documentation"},
+        # لایه زمانی حالا کلان است: شاخص، دلار، طلا و ژئوپلیتیک —
+        # نه چرخه تک‌سهم. پنج شیت تحلیل کلان اضافه شده‌اند.
+        "time": {"Real_Index", "Macro_Cycles", "Lead_Lag", "Cointegration",
+                 "Geo_Events", "Macro_Series", "Time_Cycles", "Forecast",
+                 "Sources", "Settings", "Documentation"},
         "gold": {"Gold_Dashboard", "Asset_Signals", "Coin_Bubble", "Gold_Input",
                  "Gold_History", "Hist_Gram18", "Hist_Ons",
                  "Settings", "Documentation"},
