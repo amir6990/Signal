@@ -850,6 +850,16 @@ TC_COLS = [
 ]
 
 
+# نگاشت نماد → InsCode، از همان جدولی که Watchlist از آن ساخته می‌شود.
+# اگر روزی نمادی اضافه شود، همان‌جا اضافه می‌شود و اینجا خودکار می‌آید.
+def _inscodes():
+    try:
+        from sample_data import SYMBOLS
+    except ImportError:
+        return {}
+    return {row[0]: row[2] for row in SYMBOLS}
+
+
 def build_time_cycles(wb, symbols, hist, standalone=False):
     """standalone=True: فایل مستقل بدون Watchlist و Daily_History.
 
@@ -874,14 +884,29 @@ def build_time_cycles(wb, symbols, hist, standalone=False):
         ws.cell(row=5 + i, column=28, value=g).font = Font(name=FONT, size=8)
     ws.column_dimensions["AB"].width = 12
 
+    # ستون Z — کد نماد برای دکمه «تحلیل چرخه زمانی».
+    # ماکرو تاریخچه را با همین کد از tsetmc می‌گیرد. در فایل مستقل که
+    # Watchlist ندارد، این تنها جایی است که کد نماد از آن خوانده می‌شود.
+    ws.cell(row=3, column=26, value="کد نماد (InsCode)").font = Font(
+        name=FONT, bold=True, size=8)
+    ws.cell(row=4, column=26, value="برای دکمه ماکرو").font = Font(
+        name=FONT, size=7, color="808080")
+    ws.column_dimensions["Z"].width = 20
+
     for i in range(N_SYM_ROWS):
         r = first + i
         if standalone:
             if i < len(symbols):
                 ws.cell(row=r, column=1, value=symbols[i])
+                ins = _inscodes().get(symbols[i])
+                if ins:
+                    ws.cell(row=r, column=26, value=ins).font = Font(
+                        name=FONT, size=8, color=K.C_BLUE_INPUT)
             c0 = ws.cell(row=r, column=1)
             c0.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
             c0.font = Font(name=FONT, size=9, bold=True, color=K.C_BLUE_INPUT)
+            cz = ws.cell(row=r, column=26)
+            cz.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
         else:
             ws.cell(row=r, column=1,
                     value='=IF(COUNTA(Watchlist!$A${w})=0,"",Watchlist!$A${w})'.format(w=5 + i))

@@ -642,7 +642,8 @@ def main():
                test_asset_signals_sheet,
                test_score_replica_matches_workbook,
                test_weight_search_guards,
-               test_vba_structure, test_vba_parsing_logic):
+               test_vba_structure, test_vba_parsing_logic,
+               test_cycle_detector_calibration, test_vba_cycle_port):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -896,9 +897,12 @@ def test_weight_search_guards():
 # ماکرو اکسل را نمی‌شود از اینجا اجرا کرد، ولی دو چیزش را می‌شود سنجید:
 # ۱) ساختار فایل (توازن بلوک‌ها، اعلام متغیرها) — چون Option Explicit است
 # ۲) منطق تجزیه JSON و تاریخ شمسی، با پورت وفادار به پایتون
-def _vba_src():
+VBA_MODULES = ("SignalRefresh.bas", "TimeCycles.bas")
+
+
+def _vba_src(name="SignalRefresh.bas"):
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-    path = os.path.join(root, "vba", "SignalRefresh.bas")
+    path = os.path.join(root, "vba", name)
     if not os.path.exists(path):
         return None
     return io.open(path, encoding="utf-8").read()
@@ -943,16 +947,18 @@ def test_vba_structure():
             depth -= 1
     check("If / End If متوازن است", depth == 0, "اختلاف %d" % depth)
 
-    for op, cl, name in ((r"^(public |private )?sub ", "end sub", "Sub"),
-                         (r"^(public |private )?function ", "end function", "Function"),
-                         (r"^for ", "next", "For"),
-                         (r"^do while", "loop", "Do")):
+    # ⚠️ بستن‌ها با \b گرفته می‌شوند نه startswith: برچسبی مثل «NextSym:»
+    # با startswith("next") اشتباه شمرده می‌شد و هشدار کاذب می‌داد.
+    for op, cl, name in ((r"^(public |private )?sub ", r"^end sub$", "Sub"),
+                         (r"^(public |private )?function ", r"^end function$", "Function"),
+                         (r"^for\b", r"^next\b", "For"),
+                         (r"^do while", r"^loop$", "Do")):
         d = 0
         for l in lines:
             low = l.lower()
             if re.match(op, low):
                 d += 1
-            elif low.startswith(cl):
+            elif re.match(cl, low):
                 d -= 1
         check("%s متوازن است" % name, d == 0, "اختلاف %d" % d)
 
@@ -1140,6 +1146,209 @@ def test_vba_parsing_logic():
            != jalali_str(d0 + datetime.timedelta(days=k))]
     check("تاریخ شمسی ماکرو روی ۴۰۰۰ روز با پایتون یکی است",
           not bad, str(bad[:2]))
+
+
+
+def test_cycle_detector_calibration():
+    section("۳۵) کالیبراسیون آشکارساز چرخه")
+    import random as _r
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from timeframe import spectral
+    from timeframe.config import SpectralConfig
+
+    # نرخ مثبت کاذب روی نویز سفید خالص. این عدد باید صفر بماند —
+    # آشکارسازی که روی نویز چرخه می‌بیند، بدتر از نداشتن آشکارساز است.
+    fp = 0
+    N = 40
+    for k in range(N):
+        _r.seed(90000 + k + 600)
+        y = [_r.gauss(0, 1) for _ in range(600)]
+        if spectral.dominant_cycle(y):
+            fp += 1
+    check("روی نویز سفید هیچ چرخه‌ای پیدا نمی‌کند", fp == 0,
+          "%d از %d" % (fp, N))
+
+    # و همان سخت‌گیری نباید چرخه واقعی را بکشد
+    hit = 0
+    M = 20
+    for k in range(M):
+        _r.seed(4242 + k)
+        P = [20, 30, 45, 65][k % 4]
+        y = [100 + 9 * math.sin(2 * math.pi * i / P) + _r.gauss(0, 1.3)
+             for i in range(600)]
+        f = spectral.dominant_cycle(y)
+        if f and abs(f.period - P) / P < 0.15:
+            hit += 1
+    check("چرخه واقعی را از دست نمی‌دهد", hit == M, "%d از %d" % (hit, M))
+
+    # حتی وقتی سیگنال ضعیف و نویز زیاد است
+    hit = 0
+    for k in range(M):
+        _r.seed(777 + k)
+        P = [20, 30, 45, 65][k % 4]
+        y = [100 + 5 * math.sin(2 * math.pi * i / P) + _r.gauss(0, 2.5)
+             for i in range(600)]
+        f = spectral.dominant_cycle(y)
+        if f and abs(f.period - P) / P < 0.15:
+            hit += 1
+    check("سیگنال ضعیف در نویز زیاد هم پیدا می‌شود", hit >= M - 1,
+          "%d از %d" % (hit, M))
+
+    # مقدار ۲٫۰ که پیش‌تر پیش‌فرض بود، مثبت کاذب می‌داد. این تست ثبت
+    # می‌کند که چرا ۳٫۰ انتخاب شد، تا کسی بی‌دلیل برنگرداندش.
+    loose = SpectralConfig(min_amp_ratio=2.0)
+    fp2 = 0
+    for k in range(N):
+        _r.seed(90000 + k + 600)
+        y = [_r.gauss(0, 1) for _ in range(600)]
+        if spectral.dominant_cycle(y, loose):
+            fp2 += 1
+    check("با آستانه سست‌تر (۲٫۰) مثبت کاذب ظاهر می‌شود",
+          fp2 > 0, "%d از %d — دلیل انتخاب ۳٫۰" % (fp2, N))
+
+
+def test_vba_cycle_port():
+    section("۳۶) موتور چرخه VBA در برابر موتور پایتون")
+    import random as _r
+    src = _vba_src("TimeCycles.bas")
+    if src is None:
+        check("ماژول TimeCycles موجود است", False)
+        return
+
+    # ثابت‌های ماکرو باید با پیکربندی پایتون یکی باشند، وگرنه دکمه اکسل
+    # جواب دیگری از اسکریپت پایتون می‌دهد و کاربر نمی‌فهمد کدام درست است.
+    from timeframe.config import SpectralConfig
+    cfg = SpectralConfig()
+    pairs = (("MIN_PERIOD", cfg.min_period), ("MAX_PERIOD_RATIO", cfg.max_period_ratio),
+             ("MAX_PERIOD_CAP", cfg.max_period_cap), ("ALPHA", cfg.alpha),
+             ("MIN_SEGMENTS", cfg.min_segments), ("PEAK_SEP", cfg.peak_min_separation),
+             ("MIN_AMP_RATIO", cfg.min_amp_ratio))
+    for name, want in pairs:
+        m = re.search(r"Const %s As \w+ = ([0-9.#]+)" % name, src)
+        got = float(m.group(1).rstrip("#")) if m else None
+        check("ثابت %s در ماکرو = %s" % (name, want), got == float(want),
+              "ماکرو %s" % got)
+
+    # --- پورت وفادار الگوریتم ماکرو ---
+    def detrend(y):
+        n = len(y)
+        sx = n * (n - 1) / 2.0
+        sxx = (n - 1) * n * (2 * n - 1) / 6.0
+        sy = sum(y)
+        sxy = sum(i * v for i, v in enumerate(y))
+        den = n * sxx - sx * sx
+        if den == 0:
+            return list(y)
+        sl = (n * sxy - sx * sy) / den
+        ic = (sy - sl * sx) / n
+        return [y[i] - (sl * i + ic) for i in range(n)]
+
+    def goertzel(y, lo, hi, period):
+        n = hi - lo + 1
+        if n < 2 or period < 2:
+            return 0.0, 0.0, 0.0
+        w = 2 * math.pi / period
+        cw, sw = math.cos(w), math.sin(w)
+        coeff = 2 * cw
+        s1 = s2 = 0.0
+        for i in range(lo, hi + 1):
+            s0 = y[i] + coeff * s1 - s2
+            s2, s1 = s1, s0
+        re, im = s1 - s2 * cw, s2 * sw
+        return 2 * math.sqrt(re * re + im * im) / n, re, im
+
+    def rayleigh(rx, ry, k):
+        sx = sy = 0.0
+        cnt = 0
+        for i in range(k):
+            m = math.hypot(rx[i], ry[i])
+            if m > 0:
+                sx += rx[i] / m
+                sy += ry[i] / m
+                cnt += 1
+        if cnt < 2:
+            return 1.0
+        rbar = math.hypot(sx, sy) / cnt
+        z = cnt * rbar * rbar
+        p = math.exp(-z) * (1 + (2 * z - z * z) / (4 * cnt)
+                            - (24 * z - 132 * z ** 2 + 76 * z ** 3
+                               - 9 * z ** 4) / (288 * cnt * cnt))
+        return min(1.0, max(0.0, p))
+
+    def vba_dominant(closes):
+        n = len(closes)
+        if n < 40:
+            return 0.0
+        y = detrend(closes)
+        maxp = min(cfg.max_period_cap, n * cfg.max_period_ratio)
+        if maxp <= cfg.min_period:
+            return 0.0
+        per, amp = [], []
+        p = float(cfg.min_period)
+        while p <= maxp:
+            a, _, _ = goertzel(y, 0, n - 1, p)
+            per.append(p)
+            amp.append(a)
+            p += max(0.5, p * 0.01)
+        if len(per) < 3:
+            return 0.0
+        med = sorted(amp)[len(amp) // 2] or 1e-12
+        nt = max(1, int(n / (2.0 * cfg.min_period) - n / (2.0 * maxp)))
+        aadj = 1.0 - (1.0 - cfg.alpha) ** (1.0 / nt)
+        peaks = [i for i in range(1, len(amp) - 1)
+                 if amp[i] >= amp[i - 1] and amp[i] >= amp[i + 1]]
+        peaks.sort(key=lambda i: -amp[i])
+        chosen = []
+        for i in peaks:
+            pp = per[i]
+            if any(abs(pp - c) / c < cfg.peak_min_separation for c in chosen):
+                continue
+            chosen.append(pp)
+            if len(chosen) >= 15:
+                break
+        bestP = bestA = 0.0
+        for pp in chosen:
+            a, _, _ = goertzel(y, 0, n - 1, pp)
+            if a / med < cfg.min_amp_ratio:
+                continue
+            seg = int(round(pp))          # معادل CLng در VBA
+            k = n // seg if seg >= 2 else 0
+            if k < cfg.min_segments:
+                continue
+            rx, ry = [], []
+            for j in range(k):
+                hi = n - 1 - j * seg
+                lo = max(0, hi - seg + 1)
+                _a, re, im = goertzel(y, lo, hi, pp)
+                rx.append(re)
+                ry.append(im)
+            if rayleigh(rx, ry, k) <= aadj and a > bestA:
+                bestA, bestP = a, pp
+        return bestP
+
+    from timeframe import spectral
+    diff = []
+    for k in range(18):
+        _r.seed(5000 + k)
+        kind = k % 3
+        if kind == 0:
+            y = [_r.gauss(0, 1) for _ in range(600)]
+        elif kind == 1:
+            v, y = 100.0, []
+            for _ in range(600):
+                v *= math.exp(_r.gauss(0, 0.012))
+                y.append(v)
+        else:
+            P = [18, 27, 44, 70][k % 4]
+            y = [100 + 9 * math.sin(2 * math.pi * i / P) + _r.gauss(0, 1.3)
+                 + 0.015 * i for i in range(600)]
+        vp = vba_dominant(y)
+        f = spectral.dominant_cycle(y)
+        pp = f.period if f else 0.0
+        same = (vp == 0 and pp == 0) or (vp > 0 and pp > 0 and abs(vp - pp) < 0.6)
+        if not same:
+            diff.append((k, round(vp, 2), round(pp, 2)))
+    check("ماکرو و پایتون روی ۱۸ سری یک جواب می‌دهند", not diff, str(diff[:3]))
 
 
 

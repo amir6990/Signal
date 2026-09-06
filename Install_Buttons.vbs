@@ -19,6 +19,8 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 here = fso.GetParentFolderName(WScript.ScriptFullName)
 basPath = fso.BuildPath(here, "vba\SignalRefresh.bas")
+Dim basTime
+basTime = fso.BuildPath(here, "vba\TimeCycles.bas")
 
 If Not fso.FileExists(basPath) Then
     MsgBox "فایل ماژول پیدا نشد:" & vbCrLf & basPath & vbCrLf & vbCrLf & _
@@ -82,16 +84,20 @@ For i = 0 To UBound(files)
                 WScript.Quit 1
             End If
 
-            ' --- ماژول قبلی را بردار تا نصب دوباره تمیز باشد ---
-            For Each vbc In wb.VBProject.VBComponents
-                If vbc.Name = "SignalRefresh" Then
-                    wb.VBProject.VBComponents.Remove vbc
-                    Exit For
-                End If
+            ' --- ماژول‌های قبلی را بردار تا نصب دوباره تمیز باشد ---
+            Dim again
+            For again = 0 To 1
+                For Each vbc In wb.VBProject.VBComponents
+                    If vbc.Name = "SignalRefresh" Or vbc.Name = "TimeCycles" Then
+                        wb.VBProject.VBComponents.Remove vbc
+                        Exit For
+                    End If
+                Next
             Next
             Err.Clear
 
             wb.VBProject.VBComponents.Import basPath
+            If fso.FileExists(basTime) Then wb.VBProject.VBComponents.Import basTime
 
             If Err.Number <> 0 Then
                 report = report & "✘ " & files(i) & " — ماژول وارد نشد" & vbCrLf
@@ -115,6 +121,30 @@ For i = 0 To UBound(files)
                 shp.TextFrame2.TextRange.Font.Bold = True
                 shp.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
                 shp.OnAction = "SignalRefresh.RefreshAll"
+
+                ' --- دکمه دوم: تحلیل چرخه زمانی، فقط جایی که شیت را دارد ---
+                Dim hasTC, wsAny
+                hasTC = False
+                For Each wsAny In wb.Worksheets
+                    If wsAny.Name = "Time_Cycles" Then hasTC = True
+                Next
+                If hasTC Then
+                    Dim wsTC, shp2
+                    Set wsTC = wb.Worksheets("Time_Cycles")
+                    For Each shp2 In wsTC.Shapes
+                        If shp2.Name = "btnCycles" Then shp2.Delete
+                    Next
+                    Err.Clear
+                    Set shp2 = wsTC.Shapes.AddShape(5, 12, 12, 190, 34)
+                    shp2.Name = "btnCycles"
+                    shp2.Fill.ForeColor.RGB = RGB(31, 78, 121)
+                    shp2.Line.Visible = False
+                    shp2.TextFrame2.TextRange.Text = "تحلیل چرخه زمانی"
+                    shp2.TextFrame2.TextRange.Font.Size = 12
+                    shp2.TextFrame2.TextRange.Font.Bold = True
+                    shp2.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+                    shp2.OnAction = "TimeCycles.RefreshTimeCycles"
+                End If
 
                 ' 52 = xlOpenXMLWorkbookMacroEnabled
                 wb.SaveAs dst, 52
