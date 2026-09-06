@@ -34,7 +34,7 @@ def have_soffice():
     return shutil.which("soffice") or shutil.which("libreoffice")
 
 
-def recalc(path, timeout=600):
+def recalc(path, timeout=300):
     """بارگذاری و ذخیره مجدد با LibreOffice تا مقادیر فرمول نوشته شوند.
 
     روش: تبدیل به همان فرمت xlsx در یک پوشه موقت و جایگزینی فایل اصلی.
@@ -71,7 +71,12 @@ def recalc(path, timeout=600):
             r = subprocess.run(cmd, env=env, timeout=timeout,
                                capture_output=True, check=False)
         except subprocess.TimeoutExpired:
+            # مهم: subprocess.run با timeout فرایند را می‌کشد، ولی soffice
+            # ممکن است فرزندی جا بگذارد. نسخه اول این اسکریپت از فراخوانی
+            # ماکرو استفاده می‌کرد که بی‌نهایت منتظر می‌ماند و فایل را نیمه‌کاره
+            # رها می‌کرد — مهلت صریح از تکرار آن جلوگیری می‌کند.
             print("! بازمحاسبه بیش از %d ثانیه طول کشید: %s" % (timeout, name))
+            print("  فایل دست‌نخورده ماند. آن را در اکسل باز کنید و ذخیره کنید.")
             return 1
         produced = os.path.join(outdir, name)
         if not os.path.exists(produced):
@@ -88,7 +93,7 @@ def recalc(path, timeout=600):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="بازمحاسبه فرمول‌های اکسل")
     ap.add_argument("files", nargs="+")
-    ap.add_argument("--timeout", type=int, default=600)
+    ap.add_argument("--timeout", type=int, default=300)
     args = ap.parse_args(argv)
     rc = 0
     for f in args.files:
