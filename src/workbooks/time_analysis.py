@@ -17,10 +17,13 @@ from openpyxl.workbook.defined_name import DefinedName
 import build_workbook as B
 import common as K
 import sample_data as SD
+
+from . import macro_time as MT
 from common import FONT, hdr, note, title_block, widths
 
-SHEET_ORDER = ["Time_Cycles", "Macro_Cycles", "Forecast", "Sources",
-               "Settings", "Documentation"]
+SHEET_ORDER = ["Real_Index", "Macro_Cycles", "Lead_Lag", "Cointegration",
+               "Geo_Events", "Macro_Series", "Time_Cycles", "Forecast",
+               "Sources", "Settings", "Documentation"]
 
 TIME_DOC_EXTRA = [
     ("H2", "۹) اتصال این فایل به بقیه مجموعه"),
@@ -89,11 +92,19 @@ def build(out_path, hist=None, **_kw):
     wb.remove(wb.active)
 
     B.build_settings(wb, sections=("۱)", "۴)", "۷)", "۸)"))
+
+    # --- لایه کلان: موضوع اصلی این فایل ---
+    # پرسش این شیت‌ها درباره تک‌سهم نیست؛ درباره شاخص کل، دلار، طلا و
+    # رابطه‌شان با هم و با رویدادهای ژئوپلیتیک است.
+    MT.build_macro_series(wb)
+    MT.build_real_index(wb)
+    MT.build_macro_cycles(wb)
+    MT.build_lead_lag(wb)
+    MT.build_cointegration(wb)
+    MT.build_geo_events(wb)
+
+    # چرخه تک‌سهم هنوز هست ولی دیگر موضوع اصلی نیست
     B.build_time_cycles(wb, symbols, hist, standalone=True)
-    _placeholder(wb, "Macro_Cycles", "چرخه‌های بلند اقتصادی و ژئوپلیتیک",
-                 "وضعیت جاری امواج کندراتیف، پرز، دالیو، هاو و تقویم ساختاری ایران",
-                 "python -m timeframe export --workbook Time_Analysis.xlsx "
-                 "--data Stocks_Signals.xlsx")
     _placeholder(wb, "Forecast", "چشم‌انداز احتمالاتی",
                  "مدل رژیم مارکوف، نرخ پایه تجربی، توزیع افت و دفتر پیش‌بینی",
                  "python -m timeframe export --workbook Time_Analysis.xlsx "

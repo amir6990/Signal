@@ -643,7 +643,8 @@ def main():
                test_score_replica_matches_workbook,
                test_weight_search_guards,
                test_vba_structure, test_vba_parsing_logic,
-               test_cycle_detector_calibration, test_vba_cycle_port):
+               test_cycle_detector_calibration, test_vba_cycle_port,
+               test_macro_series_analysis, test_macro_workbook_shape):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -1349,6 +1350,162 @@ def test_vba_cycle_port():
         if not same:
             diff.append((k, round(vp, 2), round(pp, 2)))
     check("ماکرو و پایتون روی ۱۸ سری یک جواب می‌دهند", not diff, str(diff[:3]))
+
+
+
+def test_macro_series_analysis():
+    section("۳۷) تحلیل زمانی کلان — آزمون‌های منفی")
+    import random as _r
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from timeframe.macro import series_analysis as SA
+
+    # --- ADF ---
+    rej_rw = rej_st = 0
+    for k in range(20):
+        _r.seed(100 + k)
+        rw = [0.0]
+        st = [0.0]
+        for _ in range(400):
+            rw.append(rw[-1] + _r.gauss(0, 1))
+            st.append(0.6 * st[-1] + _r.gauss(0, 1))
+        if SA.adf(rw).stationary:
+            rej_rw += 1
+        if SA.adf(st).stationary:
+            rej_st += 1
+    check("ADF: گشت تصادفی را ایستا نمی‌خواند", rej_rw <= 2, "%d از ۲۰" % rej_rw)
+    check("ADF: سری ایستا را تشخیص می‌دهد", rej_st >= 18, "%d از ۲۰" % rej_st)
+
+    # --- هم‌انباشتگی: آزمون منفی ---
+    fp = 0
+    for k in range(20):
+        _r.seed(200 + k)
+        a = [100.0]
+        b = [100.0]
+        for _ in range(500):
+            a.append(a[-1] * math.exp(_r.gauss(0, 0.01)))
+            b.append(b[-1] * math.exp(_r.gauss(0, 0.01)))
+        rr = SA.engle_granger(a, b)
+        if rr and rr.cointegrated:
+            fp += 1
+    check("دو گشت مستقل، هم‌انباشته اعلام نمی‌شوند", fp <= 2, "%d از ۲۰" % fp)
+
+    # --- هم‌انباشتگی: بازیابی ضریب واقعی ---
+    _r.seed(1404)
+    x = [500000.0]
+    for _ in range(699):
+        x.append(x[-1] * math.exp(0.0011 + _r.gauss(0, 0.009)))
+    e = 0.0
+    y = []
+    for v in x:
+        e = 0.94 * e + _r.gauss(0, 0.012)
+        y.append(math.exp(2.0 + 0.95 * math.log(v) + e))
+    rr = SA.engle_granger(y, x)
+    check("ضریب بلندمدت واقعی (۰٫۹۵) بازیابی می‌شود",
+          rr and rr.cointegrated and abs(rr.beta - 0.95) < 0.15,
+          "β=%.3f" % (rr.beta if rr else 0))
+
+    # --- پیشرو/پیرو: تصحیح چندگانگی ---
+    # بدون تصحیح، روی سری‌های مستقل ۱۰۰٪ مثبت کاذب می‌داد.
+    fp = 0
+    for k in range(20):
+        _r.seed(400 + k)
+        a = [0.0]
+        b = [0.0]
+        for _ in range(700):
+            a.append(0.6 * a[-1] + _r.gauss(0, 1))
+            b.append(0.6 * b[-1] + _r.gauss(0, 1))
+        rr = SA.prewhitened_ccf(a, b, max_lag=25)
+        if rr and rr.significant:
+            fp += 1
+    check("سری مستقل خودهمبسته، «تأخیر معنادار» نمی‌دهد", fp <= 4,
+          "%d از ۲۰" % fp)
+
+    _r.seed(11)
+    LEAD = 7
+    xs = [0.0]
+    for _ in range(900):
+        xs.append(0.55 * xs[-1] + _r.gauss(0, 1))
+    ys = [0.0] * len(xs)
+    for t in range(LEAD, len(xs)):
+        ys[t] = 0.7 * xs[t - LEAD] + _r.gauss(0, 1)
+    rr = SA.prewhitened_ccf(xs, ys, max_lag=25)
+    check("تأخیر واقعی ۷ روزه پیدا می‌شود",
+          rr and rr.significant and abs(rr.lag - LEAD) <= 1,
+          "lag=%s" % (rr.lag if rr else "-"))
+    check("باند تصحیح‌شده از باند خام سخت‌گیرتر است",
+          rr and rr.band > rr.band_naive,
+          "%.3f در برابر %.3f" % (rr.band, rr.band_naive))
+
+    # --- مطالعه رویداد: پنجره پیش‌فرض باید شوک واقعی را بگیرد ---
+    _r.seed(9)
+    d0 = datetime.date(2023, 1, 1)
+    dts = []
+    dd = d0
+    while len(dts) < 700:
+        if dd.weekday() not in (3, 4):
+            dts.append(dd)
+        dd += datetime.timedelta(days=1)
+    px = [1000.0]
+    for _ in range(699):
+        px.append(px[-1] * math.exp(0.0011 + _r.gauss(0, 0.012)))
+    sh = sorted(_r.sample(range(80, 660), 9))
+    for i in sh:
+        for t in range(i, 700):
+            px[t] *= math.exp(-0.035)
+    evs = [("e%d" % k, dts[i]) for k, i in enumerate(sh)]
+    es = SA.event_study(dts, px, evs, n_perm=1500)
+    check("پنجره پیش‌فرض، شوک واقعی را می‌گیرد", es.p_value < 0.05,
+          "CAR=%.2f%% p=%.3f پنجره=%s" % (es.mean_car * 100, es.p_value, es.window))
+
+    # و همان داده با پنجره پهن، شوک را گم می‌کند — دلیل انتخاب پنجره باریک
+    wide = SA.event_study(dts, px, evs, pre=5, post=10, n_perm=1500)
+    check("پنجره پهن همان شوک را گم می‌کند (دلیل پیش‌فرض باریک)",
+          wide.p_value > es.p_value,
+          "پهن p=%.3f در برابر باریک p=%.3f" % (wide.p_value, es.p_value))
+
+    # رویداد بی‌اثر نباید معنادار شود
+    _r.seed(55)
+    px2 = [1000.0]
+    for _ in range(699):
+        px2.append(px2[-1] * math.exp(_r.gauss(0, 0.012)))
+    rnd = [("r%d" % k, dts[_r.randint(60, 640)]) for k in range(9)]
+    es2 = SA.event_study(dts, px2, rnd, n_perm=1500)
+    check("رویداد بی‌اثر، معنادار اعلام نمی‌شود", es2.p_value > 0.10,
+          "p=%.3f" % es2.p_value)
+
+
+def test_macro_workbook_shape():
+    section("۳۸) ساختار فایل تحلیل کلان")
+    import openpyxl
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    path = os.path.join(root, "Time_Analysis.xlsx")
+    if not os.path.exists(path):
+        check("فایل زمانی موجود است", False)
+        return
+    wb = openpyxl.load_workbook(path)
+    for name in ("Macro_Series", "Real_Index", "Macro_Cycles", "Lead_Lag",
+                 "Cointegration", "Geo_Events"):
+        check("شیت %s وجود دارد" % name, name in wb.sheetnames)
+
+    # شیت‌هایی که قبلاً پوسته خالی بودند، حالا باید ساختار داشته باشند
+    for name, min_rows, min_cols in (("Macro_Cycles", 10, 10),
+                                     ("Lead_Lag", 10, 10),
+                                     ("Cointegration", 8, 9),
+                                     ("Real_Index", 100, 9)):
+        if name in wb.sheetnames:
+            ws = wb[name]
+            check("%s پوسته خالی نیست" % name,
+                  ws.max_row >= min_rows and ws.max_column >= min_cols,
+                  "%d×%d" % (ws.max_row, ws.max_column))
+
+    # ستون «شاخص به دلار» باید واقعاً تقسیم باشد، نه عدد ثابت
+    ws = wb["Real_Index"]
+    f = ws.cell(row=10, column=4).value
+    check("ستون «شاخص به دلار» فرمول تقسیم است",
+          isinstance(f, str) and "/" in f and "$B" in f and "$C" in f, str(f)[:60])
+    f9 = ws.cell(row=300, column=9).value
+    check("ستون «توهم تورمی» = بازده ریالی منهای دلاری",
+          isinstance(f9, str) and "$G" in f9 and "$H" in f9, str(f9)[:60])
 
 
 

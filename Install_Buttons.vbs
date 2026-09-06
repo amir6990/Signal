@@ -21,6 +21,8 @@ here = fso.GetParentFolderName(WScript.ScriptFullName)
 basPath = fso.BuildPath(here, "vba\SignalRefresh.bas")
 Dim basTime
 basTime = fso.BuildPath(here, "vba\TimeCycles.bas")
+Dim basMacro
+basMacro = fso.BuildPath(here, "vba\MacroTime.bas")
 
 If Not fso.FileExists(basPath) Then
     MsgBox "فایل ماژول پیدا نشد:" & vbCrLf & basPath & vbCrLf & vbCrLf & _
@@ -86,9 +88,10 @@ For i = 0 To UBound(files)
 
             ' --- ماژول‌های قبلی را بردار تا نصب دوباره تمیز باشد ---
             Dim again
-            For again = 0 To 1
+            For again = 0 To 2
                 For Each vbc In wb.VBProject.VBComponents
-                    If vbc.Name = "SignalRefresh" Or vbc.Name = "TimeCycles" Then
+                    If vbc.Name = "SignalRefresh" Or vbc.Name = "TimeCycles" _
+                       Or vbc.Name = "MacroTime" Then
                         wb.VBProject.VBComponents.Remove vbc
                         Exit For
                     End If
@@ -98,6 +101,7 @@ For i = 0 To UBound(files)
 
             wb.VBProject.VBComponents.Import basPath
             If fso.FileExists(basTime) Then wb.VBProject.VBComponents.Import basTime
+            If fso.FileExists(basMacro) Then wb.VBProject.VBComponents.Import basMacro
 
             If Err.Number <> 0 Then
                 report = report & "✘ " & files(i) & " — ماژول وارد نشد" & vbCrLf
@@ -144,6 +148,30 @@ For i = 0 To UBound(files)
                     shp2.TextFrame2.TextRange.Font.Bold = True
                     shp2.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
                     shp2.OnAction = "TimeCycles.RefreshTimeCycles"
+                End If
+
+                ' --- دکمه کلان روی Macro_Series ---
+                Dim hasMS, wsAny2
+                hasMS = False
+                For Each wsAny2 In wb.Worksheets
+                    If wsAny2.Name = "Macro_Series" Then hasMS = True
+                Next
+                If hasMS Then
+                    Dim wsMS, shp3
+                    Set wsMS = wb.Worksheets("Macro_Series")
+                    For Each shp3 In wsMS.Shapes
+                        If shp3.Name = "btnMacro" Then shp3.Delete
+                    Next
+                    Err.Clear
+                    Set shp3 = wsMS.Shapes.AddShape(5, 12, 12, 210, 34)
+                    shp3.Name = "btnMacro"
+                    shp3.Fill.ForeColor.RGB = RGB(120, 60, 140)
+                    shp3.Line.Visible = False
+                    shp3.TextFrame2.TextRange.Text = "به‌روزرسانی کلان"
+                    shp3.TextFrame2.TextRange.Font.Size = 12
+                    shp3.TextFrame2.TextRange.Font.Bold = True
+                    shp3.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+                    shp3.OnAction = "MacroTime.RefreshMacro"
                 End If
 
                 ' 52 = xlOpenXMLWorkbookMacroEnabled
