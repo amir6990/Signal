@@ -7,9 +7,11 @@
 هم چرخه می‌بیند، بدتر از نداشتن آشکارساز است.
 """
 import datetime
+import io
 import math
 import os
 import random
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
@@ -639,7 +641,8 @@ def main():
                test_history_parsers, test_valuation_series,
                test_asset_signals_sheet,
                test_score_replica_matches_workbook,
-               test_weight_search_guards):
+               test_weight_search_guards,
+               test_vba_structure, test_vba_parsing_logic):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -886,6 +889,257 @@ def test_weight_search_guards():
     ret = r.equity[-1] - 1.0 if r.equity else 0.0
     check("روی گشت تصادفی، وزن پیش‌فرض سود معنادار نمی‌سازد", ret < 0.5,
           "بازده %.1f%% روی %d معامله" % (ret * 100, len(r.trades)))
+
+
+
+# ---------------------------------------------------------------- VBA
+# ماکرو اکسل را نمی‌شود از اینجا اجرا کرد، ولی دو چیزش را می‌شود سنجید:
+# ۱) ساختار فایل (توازن بلوک‌ها، اعلام متغیرها) — چون Option Explicit است
+# ۲) منطق تجزیه JSON و تاریخ شمسی، با پورت وفادار به پایتون
+def _vba_src():
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    path = os.path.join(root, "vba", "SignalRefresh.bas")
+    if not os.path.exists(path):
+        return None
+    return io.open(path, encoding="utf-8").read()
+
+
+def _vba_merge(src):
+    """خطوط را با احتساب ادامه‌خط ( _ ) ادغام می‌کند."""
+    out, buf = [], ""
+    for line in src.split("\n"):
+        t = "" if line.strip().startswith("'") else line.split("'")[0].rstrip()
+        if t.rstrip().endswith("_"):
+            buf += t.rstrip()[:-1]
+            continue
+        merged = (buf + t).strip()
+        buf = ""
+        if merged:
+            out.append(merged)
+    return out
+
+
+def test_vba_structure():
+    section("۳۳) ساختار ماکرو اکسل")
+    src = _vba_src()
+    if src is None:
+        check("فایل ماکرو موجود است", False, "vba/SignalRefresh.bas نیست")
+        return
+    lines = _vba_merge(src)
+
+    check("نام ماژول درست است",
+          src.startswith('Attribute VB_Name = "SignalRefresh"'))
+    check("Option Explicit دارد",
+          any(l.lower() == "option explicit" for l in lines))
+    check("نقطه ورود RefreshAll عمومی است", "Public Sub RefreshAll()" in src)
+
+    # توازن بلوک‌ها — با ادامه‌خط، وگرنه شمارش ساده گمراه می‌کند
+    depth = 0
+    for l in lines:
+        low = l.lower()
+        if re.match(r"^if .*\bthen$", low):
+            depth += 1
+        elif low == "end if":
+            depth -= 1
+    check("If / End If متوازن است", depth == 0, "اختلاف %d" % depth)
+
+    for op, cl, name in ((r"^(public |private )?sub ", "end sub", "Sub"),
+                         (r"^(public |private )?function ", "end function", "Function"),
+                         (r"^for ", "next", "For"),
+                         (r"^do while", "loop", "Do")):
+        d = 0
+        for l in lines:
+            low = l.lower()
+            if re.match(op, low):
+                d += 1
+            elif low.startswith(cl):
+                d -= 1
+        check("%s متوازن است" % name, d == 0, "اختلاف %d" % d)
+
+    # Option Explicit یعنی هر متغیر باید Dim شده باشد
+    bodies = re.split(r"\n(?=(?:Public |Private )?(?:Sub|Function) )", src)
+    known = {"application", "err", "me", "thisworkbook", "date", "now"}
+    known |= {f.lower() for f in
+              re.findall(r"(?:Public |Private )?(?:Sub|Function)\s+(\w+)", src)}
+    bad = []
+    for b in bodies[1:]:
+        m = re.search(r"(?:Sub|Function)\s+(\w+)", b.split("\n")[0])
+        if not m:
+            continue
+        declared = {m.group(1).lower()}
+        for dl in re.findall(r"^\s*Dim\s+(.+)$", b, re.M):
+            for part in dl.split(","):
+                n = re.match(r"\s*(\w+)", part)
+                if n:
+                    declared.add(n.group(1).lower())
+        for a, c in re.findall(r"By(?:Val|Ref)\s+(\w+)|For Each\s+(\w+)", b):
+            if a:
+                declared.add(a.lower())
+            if c:
+                declared.add(c.lower())
+        used = {x.lower() for x in
+                re.findall(r"^\s*(?:Set\s+)?(\w+)\s*=\s*", b, re.M)}
+        miss = used - declared - known
+        if miss:
+            bad.append((m.group(1), sorted(miss)))
+    check("همه متغیرها Dim شده‌اند", not bad, str(bad[:3]))
+
+    # هر نامی که ماکرو می‌نویسد باید در دست‌کم یکی از فایل‌ها تعریف شده باشد
+    import openpyxl
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    defined = set()
+    for f in ("Gold_Analysis.xlsx", "FX_Analysis.xlsx"):
+        fp = os.path.join(root, f)
+        if os.path.exists(fp):
+            defined |= set(openpyxl.load_workbook(fp).defined_names)
+    if defined:
+        written = set(re.findall(r'PutName\("(\w+)"', src))
+        missing = written - defined
+        check("نام‌هایی که ماکرو می‌نویسد در فایل‌ها وجود دارند",
+              not missing, "پیدا نشد: %s" % sorted(missing))
+
+
+def test_vba_parsing_logic():
+    section("۳۴) منطق تجزیه ماکرو (پورت وفادار)")
+    src = _vba_src()
+    if src is None:
+        check("فایل ماکرو موجود است", False)
+        return
+
+    # --- همان الگوریتم VBA، خط به خط ---
+    def clean_num(s):
+        out = []
+        for ch in s:
+            c = ord(ch)
+            if 0x6F0 <= c <= 0x6F9:
+                out.append(str(c - 0x6F0))
+            elif 0x660 <= c <= 0x669:
+                out.append(str(c - 0x660))
+            elif ch in "0123456789.-":
+                out.append(ch)
+        t = "".join(out)
+        if t in ("", "-", "."):
+            return -1
+        try:
+            return float(t)
+        except ValueError:
+            return -1
+
+    def jval(js, anchor, key):
+        p = js.lower().find('"' + anchor.lower() + '"')
+        if p < 0:
+            return -1
+        q = js.lower().find('"' + key.lower() + '"', p)
+        if q < 0 or q - p > 4000:
+            return -1
+        q = js.find(":", q)
+        if q < 0:
+            return -1
+        q += 1
+        while q < len(js) and js[q] == " ":
+            q += 1
+        if js[q] == '"':
+            q += 1
+            e = js.find('"', q)
+        else:
+            e = q
+            while e < len(js) and js[e] in "0123456789.-":
+                e += 1
+        return clean_num(js[q:e]) if e > q else -1
+
+    def obj_around(js, needle):
+        p = js.lower().find(needle.lower())
+        if p < 0:
+            return ""
+        depth, s0 = 0, -1
+        for i in range(p, -1, -1):
+            if js[i] == "}":
+                depth += 1
+            elif js[i] == "{":
+                if depth == 0:
+                    s0 = i
+                    break
+                depth -= 1
+        if s0 < 0:
+            return ""
+        depth, e0 = 0, -1
+        for i in range(s0, len(js)):
+            if js[i] == "{":
+                depth += 1
+            elif js[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    e0 = i
+                    break
+        return js[s0:e0 + 1] if e0 > s0 else ""
+
+    tg = ('{"current":{"price_dollar_rl":{"p":"2,243,000","h":"2,250,000"},'
+          '"ons":{"p":"4,431.20"},"sekee":{"p":"1,156,997,319"}}}')
+    check("دلار از tgju", jval(tg, "price_dollar_rl", "p") == 2243000)
+    check("اونس با اعشار", jval(tg, "ons", "p") == 4431.20)
+    check("نماد ناموجود ← -۱", jval(tg, "nope", "p") == -1)
+
+    nb = '{"stats":{"usdt-rls":{"bestSell":"2261000","latest":"2260000"}}}'
+    check("تتر از نوبیتکس", jval(nb, "usdt-rls", "latest") == 2260000)
+    check("عدد بدون گیومه", jval('{"stats":{"usdt-rls":{"latest":2260000}}}',
+                                 "usdt-rls", "latest") == 2260000)
+    check("ارقام فارسی", clean_num("۱٬۰۱۸٬۰۰۰") == 1018000)
+    check("متن بی‌معنا ← -۱", clean_num("abc") == -1)
+
+    cp = ('{"closingPriceInfo":{"priceMin":8300,"priceMax":8600,'
+          '"priceYesterday":8446,"pClosing":8338,"pDrCotVal":8466,'
+          '"qTotTran5J":45200000}}')
+    check("قیمت پایانی سهم", jval(cp, "closingPriceInfo", "pClosing") == 8338)
+    check("حجم سهم", jval(cp, "closingPriceInfo", "qTotTran5J") == 45200000)
+
+    # ⚠️ پاسخ شاخص یک آرایه است — بدون جداکردن شیء، عدد اشتباه خوانده می‌شد
+    idx = ('{"indexB1":[{"insCode":"11111111111111111","indexLastValue":999.9},'
+           '{"insCode":"32097828799138957","indexLastValue":2845311.5},'
+           '{"insCode":"67130298613737946","indexLastValue":915422.1}]}')
+    tot = jval(obj_around(idx, "32097828799138957"), "indexLastValue",
+               "indexLastValue")
+    check("شاخص کل از آرایه درست جدا می‌شود", tot == 2845311.5, str(tot))
+    check("خواندن ساده، عدد غلط می‌داد",
+          jval(idx, "indexB1", "indexLastValue") == 999.9,
+          "همان باگی که ObjAround رفعش کرد")
+    check("insCode ناموجود ← رشته خالی",
+          obj_around(idx, "00000000000000000") == "")
+
+    # --- تاریخ شمسی: همان الگوریتم VBA در برابر موتور پایتون ---
+    from timeframe.jalali import jalali_str
+
+    def vba_jalali(d):
+        dm = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+        gy, gm, gd = d.year, d.month, d.day
+        gy2, gm2, gd2 = gy - 1600, gm - 1, gd - 1
+        n = (365 * gy2 + int((gy2 + 3) / 4) - int((gy2 + 99) / 100)
+             + int((gy2 + 399) / 400) + dm[gm2] + gd2)
+        if gm > 2 and ((gy % 4 == 0 and gy % 100 != 0) or gy % 400 == 0):
+            n += 1
+        n -= 79
+        jnp = int(n / 12053)
+        n %= 12053
+        jy = 979 + 33 * jnp + 4 * int(n / 1461)
+        n %= 1461
+        if n >= 366:
+            jy += int((n - 1) / 365)
+            n = (n - 1) % 365
+        i = 11
+        for i in range(11):
+            md = 31 if i < 6 else 30
+            if n < md:
+                break
+            n -= md
+        else:
+            i = 11
+        return "%04d/%02d/%02d" % (jy, i + 1, n + 1)
+
+    d0 = datetime.date(2016, 1, 1)
+    bad = [d0 + datetime.timedelta(days=k) for k in range(4000)
+           if vba_jalali(d0 + datetime.timedelta(days=k))
+           != jalali_str(d0 + datetime.timedelta(days=k))]
+    check("تاریخ شمسی ماکرو روی ۴۰۰۰ روز با پایتون یکی است",
+          not bad, str(bad[:2]))
 
 
 
