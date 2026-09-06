@@ -7,6 +7,7 @@
 
 ترتیب اهمیت دارد و اگر رعایت نشود زنجیره می‌شکند:
 
+  ۰. گرفتن قیمت طلا و ارز        → Gold_Analysis.xlsx + FX_Analysis.xlsx
   ۱. گرفتن داده از API           → Stocks_Signals.xlsx  (اختیاری)
   ۲. بازمحاسبه فایل سهام
   ۳. تحلیل زمانی                 → Time_Analysis.xlsx + Time_Link در فایل سهام
@@ -42,6 +43,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="به‌روزرسانی کامل مجموعه")
     ap.add_argument("--dir", default=ROOT)
     ap.add_argument("--fetch", action="store_true", help="گرفتن داده از tsetmc")
+    ap.add_argument("--fetch-gold-fx", action="store_true", dest="fetch_gfx",
+                    help="گرفتن قیمت طلا و ارز")
+    ap.add_argument("--manual", default=None,
+                    help="فایل JSON دستی برای طلا و ارز")
     ap.add_argument("--history", type=int, default=300)
     ap.add_argument("--skip-recalc", action="store_true",
                     help="بدون LibreOffice — فایل‌ها را خودتان در اکسل باز و ذخیره کنید")
@@ -67,6 +72,21 @@ def main(argv=None):
         for p in paths:
             rc |= RC.recalc(p)
         return rc
+
+    gold = os.path.join(d, "Gold_Analysis.xlsx")
+    fx = os.path.join(d, "FX_Analysis.xlsx")
+
+    print("═" * 70)
+    print("گام ۰ — دریافت قیمت طلا و ارز")
+    if args.fetch_gfx or args.manual:
+        cmd = [sys.executable, os.path.join(HERE, "fetch_gold_fx.py"),
+               "--write", "--append-history", "--dir", d]
+        if args.manual:
+            cmd += ["--manual", args.manual]
+        if run(cmd) == 0:
+            do_recalc(gold, fx)
+    else:
+        print("  رد شد (برای فعال‌سازی: --fetch-gold-fx یا --manual FILE.json)")
 
     print("═" * 70)
     print("گام ۱ — دریافت داده از API")

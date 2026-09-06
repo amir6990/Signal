@@ -531,6 +531,89 @@ def test_bridge_scripts():
           all(len(str(s)) < 20 for s in syms), str(syms))
 
 
+def test_market_data_providers():
+    section("۲۶) منابع داده طلا و ارز")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+    from market_data.base import Quote, cross_check
+    from market_data.providers import build_registry
+
+    reg = build_registry()
+    check("همه کمیت‌ها دست‌کم یک منبع دارند",
+          all(reg.for_quantity(q) for q in
+              ("gold_oz_usd", "usd_irr_free", "usdt_irr", "coin_full_irr")))
+    check("منبع دستی همه کمیت‌ها را پوشش می‌دهد",
+          any(p.key == "manual" and len(p.supplies) >= 13 for p in reg.providers))
+
+    # آزمون سلامت مطلق
+    check("دلار سالم پذیرفته می‌شود", Quote("usd_irr_free", 950_000, "t").ok)
+    check("دلار به تومان رد می‌شود", not Quote("usd_irr_free", 95_000, "t").ok)
+    check("اونس سالم پذیرفته می‌شود", Quote("gold_oz_usd", 3400, "t").ok)
+    check("اونس با اسکیل غلط رد می‌شود", not Quote("gold_oz_usd", 3_400_000, "t").ok)
+
+    # آزمون سازگاری متقابل — مستقل از سطح تورم
+    def mk(d):
+        return {k: Quote(k, v, "t") for k, v in d.items()}
+
+    healthy = mk({"gold_oz_usd": 3412.5, "usd_irr_free": 952_000,
+                  "usd_irr_nima": 718_000, "usdt_irr": 969_500,
+                  "coin_full_irr": 905_000_000, "coin_half_irr": 472_000_000,
+                  "coin_quarter_irr": 286_000_000, "gram18k_irr": 82_400_000,
+                  "eur_irr": 1_035_000, "aed_irr": 259_300})
+    check("داده سالم هیچ ناسازگاری نمی‌دهد", not cross_check(healthy),
+          str(cross_check(healthy))[:120])
+
+    ten_x = dict(healthy)
+    ten_x["coin_full_irr"] = Quote("coin_full_irr", 90_500_000, "t")
+    check("سکه با واحد غلط گرفته می‌شود", len(cross_check(ten_x)) >= 2,
+          "%d ناسازگاری" % len(cross_check(ten_x)))
+
+    swapped = dict(healthy)
+    swapped["usd_irr_free"] = Quote("usd_irr_free", 718_000, "t")
+    swapped["usd_irr_nima"] = Quote("usd_irr_nima", 952_000, "t")
+    check("جابه‌جایی آزاد و نیمایی گرفته می‌شود",
+          any("برعکس" in w for w in cross_check(swapped)))
+
+    # تورم ۵ برابری نباید هشدار کاذب بدهد — آزمون نسبتی است، نه مطلق
+    inflated = mk({"gold_oz_usd": 3412.5, "usd_irr_free": 4_760_000,
+                   "usdt_irr": 4_850_000, "coin_full_irr": 4_525_000_000,
+                   "coin_half_irr": 2_360_000_000,
+                   "coin_quarter_irr": 1_430_000_000})
+    check("تورم ۵ برابری هشدار کاذب نمی‌دهد", not cross_check(inflated),
+          str(cross_check(inflated))[:120])
+
+
+def test_manual_provider_roundtrip():
+    section("۲۷) مسیر دستی طلا و ارز")
+    import json
+    import tempfile
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+    from market_data.providers import build_registry
+
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "m.json")
+    payload = {"gold_oz_usd": 3400, "usd_irr_free": 950_000, "usdt_irr": 968_000,
+               "coin_full_irr": 900_000_000}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+
+    reg = build_registry()
+    q = reg.resolve({"manual_file": path, "timeout": 3}, order=["manual"])
+    check("همه مقادیر دستی خوانده شدند", len(q) >= 4, "%d کمیت" % len(q))
+    check("مقادیر درست‌اند",
+          abs(q["usd_irr_free"].value - 950_000) < 1
+          and abs(q["gold_oz_usd"].value - 3400) < 1)
+    check("منشأ ثبت شده", all(x.source and x.fetched_at for x in q.values()))
+
+    empty = os.path.join(d, "empty.json")
+    with open(empty, "w", encoding="utf-8") as fh:
+        json.dump({"چیز_نامربوط": 1}, fh)
+    from market_data.providers import manual as MP
+    check("فایل بدون کلید معتبر خطای گویا می‌دهد",
+          _raises(lambda: MP.fetch({"manual_file": empty})))
+    check("فایل غایب خطای گویا می‌دهد",
+          _raises(lambda: MP.fetch({"manual_file": os.path.join(d, "nope.json")})))
+
+
 def main():
     for fn in (test_spectral_recovery, test_spectral_two_cycles, test_noise_control,
                test_random_walk_control, test_goertzel_matches_dft, test_filters,
@@ -539,7 +622,8 @@ def main():
                test_backtest_engine, test_backtest_no_lookahead, test_deflated_sharpe,
                test_regime_model, test_base_rates, test_brier,
                test_judgment_register, test_outlook,
-               test_workbook_split, test_bridge_scripts):
+               test_workbook_split, test_bridge_scripts,
+               test_market_data_providers, test_manual_provider_roundtrip):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
