@@ -393,17 +393,68 @@ def _write_forecast(wb, workbook_path, horizon=63, horizon_label="سه ماه"):
     return ws
 
 
+def _write_time_link(data_path, cfg, strict):
+    """نوشتن امتیاز زمانی هر نماد در شیت Time_Link فایل سیگنال سهام."""
+    from . import series as _series
+    wb = load_workbook(data_path)
+    if "Time_Link" not in wb.sheetnames:
+        wb.close()
+        return 0
+    ws = wb["Time_Link"]
+    scores = {}
+    for name in _series.workbook_symbols(data_path):
+        ts = _series.from_workbook(data_path, name)
+        if len(ts) < 60:
+            continue
+        a = analysis.analyze(ts, cfg, strict_spectral=strict)
+        scores[name] = (round(a.score.total, 2) if a.score else 0.0,
+                        a.score.reliability if a.score else "—",
+                        "بله" if a.dominant else "خیر")
+    today = datetime.date.today()
+    n = 0
+    r = 5
+    while r <= ws.max_row:
+        sym = ws.cell(row=r, column=1).value
+        r += 1
+    for i, name in enumerate(_series.workbook_symbols(data_path)):
+        row = 5 + i
+        if name not in scores:
+            continue
+        total, rel, sig = scores[name]
+        ws.cell(row=row, column=2, value=total).number_format = "0.0"
+        ws.cell(row=row, column=3, value=rel)
+        ws.cell(row=row, column=4, value=sig)
+        ws.cell(row=row, column=5, value=today).number_format = "yyyy-mm-dd"
+        ws.cell(row=row, column=6, value="timeframe.analysis")
+        n += 1
+    wb.save(data_path)
+    return n
+
+
 def export(workbook_path: str, strict: bool = False,
-           today: datetime.date = None, cfg: TimeframeConfig = None) -> int:
+           today: datetime.date = None, cfg: TimeframeConfig = None,
+           data_path: str = None) -> int:
+    """workbook_path: فایل مقصد (نوشتن نتایج). data_path: فایل منبع داده قیمت.
+
+    اگر data_path داده نشود، همان فایل مقصد منبع داده هم فرض می‌شود — یعنی
+    حالت فایل یکپارچه قدیمی.
+    """
     cfg = cfg or TimeframeConfig()
     today = today or datetime.date.today()
+    data_path = data_path or workbook_path
     wb = load_workbook(workbook_path)
-    n = _write_time_cycles(wb, workbook_path, cfg, strict)
+    n = _write_time_cycles(wb, data_path, cfg, strict)
     _write_macro(wb, today)
-    _write_forecast(wb, workbook_path)
+    _write_forecast(wb, data_path)
     wb.save(workbook_path)
+    linked = 0
+    if data_path != workbook_path:
+        linked = _write_time_link(data_path, cfg, strict)
     print("✓ Time_Cycles برای %d نماد به‌روز شد." % n)
     print("✓ شیت Macro_Cycles ساخته شد.")
     print("✓ شیت Forecast ساخته شد.")
+    if linked:
+        print("✓ امتیاز زمانی %d نماد در Time_Link فایل %s نوشته شد."
+              % (linked, data_path))
     print("توجه: فایل را در اکسل باز کنید تا فرمول‌ها دوباره محاسبه شوند.")
     return 0

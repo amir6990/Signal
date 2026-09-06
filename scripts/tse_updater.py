@@ -385,7 +385,11 @@ def update_options(ws, targets):
 
 def main():
     ap = argparse.ArgumentParser(description="به‌روزرسانی فایل سیگنال از tsetmc")
-    ap.add_argument("--workbook", default="Iran_Stock_Signals.xlsx")
+    ap.add_argument("--workbook", default="Stocks_Signals.xlsx",
+                    help="فایل سیگنال سهام. برای فایل آپشن از --options استفاده کنید.")
+    ap.add_argument("--options", default=None,
+                    help="فایل Options_Signals.xlsx — اگر داده شود، دیده‌بان آپشن "
+                         "در آن نوشته می‌شود، نه در فایل سهام.")
     ap.add_argument("--history", type=int, default=300,
                     help="تعداد روز تاریخچه (۰ = کل تاریخچه). حداقل ۲۰۰ برای MA بلند لازم است.")
     ap.add_argument("--skip-history", action="store_true")
@@ -408,12 +412,25 @@ def main():
         update_daily_history(wb["Daily_History"], targets, args.history)
     print("→ Market_Index…")
     update_market_index(wb["Market_Index"], args.history)
-    if not args.skip_options:
-        print("→ Options…")
-        update_options(wb["Options"], targets)
-
     wb.save(args.workbook)
+
+    if not args.skip_options and args.options:
+        if not os.path.exists(args.options):
+            print("! فایل آپشن یافت نشد: %s" % args.options)
+        else:
+            print("→ Options (%s)…" % args.options)
+            wbo = load_workbook(args.options)
+            if "Options" in wbo.sheetnames:
+                update_options(wbo["Options"], targets)
+                wbo.save(args.options)
+            else:
+                print("! شیت Options در فایل مقصد نیست.")
+    elif not args.skip_options:
+        print("ⓘ برای به‌روزرسانی آپشن، مسیر فایل آپشن را با --options بدهید.")
     print("\n✓ ذخیره شد: %s" % args.workbook)
+    print("گام بعد: python scripts/link_workbooks.py  و  "
+          "python -m timeframe export --workbook Time_Analysis.xlsx --data %s"
+          % args.workbook)
     if MISSING:
         print("\n⚠️  فیلدهایی که در پاسخ واقعی API پیدا نشدند (نام آن‌ها را در شیت "
               "API_Map اصلاح کنید و در تابع pick() نام درست را اضافه کنید):")

@@ -440,6 +440,97 @@ def test_outlook():
     check("داده کم هشدار می‌دهد", bool(short.warnings))
 
 
+# ------------------------------------------------------------------ فایل‌های تفکیک‌شده
+def test_workbook_split():
+    section("۲۴) تفکیک فایل‌های اکسل")
+    import tempfile
+    from openpyxl import load_workbook
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from workbooks import BUILDERS, build
+
+    out = tempfile.mkdtemp()
+    paths = {}
+    for key in BUILDERS:
+        paths[key] = build(key, out)
+    check("هر پنج فایل ساخته شد", len(paths) == 5, "، ".join(BUILDERS))
+
+    expected = {
+        "stocks": {"Dashboard", "Signals", "Data_Input", "Calculations",
+                   "Daily_History", "Market_Index", "Time_Link", "Watchlist",
+                   "Settings", "API_Map", "Documentation"},
+        "options": {"Options", "Underlying", "Settings", "API_Map", "Documentation"},
+        "time": {"Time_Cycles", "Macro_Cycles", "Forecast", "Sources",
+                 "Settings", "Documentation"},
+        "gold": {"Gold_Dashboard", "Coin_Bubble", "Gold_Input", "Gold_History",
+                 "Settings", "Documentation"},
+        "fx": {"FX_Dashboard", "Spreads", "FX_Input", "FX_History",
+               "Settings", "Documentation"},
+    }
+    for key, want in expected.items():
+        got = set(load_workbook(paths[key]).sheetnames)
+        check("شیت‌های %s درست‌اند" % key, got == want,
+              "اضافه: %s | کم: %s" % (got - want, want - got) if got != want else "")
+
+    # هیچ فرمولی نباید به شیتی ارجاع دهد که در همان فایل نیست
+    import re
+    ref_re = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)!\$?[A-Z]")
+    for key, path in paths.items():
+        wb = load_workbook(path)
+        names = set(wb.sheetnames)
+        bad = []
+        for ws in wb:
+            for row in ws.iter_rows():
+                for c in row:
+                    if isinstance(c.value, str) and c.value.startswith("="):
+                        for m in ref_re.findall(c.value):
+                            if m not in names and m not in ("IF", "AND", "OR"):
+                                bad.append((ws.title, c.coordinate, m))
+        check("%s ارجاع به شیت غایب ندارد" % key, not bad,
+              str(bad[:3]) if bad else "")
+
+    # ارجاع بین‌فایلی نباید وجود داشته باشد
+    for key, path in paths.items():
+        wb = load_workbook(path)
+        ext = []
+        for ws in wb:
+            for row in ws.iter_rows():
+                for c in row:
+                    if isinstance(c.value, str) and "[" in c.value and "]" in c.value \
+                            and c.value.startswith("="):
+                        ext.append((ws.title, c.coordinate))
+        check("%s ارجاع بین‌فایلی ندارد" % key, not ext, str(ext[:3]) if ext else "")
+
+    sizes = {k: os.path.getsize(v) for k, v in paths.items()}
+    check("فایل‌های سبک زیر ۳۰۰ کیلوبایت‌اند",
+          all(sizes[k] < 300_000 for k in ("options", "time", "gold", "fx")),
+          "، ".join("%s %dKB" % (k, v // 1024) for k, v in sorted(sizes.items())))
+
+
+def test_bridge_scripts():
+    section("۲۵) پل داده‌ای بین فایل‌ها")
+    import tempfile
+    from openpyxl import load_workbook
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+    from workbooks import build
+    import link_workbooks as LW
+
+    out = tempfile.mkdtemp()
+    st = build("stocks", out)
+    op = build("options", out)
+
+    # بدون بازمحاسبه، مقدار فرمول‌ها None است — پل باید بدون خطا رد شود
+    n = LW.link_options(st, op)
+    check("پل بدون بازمحاسبه هم بدون استثنا اجرا می‌شود", n >= 0, "%d ردیف" % n)
+
+    # پانویس زیر جدول نباید به‌عنوان نماد خوانده شود
+    ws = load_workbook(op)["Underlying"]
+    syms = [ws.cell(row=r, column=1).value
+            for r in range(5, 5 + LW.UNDER_ROWS)
+            if ws.cell(row=r, column=1).value]
+    check("هیچ نمادی متن طولانی نیست (پانویس خوانده نشده)",
+          all(len(str(s)) < 20 for s in syms), str(syms))
+
+
 def main():
     for fn in (test_spectral_recovery, test_spectral_two_cycles, test_noise_control,
                test_random_walk_control, test_goertzel_matches_dft, test_filters,
@@ -447,7 +538,8 @@ def main():
                test_gold, test_macro, test_iran_calendar, test_scoring,
                test_backtest_engine, test_backtest_no_lookahead, test_deflated_sharpe,
                test_regime_model, test_base_rates, test_brier,
-               test_judgment_register, test_outlook):
+               test_judgment_register, test_outlook,
+               test_workbook_split, test_bridge_scripts):
         fn()
     print("\n" + "═" * 70)
     if FAILS:

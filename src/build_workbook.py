@@ -120,7 +120,12 @@ def _settings_fmt(name, val):
     return F_INT
 
 
-def build_settings(wb):
+def build_settings(wb, sections=None):
+    """sections: پیشوند بخش‌های موردنیاز، مثل ("۱)", "۲)"). None = همه.
+
+    هر فایل فقط پارامترهای خودش را می‌گیرد؛ پارامتری که هیچ فرمولی در آن فایل
+    نمی‌خواندش، فقط سردرگمی می‌سازد.
+    """
     ws = wb.create_sheet("Settings")
     ws.sheet_view.rightToLeft = True
     title_block(ws, "تنظیمات و پارامترهای سیستم",
@@ -128,9 +133,15 @@ def build_settings(wb):
     widths(ws, [3, 46, 14, 46, 3])
     r = 4
     wsum_row = None
+    keep = True
     for kind, label, val, name, desc in SETTINGS_ROWS:
+        if kind == "S" and sections is not None:
+            keep = any(str(label).startswith(pfx) for pfx in sections)
         if kind == "B":
-            r += 1
+            if keep:
+                r += 1
+            continue
+        if not keep:
             continue
         if kind == "S":
             ws.cell(row=r, column=2, value=label)
@@ -161,7 +172,14 @@ def build_settings(wb):
             dn(name, "Settings", "$C$%d" % r)
         r += 1
 
-    # جمع وزن‌ها + کنترل خطا
+    # جمع وزن‌ها + کنترل خطا (فقط اگر بخش وزن‌ها در این فایل هست)
+    if wsum_row is None or "W_TREND" not in DEFINED:
+        note(ws, "B%d" % (r + 1),
+             "راهنمای رنگ: سلول زرد با متن آبی = ورودی قابل تغییر شما · "
+             "متن مشکی = فرمول · متن سبز = ارجاع به شیت دیگر.")
+        ws.merge_cells(start_row=r + 1, start_column=2, end_row=r + 1, end_column=4)
+        ws.freeze_panes = "A4"
+        return ws
     w_first = int(DEFINED["W_TREND"].split("$")[-1])
     w_last = int(DEFINED["W_TIME"].split("$")[-1])
     ws.cell(row=wsum_row, column=3, value="=SUM(C%d:C%d)" % (w_first, w_last))
@@ -697,8 +715,8 @@ CALC_COLS = [
      '=IFERROR(IF({chgpct}{r}>0,IF({volratio}{r}>=VOL_HIGH,9,IF({volratio}{r}>=VOL_MOD,5,IF({volratio}{r}<=VOL_DRY,-2,2))),'
      'IF({chgpct}{r}<0,IF({volratio}{r}>=VOL_HIGH,-9,IF({volratio}{r}>=VOL_MOD,-5,IF({volratio}{r}<=VOL_DRY,2,-2))),0)),0)'),
     ("k_score",   "امتیاز بازار (K)", "Market_Index", 11, F_NUM1, '=MARKET_SCORE'),
-    ("z_score",   "امتیاز زمان (Z)", "Time_Cycles", 11, F_NUM1,
-     '=IFERROR(INDEX(Time_Cycles!${TCS}$1:${TCS}$5000,MATCH($A{r},Time_Cycles!$A$1:$A$5000,0)),0)'),
+    ("z_score",   "امتیاز زمان (Z)", "Time_Link", 11, F_NUM1,
+     '=IFERROR(INDEX(Time_Link!$B$1:$B$5000,MATCH($A{r},Time_Link!$A$1:$A$5000,0)),0)'),
     ("total",     "امتیاز کل", "میانگین وزنی", 12, F_NUM1,
      '=IFERROR(({t_score}{r}*W_TREND+{s_score}{r}*W_SMART+{m_score}{r}*W_MA+{v_score}{r}*W_VOL'
      '+{k_score}{r}*W_MARKET+{z_score}{r}*W_TIME)/W_SUM,0)'),
@@ -807,7 +825,12 @@ TC_COLS = [
 ]
 
 
-def build_time_cycles(wb, symbols, hist):
+def build_time_cycles(wb, symbols, hist, standalone=False):
+    """standalone=True: فایل مستقل بدون Watchlist و Daily_History.
+
+    در این حالت ستون نماد و تاریخ آخرین داده ورودی‌اند (اسکریپت پایتون یا
+    خود کاربر پرشان می‌کند)، نه فرمولِ ارجاع به شیت‌هایی که در این فایل نیستند.
+    """
     ws = wb.create_sheet("Time_Cycles")
     ws.sheet_view.rightToLeft = True
     cm = _colmap(TC_COLS)
@@ -828,10 +851,25 @@ def build_time_cycles(wb, symbols, hist):
 
     for i in range(N_SYM_ROWS):
         r = first + i
-        ws.cell(row=r, column=1,
-                value='=IF(COUNTA(Watchlist!$A${w})=0,"",Watchlist!$A${w})'.format(w=5 + i))
+        if standalone:
+            if i < len(symbols):
+                ws.cell(row=r, column=1, value=symbols[i])
+            c0 = ws.cell(row=r, column=1)
+            c0.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
+            c0.font = Font(name=FONT, size=9, bold=True, color=K.C_BLUE_INPUT)
+        else:
+            ws.cell(row=r, column=1,
+                    value='=IF(COUNTA(Watchlist!$A${w})=0,"",Watchlist!$A${w})'.format(w=5 + i))
         for j, (key, _lbl, _d, _w2, fmt, tmpl) in enumerate(TC_COLS, start=1):
             if tmpl is None:
+                continue
+            if standalone and key == "last_date":
+                # در فایل مستقل، Daily_History وجود ندارد؛ این ستون را
+                # اسکریپت پایتون یا خود کاربر پر می‌کند.
+                c = ws.cell(row=r, column=j)
+                c.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
+                c.font = Font(name=FONT, size=9, color=K.C_GREEN_LINK)
+                c.number_format = fmt
                 continue
             c = ws.cell(row=r, column=j, value=guard(tmpl.format(r=r, **cm), r))
             if fmt:
@@ -888,6 +926,50 @@ def build_time_cycles(wb, symbols, hist):
         r2 += 1
     ws.freeze_panes = "B5"
     return ws, cm["z_total"]
+
+
+# =====================================================================
+# 7b) Time_Link — شیت پل امتیاز زمانی
+# =====================================================================
+def build_time_link(wb, symbols):
+    """پل بین فایل سیگنال سهام و فایل تحلیل زمانی.
+
+    چرا شیت پل و نه ارجاع بین‌فایلی: فرمول ارجاع به فایل دیگر (`='[1]X'!A1`)
+    وقتی فایل مبدأ باز نباشد فقط مقدار کش‌شده را نشان می‌دهد و با بازنویسی
+    توسط openpyxl کاملاً از بین می‌رود. این شیت را اسکریپت پایتون پر می‌کند:
+        python -m timeframe export --workbook Stocks_Signals.xlsx
+    """
+    ws = wb.create_sheet("Time_Link")
+    ws.sheet_view.rightToLeft = True
+    cols = [("نماد", 12), ("امتیاز زمانی (−۱۰ تا +۱۰)", 22),
+            ("اتکاپذیری", 14), ("چرخه معنادار؟", 14),
+            ("تاریخ به‌روزرسانی", 16), ("منبع", 30)]
+    title_block(ws, "پل امتیاز زمانی (Time_Link)",
+                "این شیت را اسکریپت تحلیل زمانی پر می‌کند. تا وقتی خالی است، "
+                "امتیاز زمانی صفر می‌ماند و چون وزنش هم صفر است، بر سیگنال اثری ندارد.",
+                len(cols))
+    widths(ws, [c[1] for c in cols])
+    hdr(ws, 3, [c[0] for c in cols],
+        ["از Watchlist", "محاسبه پایتون", "محاسبه پایتون", "محاسبه پایتون", "-", "-"])
+    for i in range(N_SYM_ROWS):
+        r = 5 + i
+        ws.cell(row=r, column=1,
+                value='=IF(COUNTA(Watchlist!$A${w})=0,"",Watchlist!$A${w})'.format(w=5 + i))
+        ws.cell(row=r, column=2, value=0).number_format = F_NUM1
+    style_data(ws, 5, 4 + N_SYM_ROWS, 1, len(cols), size=9)
+    for r in range(5, 5 + N_SYM_ROWS):
+        ws.cell(row=r, column=1).font = Font(name=FONT, size=9, bold=True)
+        ws.cell(row=r, column=2).number_format = F_NUM1
+        for cc in range(2, 5):
+            ws.cell(row=r, column=cc).fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
+            ws.cell(row=r, column=cc).font = Font(name=FONT, size=9, color=K.C_GREEN_LINK)
+    note(ws, "A%d" % (6 + N_SYM_ROWS),
+         "برای پرکردن خودکار:  python -m timeframe export --workbook <همین فایل>  "
+         "— اسکریپت امتیاز زمانی هر نماد را از تحلیل چرخه محاسبه و اینجا می‌نویسد.")
+    ws.merge_cells(start_row=6 + N_SYM_ROWS, start_column=1,
+                   end_row=6 + N_SYM_ROWS, end_column=len(cols))
+    ws.freeze_panes = "A5"
+    return ws
 
 
 # =====================================================================
@@ -1035,7 +1117,7 @@ OPT_COLS = [
     ("تعداد معاملات", "tradeCount", 11, F_INT),
     ("موقعیت‌های باز ⚠️", "openInterest", 12, F_INT),
     ("اندازه قرارداد", "andazeyeQarardad", 11, F_INT),
-    ("قیمت دارایی پایه", "Calculations", 13, F_PRICE),
+    ("قیمت دارایی پایه", "Underlying", 13, F_PRICE),
     ("مانی‌نس (S÷K)", "-", 11, F_NUM2),
     ("وضعیت", "ITM/ATM/OTM", 10, None),
     ("ارزش ذاتی", "-", 11, F_PRICE),
@@ -1048,7 +1130,7 @@ OPT_COLS = [
     ("قیمت نظری", "Black-Scholes", 11, F_PRICE),
     ("بازار ÷ نظری", "گران/ارزان", 11, F_NUM2),
     ("اهرم مؤثر", "S×|Δ|÷P", 10, F_NUM1),
-    ("امتیاز سهم پایه", "Calculations", 11, F_NUM1),
+    ("امتیاز سهم پایه", "Underlying", 11, F_NUM1),
     ("نقدشوندگی معتبر؟", "OPT_MIN_*", 11, None),
     ("امتیاز آپشن", "−۱۰ تا +۱۰", 11, F_NUM1),
     ("سیگنال آپشن", "-", 20, None),
@@ -1078,7 +1160,7 @@ def build_options(wb):
                 if OPT_COLS[j][3]:
                     c.number_format = OPT_COLS[j][3]
         F = {
-            15: '=IFERROR(INDEX(Calculations!$D$1:$D$5000,MATCH($D{r},Calculations!$A$1:$A$5000,0)),"")',
+            15: '=IFERROR(INDEX(Underlying!$B$1:$B$5000,MATCH($D{r},Underlying!$A$1:$A$5000,0)),"")',
             16: '=IFERROR($O{r}/$E{r},"")',
             17: '=IF($P{r}="","",IF($C{r}="Call",IF($P{r}>1+OPT_ATM_BAND,"ITM",IF($P{r}<1-OPT_ATM_BAND,"OTM","ATM")),'
                 'IF($P{r}<1-OPT_ATM_BAND,"ITM",IF($P{r}>1+OPT_ATM_BAND,"OTM","ATM"))))',
@@ -1094,7 +1176,7 @@ def build_options(wb):
                 '$E{r}*EXP(-OPT_RF*$T{r})*NORMSDIST(-$W{r})-$O{r}*NORMSDIST(-$V{r})),"")',
             26: '=IFERROR($I{r}/$Y{r},"")',
             27: '=IFERROR($O{r}*ABS($X{r})/$I{r},"")',
-            28: '=IFERROR(INDEX(Calculations!${tot}$1:${tot}$5000,MATCH($D{r},Calculations!$A$1:$A$5000,0)),0)',
+            28: '=IFERROR(INDEX(Underlying!$D$1:$D$5000,MATCH($D{r},Underlying!$A$1:$A$5000,0)),0)',
             29: '=IF(AND($J{r}>=OPT_MIN_VOL,$G{r}>=OPT_MIN_DTE),"بله","خیر")',
             30: '=IF($AC{r}="خیر",0,IFERROR(MAX(-10,MIN(10,'
                 'IF($C{r}="Call",$AB{r},-$AB{r})*0.6'
@@ -1111,8 +1193,7 @@ def build_options(wb):
                 '&" | "&$G{r}&" روز تا سررسید"',
         }
         for ci, tmpl in F.items():
-            c = ws.cell(row=r, column=ci,
-                        value=guard(tmpl.format(r=r, tot=COLREF["calc"]["total"]), r))
+            c = ws.cell(row=r, column=ci, value=guard(tmpl.format(r=r), r))
             if OPT_COLS[ci - 1][3]:
                 c.number_format = OPT_COLS[ci - 1][3]
     style_data(ws, first, lastrow, 1, len(OPT_COLS), size=9)
@@ -1156,6 +1237,56 @@ def build_options(wb):
         ws.merge_cells(start_row=r2, start_column=1, end_row=r2, end_column=14)
         r2 += 1
     return ws, first, lastrow
+
+
+# =====================================================================
+# 9b) Underlying — شیت پل دارایی پایه برای فایل آپشن
+# =====================================================================
+UNDERLYING_ROWS = 40
+
+
+def build_underlying(wb, symbols=None):
+    """پل بین فایل آپشن و فایل سیگنال سهام.
+
+    فایل آپشن باید بداند قیمت و امتیاز سهم پایه چند است. به‌جای ارجاع
+    بین‌فایلی شکننده، این جدول را اسکریپت پر می‌کند:
+        python scripts/link_workbooks.py
+    """
+    ws = wb.create_sheet("Underlying")
+    ws.sheet_view.rightToLeft = True
+    cols = [("نماد پایه", 12), ("آخرین قیمت", 14), ("قیمت پایانی", 14),
+            ("امتیاز کل سهم", 14), ("سیگنال سهم", 16), ("قدرت سیگنال", 12),
+            ("تاریخ به‌روزرسانی", 16)]
+    title_block(ws, "دارایی پایه (Underlying)",
+                "این جدول را اسکریپت link_workbooks.py از فایل Stocks_Signals.xlsx "
+                "پر می‌کند. تا وقتی خالی است، محاسبات آپشن مقدار نمی‌گیرند.",
+                len(cols))
+    widths(ws, [c[1] for c in cols])
+    hdr(ws, 3, [c[0] for c in cols],
+        ["lVal18AFC", "pDrCotVal", "pClosing", "امتیاز کل", "برچسب", "۱ تا ۵", "-"])
+    seeds = sorted({row[3] for row in OPT_SAMPLE})
+    for i in range(UNDERLYING_ROWS):
+        r = 5 + i
+        if i < len(seeds):
+            ws.cell(row=r, column=1, value=seeds[i])
+        for cc in range(1, len(cols) + 1):
+            cell = ws.cell(row=r, column=cc)
+            cell.border = BORDER
+            cell.font = Font(name=FONT, size=9,
+                             color=K.C_BLUE_INPUT if cc <= 6 else K.C_NOTE)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if cc <= 6:
+                cell.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
+        ws.cell(row=r, column=2).number_format = F_PRICE
+        ws.cell(row=r, column=3).number_format = F_PRICE
+        ws.cell(row=r, column=4).number_format = F_NUM1
+    note(ws, "A%d" % (6 + UNDERLYING_ROWS),
+         "برای پرکردن خودکار:  python scripts/link_workbooks.py "
+         "--stocks Stocks_Signals.xlsx --options Options_Signals.xlsx")
+    ws.merge_cells(start_row=6 + UNDERLYING_ROWS, start_column=1,
+                   end_row=6 + UNDERLYING_ROWS, end_column=len(cols))
+    ws.freeze_panes = "A5"
+    return ws
 
 
 # =====================================================================
@@ -1380,7 +1511,7 @@ FIELD_SRC = {
 }
 
 
-def build_api_map(wb):
+def build_api_map(wb, sheets=None):
     ws = wb.create_sheet("API_Map")
     ws.sheet_view.rightToLeft = True
     cols = ["شیت", "ستون", "برچسب فارسی", "فیلد JSON", "Endpoint", "توضیح فیلد", "وضعیت تأیید"]
@@ -1396,8 +1527,11 @@ def build_api_map(wb):
         c.alignment = Alignment(horizontal="center", vertical="center")
         c.border = BORDER
     r = 4
-    for sheet_name, spec in (("Data_Input", DI_COLS), ("Daily_History", DH_RAW),
-                             ("Market_Index", MI_COLS), ("Options", OPT_COLS)):
+    all_specs = (("Data_Input", DI_COLS), ("Daily_History", DH_RAW),
+                 ("Market_Index", MI_COLS), ("Options", OPT_COLS))
+    for sheet_name, spec in all_specs:
+        if sheets is not None and sheet_name not in sheets:
+            continue
         for i, col in enumerate(spec):
             label, api = col[0], col[1]
             if api in ("-", None):
@@ -1529,13 +1663,29 @@ DOC = [
 ]
 
 
-def build_documentation(wb):
+DOC_SCOPE = {
+    "stocks": None,          # همه بخش‌ها
+    "options": ("۱)", "۲)", "۴)", "۵)", "۷)", "۸)"),
+    "time": ("۱)", "۶)", "۸)", "۹)"),
+    "minimal": ("۱)", "۸)"),
+}
+
+
+def build_documentation(wb, scope="stocks", extra=None):
+    """scope: کدام بخش‌های راهنما در این فایل بیاید."""
     ws = wb.create_sheet("Documentation")
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
     widths(ws, [40, 78, 3, 3, 3, 3, 3, 3])
+    keep_pfx = DOC_SCOPE.get(scope, None)
     r = 1
-    for kind, text in DOC:
+    keep = True
+    doc_rows = list(DOC) + list(extra or [])
+    for kind, text in doc_rows:
+        if kind == "H2" and keep_pfx is not None:
+            keep = any(str(text).startswith(p) for p in keep_pfx)
+        if kind not in ("H1", "W") and not keep:
+            continue
         if kind == "T":
             left, right = text.split("|", 1)
             c1 = ws.cell(row=r, column=1, value=left)

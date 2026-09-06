@@ -202,7 +202,7 @@ def cmd_sources(_args):
 
 def cmd_export(args):
     from .excel_export import export
-    return export(args.workbook, strict=args.strict)
+    return export(args.workbook, strict=args.strict, data_path=args.data)
 
 
 def build_parser():
@@ -271,6 +271,10 @@ def build_parser():
 
     s = sub.add_parser("export", help="نوشتن نتایج در فایل اکسل")
     common(s)
+    s.add_argument("--data", default=None,
+                   help="فایل منبع داده قیمت (پیش‌فرض: همان فایل مقصد). "
+                        "برای مجموعه تفکیک‌شده: --workbook Time_Analysis.xlsx "
+                        "--data Stocks_Signals.xlsx")
     s.set_defaults(func=cmd_export)
     return p
 
