@@ -637,7 +637,9 @@ def main():
                test_workbook_split, test_bridge_scripts,
                test_market_data_providers, test_manual_provider_roundtrip,
                test_history_parsers, test_valuation_series,
-               test_asset_signals_sheet):
+               test_asset_signals_sheet,
+               test_score_replica_matches_workbook,
+               test_weight_search_guards):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -780,6 +782,110 @@ def test_asset_signals_sheet():
           "AW_SUM" not in tmpl["total"])
     for nm in ("TH_SBUY", "TH_BUY", "TH_SELL", "TH_SSELL"):
         check("آستانه %s از Settings خوانده می‌شود" % nm, nm in tmpl["signal"])
+
+
+
+def test_score_replica_matches_workbook():
+    section("۳۱) تطابق بازتولید پایتون با مقادیر اکسل")
+    import openpyxl
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from timeframe.backtest import asset_score as A
+
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    path = os.path.join(root, "Gold_Analysis.xlsx")
+    if not os.path.exists(path):
+        check("فایل طلا برای مقایسه موجود است", False, "ابتدا build_all اجرا شود")
+        return
+    wb = openpyxl.load_workbook(path, data_only=True)
+    sig = wb["Asset_Signals"]
+
+    w = A.ScoreWeights()          # همان ۳۵/۲۵/۱۵/۲۵ بخش ۹ Settings
+    n_checked = 0
+    for r in range(5, 12):
+        asset = sig.cell(row=r, column=1).value
+        if not asset:
+            continue
+        t = sig.cell(row=r, column=18).value
+        m = sig.cell(row=r, column=19).value
+        v = sig.cell(row=r, column=20).value
+        pv = sig.cell(row=r, column=21).value
+        total = sig.cell(row=r, column=22).value
+        pct = sig.cell(row=r, column=17).value
+        if not all(isinstance(x, (int, float)) for x in (t, m, v, pv, total)):
+            continue
+        got = A.combine(t, m, v, pv, w, isinstance(pct, (int, float)))
+        check("امتیاز کل «%s» بازتولید می‌شود" % asset, abs(got - total) < 1e-6,
+              "اکسل %.4f ← پایتون %.4f" % (total, got))
+        n_checked += 1
+    check("دست‌کم سه دارایی مقایسه شد", n_checked >= 3, "%d دارایی" % n_checked)
+
+    # زیرنمره روند و مومنتوم مستقیماً از سری قیمت شیت تاریخچه بازسازی می‌شوند
+    hist = wb["Gold_History"]
+    closes = []
+    for r in range(5, hist.max_row + 1):
+        c = hist.cell(row=r, column=3).value
+        if isinstance(c, (int, float)):
+            closes.append(float(c))
+        elif closes:
+            break
+    check("سری قیمت خوانده شد", len(closes) > 250, "%d روز" % len(closes))
+    if len(closes) > 250:
+        rows = A.compute(closes)
+        last = rows[-1]
+        xt = sig.cell(row=5, column=18).value
+        xm = sig.cell(row=5, column=19).value
+        check("امتیاز روند (T) با اکسل یکی است", abs(last.t - xt) < 1e-9,
+              "اکسل %.1f ← پایتون %.1f" % (xt, last.t))
+        check("امتیاز مومنتوم (M) با اکسل یکی است", abs(last.m - xm) < 1e-9,
+              "اکسل %.1f ← پایتون %.1f" % (xm, last.m))
+
+
+def test_weight_search_guards():
+    section("۳۲) جست‌وجوی وزن — محافظ‌های آماری")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from timeframe.backtest import asset_score as A
+    from timeframe.backtest import weight_search as W
+
+    g = W.simplex_grid(0.05)
+    check("جمع هر ترکیب دقیقاً ۱ است",
+          all(abs(sum(x.as_tuple()) - 1.0) < 1e-9 for x in g))
+    check("ترکیب «فقط ارزش‌گذاری» حذف شده",
+          all(sum(x.as_tuple()[:3]) > 0 for x in g))
+    check("اندازه شبکه معقول است", 1500 < len(g) < 2000, "%d ترکیب" % len(g))
+
+    # مخرج پویا: نبودِ سنجه نباید امتیاز را رقیق کند
+    a = A.combine(10, 3, 1, 0, A.ScoreWeights(), has_valuation=False)
+    b = (10 * .35 + 3 * .25 + 1 * .15) / (.35 + .25 + .15)
+    check("مخرج بدون سنجه، وزن ارزش‌گذاری را حذف می‌کند", abs(a - b) < 1e-9)
+
+    # صدک باید گسترش‌یابنده باشد، نه روی کل ستون — وگرنه نگاه به آینده است
+    rising = [float(i) for i in range(400)]
+    rows = A.compute([100.0] * 400, valuation=rising)
+    early = [r for r in rows[:200] if r.val_pct is not None]
+    check("صدک روی سری صعودی، در ابتدا بالا نیست",
+          all(r.val_pct >= 0.9 for r in early[-5:]) if early else True,
+          "پنجره گسترش‌یابنده: هر مقدار نو، بیشترین مقدار تا آن لحظه است")
+    check("پیش از تاریخچه کافی، صدک ساخته نمی‌شود",
+          all(r.val_pct is None for r in rows[:120]))
+
+    # آزمون منفی: روی نویز محض، سیگنال نباید معامله پرسود بسازد
+    import random as _r
+    from timeframe.backtest.engine import Backtester, Costs
+    from timeframe.series import Bar, TimeSeries
+    _r.seed(99)
+    px, v = 100.0, []
+    for i in range(1500):
+        px *= math.exp(_r.gauss(0, 0.01))
+        v.append(px)
+    ts = TimeSeries("نویز", [Bar(date=datetime.date(2018, 1, 1) +
+                                 datetime.timedelta(days=i), close=c, high=c, low=c)
+                             for i, c in enumerate(v)])
+    rows = A.compute(v)
+    bt = Backtester(costs=Costs(), allow_locked_queue=True, periods_per_year=252)
+    r = W._run_one(ts, rows, A.ScoreWeights(), bt, 2.0, -2.0)
+    ret = r.equity[-1] - 1.0 if r.equity else 0.0
+    check("روی گشت تصادفی، وزن پیش‌فرض سود معنادار نمی‌سازد", ret < 0.5,
+          "بازده %.1f%% روی %d معامله" % (ret * 100, len(r.trades)))
 
 
 

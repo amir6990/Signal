@@ -106,10 +106,10 @@ class Backtester:
         self.periods_per_year = periods_per_year
 
     # ------------------------------------------------------------------
-    def _locked(self, ts: TimeSeries, i: int) -> bool:
+    @staticmethod
+    def _locked_at(highs, lows, i: int) -> bool:
         """آیا نماد در صف قفل است؟ تقریب: های و لو یکی و برابر قیمت پایانی."""
-        h, l = ts.highs[i], ts.lows[i]
-        return abs(h - l) < 1e-9
+        return abs(highs[i] - lows[i]) < 1e-9
 
     def run(self, ts: TimeSeries, signal: Sequence[float], name: str = "",
             threshold_in: float = 0.5, threshold_out: float = -0.5,
@@ -133,9 +133,18 @@ class Backtester:
         stop_px = None
         turnover = 0.0
 
+        # ⚠️ closes/highs/lows در TimeSeries **property** هستند و هر بار
+        # فهرست را از نو می‌سازند. خواندنشان داخل حلقه، بک‌تست را O(n²)
+        # می‌کرد: روی ۸٬۰۰۰ کندل حدود ۱٫۹ ثانیه به‌جای ۱۵ میلی‌ثانیه. یک بار
+        # بیرون حلقه گرفته می‌شوند.
+        closes = ts.closes
+        highs = ts.highs
+        lows = ts.lows
+        bars = ts.bars
+
         for i in range(n):
-            px = ts.closes[i]
-            prev_px = ts.closes[i - 1] if i > 0 else px
+            px = closes[i]
+            prev_px = closes[i - 1] if i > 0 else px
             # بازده روز جاری با موقعیتی که از دیروز داشتیم
             r = (px / prev_px - 1.0) * pos if i > 0 else 0.0
 
@@ -150,13 +159,13 @@ class Backtester:
                     desired = 0.0
             # حد ضرر و حداکثر مدت نگهداری
             if pos > 0.0 and entry_i is not None:
-                if stop_px is not None and ts.lows[i] <= stop_px:
+                if stop_px is not None and lows[i] <= stop_px:
                     desired = 0.0
                 if self.max_hold_bars and (i - entry_i) >= self.max_hold_bars:
                     desired = 0.0
 
             if desired != pos:
-                if self._locked(ts, i) and not self.allow_locked_queue:
+                if not self.allow_locked_queue and self._locked_at(highs, lows, i):
                     res.blocked_days += 1          # صف قفل — اجرا ممکن نیست
                 else:
                     if desired > pos:              # ورود
@@ -173,22 +182,22 @@ class Backtester:
                         if entry_i is not None:
                             gross = px / entry_px - 1.0
                             res.trades.append(Trade(
-                                ts.bars[entry_i].date, entry_px, ts.bars[i].date, px,
+                                bars[entry_i].date, entry_px, bars[i].date, px,
                                 i - entry_i, gross,
                                 gross - self.costs.round_trip,
-                                "حد ضرر" if (stop_px and ts.lows[i] <= stop_px) else "سیگنال"))
+                                "حد ضرر" if (stop_px and lows[i] <= stop_px) else "سیگنال"))
                         entry_i, stop_px = None, None
                     pos = desired
 
             equity *= (1.0 + r)
-            res.dates.append(ts.bars[i].date)
+            res.dates.append(bars[i].date)
             res.returns.append(r)
             res.equity.append(equity)
             res.positions.append(pos)
 
         if pos > 0.0 and entry_i is not None:       # موقعیت باز در انتها
-            gross = ts.closes[-1] / entry_px - 1.0
-            res.trades.append(Trade(ts.bars[entry_i].date, entry_px, None, None,
+            gross = closes[-1] / entry_px - 1.0
+            res.trades.append(Trade(bars[entry_i].date, entry_px, None, None,
                                     n - 1 - entry_i, gross,
                                     gross - self.costs.round_trip, "باز در پایان دوره"))
         res.turnover = turnover
@@ -207,16 +216,17 @@ class Backtester:
     # ------------------------------------------------------------------
     def buy_and_hold(self, ts: TimeSeries) -> BacktestResult:
         res = BacktestResult("خرید و نگهداری")
+        closes, bars = ts.closes, ts.bars      # همان دلیل بالا: property است
         eq = 1.0 - self.costs.buy_cost
         for i in range(len(ts)):
-            r = (ts.closes[i] / ts.closes[i - 1] - 1.0) if i > 0 else -self.costs.buy_cost
+            r = (closes[i] / closes[i - 1] - 1.0) if i > 0 else -self.costs.buy_cost
             eq = eq * (1 + r) if i > 0 else eq
-            res.dates.append(ts.bars[i].date)
+            res.dates.append(bars[i].date)
             res.returns.append(r)
             res.equity.append(eq)
             res.positions.append(1.0)
-        g = ts.closes[-1] / ts.closes[0] - 1.0
-        res.trades.append(Trade(ts.bars[0].date, ts.closes[0], ts.bars[-1].date,
-                                ts.closes[-1], len(ts) - 1, g,
+        g = closes[-1] / closes[0] - 1.0
+        res.trades.append(Trade(bars[0].date, closes[0], bars[-1].date,
+                                closes[-1], len(ts) - 1, g,
                                 g - self.costs.round_trip, "پایان دوره"))
         return res

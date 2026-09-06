@@ -11,3 +11,6 @@ venv/
 # خروجی‌های محلی
 forecasts.json
 out/
+
+# داده مرجع دانلودشده — با scripts/fetch_reference_series.py بازتولید می‌شود
+data/reference/

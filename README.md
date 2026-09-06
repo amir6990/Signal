@@ -26,6 +26,8 @@ src/sample_data.py           تولید داده نمونه DEMO
 src/common.py                استایل‌ها و قالب‌های عددی
 scripts/tse_updater.py       پرکردن خودکار از APIهای بورس
 scripts/fetch_gold_fx.py     دریافت قیمت طلا و ارز از چند منبع
+scripts/fetch_reference_series.py  سری‌های واقعی عمومی برای اعتبارسنجی وزن‌ها
+scripts/backtest_weights.py  سنجش وزن‌های سیگنال روی سری واقعی
 scripts/market_data/         منابع داده با ثبت منشأ و آزمون سازگاری
 scripts/link_workbooks.py    پل داده‌ای سهام ← آپشن
 scripts/recalc.py            بازمحاسبه با LibreOffice
@@ -46,6 +48,7 @@ docs/TIME_LAYER.md           مستند لایه زمانی
 docs/FORECAST_AND_BACKTEST.md مستند بک‌تست و پیش‌بینی
 docs/WORKBOOKS.md            مستند ساختار فایل‌ها و پل‌ها
 docs/GOLD_FX_DATA.md         مستند منابع داده طلا و ارز
+docs/WEIGHT_VALIDATION.md    سنجش وزن‌های سیگنال روی سری واقعی
 requirements.txt
 ```
 
@@ -173,6 +176,25 @@ python scripts/recalc.py Gold_Analysis.xlsx FX_Analysis.xlsx   # بعد از --h
 مشکوک اصلاً نوشته نمی‌شود.
 
 جزئیات در [`docs/GOLD_FX_DATA.md`](docs/GOLD_FX_DATA.md).
+
+### وزن‌ها سنجیده شده‌اند — نتیجه را قبل از استفاده بخوانید
+
+وزن‌های سیگنال روی پنج سری واقعی (ارز کشورهای پرتورم + نفت برنت،
+۷٬۹۴۰ تا ۱۳٬۴۴۹ کندل) بک‌تست شده‌اند. دو یافته که بر نحوه استفاده اثر
+مستقیم دارند:
+
+- **آستانه ±۲ قابل دفاع نیست.** روی هر پنج سری هم بازده کمتری از
+  خرید-و-نگهداری داد و هم افت بیشتری. با ±۵ (فقط برچسب «قوی») همان
+  وزن‌ها از زیان به سود می‌روند و افت را ۲۰ تا ۴۰٪ کم می‌کنند.
+- **وزن بهینه پایدار نیست** (۱۰ تا ۳۳٪ پایداری بین پنجره‌ها). وزن‌ها را
+  بهینه نکنید؛ ۳۵/۲۵/۱۵/۲۵ به‌اندازه هر عدد بهینه‌شده‌ای خوب است.
+
+```bash
+python scripts/fetch_reference_series.py
+python scripts/backtest_weights.py
+```
+
+جزئیات و محدودیت‌ها در [`docs/WEIGHT_VALIDATION.md`](docs/WEIGHT_VALIDATION.md).
 
 ---
 
