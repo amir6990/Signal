@@ -20,9 +20,11 @@ import build_workbook as B
 import common as K
 from common import (BORDER, F_DATE, F_NUM1, F_NUM2, F_PCT, F_PCT2, F_PRICE, FONT,
                     hdr, note, title_block, widths)
+from . import asset_signals
 from .assets_common import build_history_sheet, trend_block
 
-SHEET_ORDER = ["FX_Dashboard", "Spreads", "FX_Input", "FX_History",
+SHEET_ORDER = ["FX_Dashboard", "Asset_Signals", "Spreads", "FX_Input",
+               "FX_History", "Hist_USDT", "Hist_Nima",
                "Settings", "Documentation"]
 
 FX_DOC = [
@@ -291,14 +293,32 @@ def build(out_path, **_kw):
     wb = Workbook()
     wb.remove(wb.active)
 
-    B.build_settings(wb, sections=("۱)", "۲)", "۸)"))
+    B.build_settings(wb, sections=("۱)", "۲)", "۵)", "۸)", "۹)"))
     _input_sheet(wb)
     _spreads_sheet(wb)
     usd_rows = _sample_history()
     _, usd_last = build_history_sheet(
         wb, "FX_History", "تاریخچه روزانه دلار آزاد",
-        "ستون‌های A تا F ورودی؛ بقیه فرمول. جهش‌های پله‌ای در داده نمونه عمدی‌اند.",
-        usd_rows)
+        "ستون‌های A تا F ورودی؛ بقیه فرمول. ستون P (شکاف با نیمایی) را پایتون پر می‌کند.",
+        usd_rows, valuation_label="شکاف با نیمایی")
+    build_history_sheet(
+        wb, "Hist_USDT", "تاریخچه روزانه تتر",
+        "با  python scripts/fetch_gold_fx.py --history  پر می‌شود.",
+        _sample_history(base=968_000.0, seed=53),
+        valuation_label="پریمیوم نسبت به دلار آزاد")
+    build_history_sheet(
+        wb, "Hist_Nima", "تاریخچه روزانه دلار نیمایی",
+        "با  python scripts/fetch_gold_fx.py --history  پر می‌شود.",
+        _sample_history(base=718_000.0, drift=0.0009, vol=0.004, seed=57))
+    asset_signals.build(
+        wb,
+        [("دلار آزاد", "FX_History"),
+         ("تتر USDT", "Hist_USDT"),
+         ("دلار نیمایی", "Hist_Nima")],
+        "سیگنال دلار و تتر",
+        "سنجه ارزش‌گذاری دلار آزاد، شکاف آن با نیمایی است؛ و برای تتر، پریمیوم "
+        "نسبت به دلار آزاد. هر دو میانگین‌بازگرد‌اند: صدک بالا یعنی شکاف/پریمیوم "
+        "تاریخی گشاد است و احتمال بسته‌شدنش بیشتر — نه اینکه حتماً بسته می‌شود.")
     _dashboard(wb, usd_last, usd_last)
     B.build_documentation(wb, scope="minimal", extra=FX_DOC)
 

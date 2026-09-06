@@ -42,6 +42,15 @@ HIST_CALC = [
      '=IF(OR(NOT(ISNUMBER($C{r})),NOT(ISNUMBER($M{r})),$M{r}=0),"",$C{r}/$M{r}-1)', 0),
 ]
 
+# ستون‌های ارزش‌گذاری — P خام (نوشته پایتون)، Q صدک (فرمول اکسل).
+# چرا این تقسیم کار: ساختن سری حباب نیازمند هم‌ترازی سه سری زمانی با تاریخ‌های
+# ناهمسان است که در اکسل شکننده می‌شود؛ در پایتون بدیهی است. اما صدک باید در
+# اکسل باشد تا با تغییر داده زنده به‌روز شود.
+VAL_RAW = ("سنجه ارزش‌گذاری", "پایتون", 16, F_PCT)
+VAL_CALC = ("صدک تاریخی سنجه", "PERCENTRANK", 15, F_PCT,
+            '=IF(NOT(ISNUMBER($P{r})),"",'
+            'IFERROR(PERCENTRANK($P${first}:$P${last},$P{r}),""))')
+
 FIRST_ROW = 5
 
 
@@ -50,15 +59,27 @@ def hist_formula(tmpl, back, r):
     return tmpl.format(r=r, p=r - 1, lo=lo, k=r - lo + 2)
 
 
-def build_history_sheet(wb, name, title, subtitle, rows, n_spare=1200):
-    """شیت تاریخچه با ستون‌های خام + محاسباتی. rows: list[(date, close, high, low, vol)]."""
+def build_history_sheet(wb, name, title, subtitle, rows, n_spare=700,
+                        valuation_label=None):
+    """شیت تاریخچه با ستون‌های خام + محاسباتی.
+
+    rows: list[(date, close, high, low, vol)]
+    valuation_label: اگر داده شود، ستون سنجه ارزش‌گذاری و صدک آن اضافه می‌شود
+        (مثلاً «حباب سکه» یا «پریمیوم تتر»).
+    """
     ws = wb.create_sheet(name)
     ws.sheet_view.rightToLeft = True
-    ncol = len(HIST_RAW) + len(HIST_CALC)
+    ncol = len(HIST_RAW) + len(HIST_CALC) + (2 if valuation_label else 0)
     title_block(ws, title, subtitle, ncol)
-    widths(ws, [c[2] for c in HIST_RAW] + [c[2] for c in HIST_CALC])
-    hdr(ws, 3, [c[0] for c in HIST_RAW] + [c[0] for c in HIST_CALC],
-        [c[1] for c in HIST_RAW] + [c[1] for c in HIST_CALC])
+    w = [c[2] for c in HIST_RAW] + [c[2] for c in HIST_CALC]
+    h = [c[0] for c in HIST_RAW] + [c[0] for c in HIST_CALC]
+    a = [c[1] for c in HIST_RAW] + [c[1] for c in HIST_CALC]
+    if valuation_label:
+        w += [VAL_RAW[2], VAL_CALC[2]]
+        h += [valuation_label, VAL_CALC[0]]
+        a += [VAL_RAW[1], VAL_CALC[1]]
+    widths(ws, w)
+    hdr(ws, 3, h, a)
 
     from timeframe.jalali import jalali_str
     total = max(len(rows), 0) + n_spare
@@ -89,6 +110,21 @@ def build_history_sheet(wb, name, title, subtitle, rows, n_spare=1200):
             c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = BORDER
     last = FIRST_ROW + total - 1
+    if valuation_label:
+        vcol = len(HIST_RAW) + len(HIST_CALC) + 1
+        for i in range(total):
+            r = FIRST_ROW + i
+            cv = ws.cell(row=r, column=vcol)
+            cv.fill = PatternFill("solid", fgColor=K.C_INPUT_BG)
+            cv.font = Font(name=FONT, size=8, color=K.C_GREEN_LINK)
+            cv.number_format = VAL_RAW[3]
+            cv.border = BORDER
+            cq = ws.cell(row=r, column=vcol + 1,
+                         value=VAL_CALC[4].format(r=r, first=FIRST_ROW, last=last))
+            cq.number_format = VAL_CALC[3]
+            cq.font = Font(name=FONT, size=8)
+            cq.alignment = Alignment(horizontal="center", vertical="center")
+            cq.border = BORDER
     style_data(ws, FIRST_ROW, FIRST_ROW + len(rows) - 1, 1, len(HIST_RAW), size=8)
     for r in range(FIRST_ROW, FIRST_ROW + len(rows)):
         for i, col in enumerate(HIST_RAW):

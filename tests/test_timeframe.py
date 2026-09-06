@@ -461,9 +461,11 @@ def test_workbook_split():
         "options": {"Options", "Underlying", "Settings", "API_Map", "Documentation"},
         "time": {"Time_Cycles", "Macro_Cycles", "Forecast", "Sources",
                  "Settings", "Documentation"},
-        "gold": {"Gold_Dashboard", "Coin_Bubble", "Gold_Input", "Gold_History",
+        "gold": {"Gold_Dashboard", "Asset_Signals", "Coin_Bubble", "Gold_Input",
+                 "Gold_History", "Hist_Gram18", "Hist_Ons",
                  "Settings", "Documentation"},
-        "fx": {"FX_Dashboard", "Spreads", "FX_Input", "FX_History",
+        "fx": {"FX_Dashboard", "Asset_Signals", "Spreads", "FX_Input",
+               "FX_History", "Hist_USDT", "Hist_Nima",
                "Settings", "Documentation"},
     }
     for key, want in expected.items():
@@ -501,8 +503,18 @@ def test_workbook_split():
         check("%s ارجاع بین‌فایلی ندارد" % key, not ext, str(ext[:3]) if ext else "")
 
     sizes = {k: os.path.getsize(v) for k, v in paths.items()}
-    check("فایل‌های سبک زیر ۳۰۰ کیلوبایت‌اند",
-          all(sizes[k] < 300_000 for k in ("options", "time", "gold", "fx")),
+    # آستانه‌ها یکسان نیستند و نباید باشند: options و time هرکدام یک سری دارند،
+    # ولی gold و fx هرکدام **سه** شیت تاریخچه دارند (سکه/گرم/اونس و
+    # دلار/تتر/نیمایی) چون برای هر دارایی یک سیگنال مستقل ساخته می‌شود. سه
+    # برابر شدن حجم، هزینه واقعی همان قابلیت است نه هدررفت.
+    check("options و time زیر ۳۰۰ کیلوبایت‌اند",
+          all(sizes[k] < 300_000 for k in ("options", "time")),
+          "، ".join("%s %dKB" % (k, sizes[k] // 1024) for k in ("options", "time")))
+    check("gold و fx زیر ۷۰۰ کیلوبایت‌اند",
+          all(sizes[k] < 700_000 for k in ("gold", "fx")),
+          "، ".join("%s %dKB" % (k, sizes[k] // 1024) for k in ("gold", "fx")))
+    check("هیچ فایلی به اندازه فایل یکپارچه قبلی نیست (زیر ۱ مگابایت)",
+          all(v < 1_000_000 for v in sizes.values()),
           "، ".join("%s %dKB" % (k, v // 1024) for k, v in sorted(sizes.items())))
 
 
@@ -623,7 +635,9 @@ def main():
                test_regime_model, test_base_rates, test_brier,
                test_judgment_register, test_outlook,
                test_workbook_split, test_bridge_scripts,
-               test_market_data_providers, test_manual_provider_roundtrip):
+               test_market_data_providers, test_manual_provider_roundtrip,
+               test_history_parsers, test_valuation_series,
+               test_asset_signals_sheet):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -631,6 +645,142 @@ def main():
         return 1
     print("✔ همه تست‌ها موفق.")
     return 0
+
+
+def test_history_parsers():
+    section("۲۸) تجزیه تاریخچه tgju و Nobitex")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+    from market_data.providers import nobitex, tgju
+
+    # --- tgju: ردیف‌ها [باز، کمترین، بیشترین، بسته، تغییرHTML، درصدHTML، شمسی، میلادی]
+    payload = {"data": [
+        ["1,000,000", "990,000", "1,010,000", "1,005,000",
+         "<span class='high'>5,000</span>", "<span>0.5%</span>",
+         "1404/06/15", "2025/09/06"],
+        ["۱٬۰۰۵٬۰۰۰", "۱٬۰۰۰٬۰۰۰", "۱٬۰۲۰٬۰۰۰", "۱٬۰۱۸٬۰۰۰",
+         "<span>13,000</span>", "<span>1.3%</span>", "1404/06/16", "2025-09-07"],
+        ["bad", "bad", "bad", "bad", "", "", "", ""],          # باید نادیده گرفته شود
+    ]}
+    orig = tgju.get_json
+    tgju.get_json = lambda u, timeout=None, referer=None: payload
+    try:
+        rows = tgju.fetch_history("sekee")
+    finally:
+        tgju.get_json = orig
+    check("ردیف خراب دور ریخته می‌شود", len(rows) == 2, "%d ردیف" % len(rows))
+    check("تاریخ میلادی خوانده می‌شود (نه شمسی)",
+          rows[0][0] == datetime.date(2025, 9, 6), str(rows[0][0]))
+    check("هر دو قالب تاریخ پشتیبانی می‌شوند",
+          rows[1][0] == datetime.date(2025, 9, 7), str(rows[1][0]))
+    check("HTML از ستون‌ها پاک می‌شود و عدد سالم است", rows[0][4] == 1_005_000.0)
+    check("ارقام فارسی خوانده می‌شوند", rows[1][4] == 1_018_000.0, str(rows[1][4]))
+    check("ترتیب صعودی است", rows[0][0] < rows[1][0])
+
+    # --- Nobitex UDF: مقادیر IRT به **تومان**‌اند، پس باید ×۱۰ شوند
+    udf = {"s": "ok", "t": [1562095800, 1562182200],
+           "o": [146272500, 150551000], "h": [152000000, 158000000],
+           "l": [140062400, 150551000], "c": [151440200, 157000000],
+           "v": [18.2, 9.8]}
+    orig = nobitex.get_json
+    nobitex.get_json = lambda u, timeout=None: udf
+    try:
+        bars = nobitex.fetch_history("USDTIRT")
+    finally:
+        nobitex.get_json = orig
+    check("دو کندل تجزیه شد", len(bars) == 2)
+    check("تومان به ریال تبدیل می‌شود (×۱۰)",
+          bars[0]["close"] == 151440200 * 10, str(bars[0]["close"]))
+    check("زمان epoch ثانیه‌ای به تاریخ تبدیل می‌شود",
+          bars[0]["date"] == datetime.date(2019, 7, 2), str(bars[0]["date"]))
+
+    nobitex.get_json = lambda u, timeout=None: {"s": "no_data"}
+    try:
+        failed = False
+        try:
+            nobitex.fetch_history("USDTIRT")
+        except ValueError:
+            failed = True
+        check("پاسخ no_data استثنا می‌دهد (نه سری خالی بی‌صدا)", failed)
+    finally:
+        nobitex.get_json = orig
+
+
+def test_valuation_series():
+    section("۲۹) سنجه ارزش‌گذاری طلا و ارز")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+    from market_data import history as H
+
+    d = datetime.date(2026, 1, 1)
+    ons, usd = 3200.0, 1_000_000.0
+    intrinsic = 8.133 * 0.900 * (ons / 31.1034768) * usd
+    closes = {"coin_full": {d: intrinsic * 1.18}, "ons": {d: ons},
+              "usd_free": {d: usd}}
+    v = H.build_valuation("coin_bubble", closes)
+    check("حباب سکه ۱۸٪ دقیقاً بازتولید می‌شود",
+          abs(v[d] - 0.18) < 1e-9, "%.6f" % v[d])
+
+    parity = 0.750 * (ons / 31.1034768) * usd
+    v = H.build_valuation("gram_premium",
+                          {"gram18": {d: parity * 1.07}, "ons": {d: ons},
+                           "usd_free": {d: usd}})
+    check("پریمیوم گرم ۷٪ بازتولید می‌شود", abs(v[d] - 0.07) < 1e-9)
+
+    v = H.build_valuation("usdt_premium",
+                          {"usdt": {d: usd * 1.02}, "usd_free": {d: usd}})
+    check("پریمیوم تتر ۲٪ بازتولید می‌شود", abs(v[d] - 0.02) < 1e-9)
+
+    # تله ریال/تومان: سکه به تومان → حباب حدود ۸۸٪− که بیرون دامنه معقول است
+    bad = {"coin_full": {d: intrinsic * 1.18 / 10}, "ons": {d: ons},
+           "usd_free": {d: usd}}
+    check("سکه با واحد غلط در سنجه نوشته نمی‌شود",
+          not H.build_valuation("coin_bubble", bad))
+
+    # هم‌ترازی تاریخ: روزی که یکی از نهاده‌ها ندارد، سنجه نمی‌گیرد
+    d2 = datetime.date(2026, 1, 2)
+    mixed = {"coin_full": {d: intrinsic * 1.18, d2: intrinsic * 1.18},
+             "ons": {d: ons}, "usd_free": {d: usd, d2: usd}}
+    got = H.build_valuation("coin_bubble", mixed)
+    check("روز بدون نهاده کامل کنار گذاشته می‌شود",
+          set(got) == {d}, str(sorted(got)))
+
+    # نبودِ کامل یک سری → سنجه ساخته نمی‌شود، نه اینکه صفر شود
+    check("نبودِ یک سری سنجه را صفر نمی‌کند",
+          H.build_valuation("coin_bubble", {"coin_full": {d: 1.0}}) == {})
+
+    check("هر شیت تاریخچه یک سری تعریف‌شده دارد",
+          all(v[0] in H.SERIES for v in H.SHEETS.values()))
+    check("هر سنجه ارجاع‌شده تعریف شده است",
+          all(v[1] in H.VALUATIONS for v in H.SHEETS.values() if v[1]))
+
+
+def test_asset_signals_sheet():
+    section("۳۰) شیت سیگنال دارایی‌های تک‌سری")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from workbooks import asset_signals
+
+    keys = [c[0] for c in asset_signals.COLS]
+    for k in ("price", "val", "val_pct", "t_score", "m_score", "v_score",
+              "p_score", "total", "signal"):
+        check("ستون %s وجود دارد" % k, k in keys)
+
+    tmpl = dict((c[0], c[4]) for c in asset_signals.COLS if c[4])
+
+    # هیچ فرمولی نباید به مقایسه با "" تکیه کند: در LibreOffice شرط 0="" درست
+    # است ولی در اکسل نادرست — همان تله‌ای که قبلاً ردیف‌های خالی را سیگنال‌دار
+    # نشان می‌داد.
+    offenders = [k for k, t in tmpl.items() if '}=""' in t]
+    check("هیچ فرمولی به تله 0=\"\" تکیه نمی‌کند",
+          not offenders, "، ".join(offenders))
+
+    check("خواندن سنجه با ISBLANK محافظت شده",
+          "ISBLANK" in tmpl["val"] and "ISBLANK" in tmpl["val_pct"])
+    check("مخرج امتیاز کل پویاست (وزن ارزش‌گذاری شرطی است)",
+          "IF(ISNUMBER($Q{r}),AW_VAL,0)" in tmpl["total"])
+    check("امتیاز کل به AW_SUM ثابت تقسیم نمی‌شود",
+          "AW_SUM" not in tmpl["total"])
+    for nm in ("TH_SBUY", "TH_BUY", "TH_SELL", "TH_SSELL"):
+        check("آستانه %s از Settings خوانده می‌شود" % nm, nm in tmpl["signal"])
+
 
 
 if __name__ == "__main__":

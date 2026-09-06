@@ -6,6 +6,7 @@
     python scripts/fetch_gold_fx.py --show         # دریافت و نمایش، بدون نوشتن
     python scripts/fetch_gold_fx.py --write        # نوشتن در Gold_Analysis و FX_Analysis
     python scripts/fetch_gold_fx.py --write --append-history   # افزودن ردیف امروز به تاریخچه
+    python scripts/fetch_gold_fx.py --history      # پر کردن کل تاریخچه از داده واقعی
     python scripts/fetch_gold_fx.py --manual my.json --write   # از فایل دستی
 
 ⚠️ **اول --probe را اجرا کنید.** برخلاف بورس که یک API مرجع دارد، برای دلار
@@ -26,6 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
+from market_data import history as HIST                    # noqa: E402
 from market_data.base import QUANTITIES, cross_check       # noqa: E402
 from market_data.providers import build_registry           # noqa: E402
 
@@ -47,6 +49,9 @@ TARGETS = {
 }
 
 FILES = {"gold": "Gold_Analysis.xlsx", "fx": "FX_Analysis.xlsx"}
+
+# کدام شیت تاریخچه از کدام سری پر می‌شود (تعریف در market_data/history.py)
+SHEET_PLAN = HIST.SHEETS
 
 
 def load_config(args):
@@ -211,6 +216,75 @@ def _append_history(wb, which, quotes):
           % (sheet, target, today, " (به‌روزرسانی)" if lastdate == today else ""))
 
 
+# ------------------------------------------------------------------ history
+def cmd_history(out_dir, timeout, days, dry=False):
+    """کل شیت‌های تاریخچه را از داده واقعی پر می‌کند.
+
+    برخلاف --append-history که فقط یک ردیف برای امروز می‌افزاید، این حالت
+    سری کامل را از منبع می‌گیرد و جای داده نمایشی می‌نشاند.
+    """
+    from openpyxl import load_workbook
+
+    needed = set()
+    for _key, val in SHEET_PLAN.items():
+        needed.add(val[0])
+    for _k, (needs, _fn) in HIST.VALUATIONS.items():
+        needed.update(needs)
+
+    print("دریافت سری‌های تاریخی (%d کلید):" % len(needed))
+    bars, closes, errors = HIST.fetch_series(sorted(needed), timeout=timeout,
+                                             days=days)
+    if not bars:
+        print("\n✘ هیچ سری‌ای دریافت نشد. تاریخچه نمایشی دست‌نخورده ماند —")
+        print("  که درست‌تر از پاک کردن آن و جا گذاشتن شیت خالی است.")
+        return 1
+
+    vals = {}
+    for kind in HIST.VALUATIONS:
+        v = HIST.build_valuation(kind, closes)
+        vals[kind] = v
+        if not v:
+            needs = HIST.VALUATIONS[kind][0]
+            miss = [HIST.SERIES[k][2] for k in needs if k not in closes]
+            print("  ⓘ سنجه «%s» ساخته نشد%s"
+                  % (kind, " — نبودِ " + "، ".join(miss) if miss else
+                     " — هیچ تاریخ مشترکی در دامنه معقول نبود"))
+
+    total = 0
+    for which, fname in FILES.items():
+        path = os.path.join(out_dir, fname)
+        if not os.path.exists(path):
+            print("! فایل یافت نشد: %s" % path)
+            continue
+        wb = load_workbook(path)
+        print("\n%s:" % fname)
+        for (w, sheet), (skey, vkey) in SHEET_PLAN.items():
+            if w != which:
+                continue
+            if sheet not in wb.sheetnames:
+                print("  ! شیت %s نبود" % sheet)
+                continue
+            if skey not in bars:
+                print("  ✘ %-14s سری «%s» دریافت نشد — دست‌نخورده ماند"
+                      % (sheet, HIST.SERIES[skey][2]))
+                continue
+            print("  %s ← %s" % (sheet, HIST.SERIES[skey][2]))
+            n, nv = HIST.write_history(wb[sheet], bars[skey],
+                                       vals.get(vkey) if vkey else None)
+            total += n
+        if not dry:
+            wb.save(path)
+    print("\n✓ %d ردیف نوشته شد%s" % (total, " (آزمایشی، ذخیره نشد)" if dry else ""))
+    if errors:
+        print("\n⚠ سری‌های دریافت‌نشده — شیتشان همان داده قبلی را دارد:")
+        for k, e in errors.items():
+            print("   - %-22s %s" % (HIST.SERIES[k][2], e))
+    print("\nگام بعد (اجباری): python scripts/recalc.py Gold_Analysis.xlsx "
+          "FX_Analysis.xlsx")
+    print("  بدون بازمحاسبه، ستون‌های محاسباتی مقدار قدیمی را نشان می‌دهند.")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="دریافت قیمت طلا و ارز")
     ap.add_argument("--probe", action="store_true", help="آزمون همه منابع")
@@ -218,6 +292,10 @@ def main(argv=None):
     ap.add_argument("--write", action="store_true", help="نوشتن در فایل‌های اکسل")
     ap.add_argument("--append-history", action="store_true", dest="append_history",
                     help="افزودن ردیف امروز به شیت تاریخچه")
+    ap.add_argument("--history", action="store_true",
+                    help="پر کردن کل شیت‌های تاریخچه از داده واقعی")
+    ap.add_argument("--history-days", type=int, default=760, dest="history_days",
+                    help="طول سری برای منابعی که بازه می‌گیرند (پیش‌فرض ۷۶۰ روز)")
     ap.add_argument("--dry-run", action="store_true", dest="dry")
     ap.add_argument("--force", action="store_true",
                     help="نوشتن حتی با وجود ناسازگاری بین مقادیر")
@@ -236,8 +314,10 @@ def main(argv=None):
 
     if args.probe:
         return cmd_probe(reg, cfg)
+    if args.history:
+        return cmd_history(args.dir, args.timeout, args.history_days, args.dry)
     if not (args.show or args.write):
-        print("یکی از --probe / --show / --write را بدهید.")
+        print("یکی از --probe / --show / --write / --history را بدهید.")
         print("پیشنهاد: اول --probe تا ببینید کدام منابع از ماشین شما کار می‌کنند.")
         return 1
 

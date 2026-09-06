@@ -20,9 +20,11 @@ import build_workbook as B
 import common as K
 from common import (BORDER, F_DATE, F_NUM1, F_NUM2, F_PCT, F_PCT2, F_PRICE, FONT,
                     hdr, note, title_block, widths)
+from . import asset_signals
 from .assets_common import build_history_sheet, trend_block
 
-SHEET_ORDER = ["Gold_Dashboard", "Coin_Bubble", "Gold_Input", "Gold_History",
+SHEET_ORDER = ["Gold_Dashboard", "Asset_Signals", "Coin_Bubble", "Gold_Input",
+               "Gold_History", "Hist_Gram18", "Hist_Ons",
                "Settings", "Documentation"]
 
 OUNCE_GRAMS = 31.1034768
@@ -66,8 +68,8 @@ GOLD_DOC = [
 ]
 
 
-def _sample_history(n=500):
-    rng = random.Random(21)
+def _sample_history(n=500, base=620_000_000.0, seed=21):
+    rng = random.Random(seed)
     d = datetime.date(2026, 9, 3)
     days = []
     while len(days) < n:
@@ -75,7 +77,7 @@ def _sample_history(n=500):
             days.append(d)
         d -= datetime.timedelta(days=1)
     days.reverse()
-    p, out = 620_000_000.0, []
+    p, out = float(base), []
     for dd in days:
         p *= 1 + rng.gauss(0.0009, 0.013)
         hi, lo = p * (1 + abs(rng.gauss(0, 0.004))), p * (1 - abs(rng.gauss(0, 0.004)))
@@ -323,13 +325,32 @@ def build(out_path, **_kw):
     wb = Workbook()
     wb.remove(wb.active)
 
-    B.build_settings(wb, sections=("۱)", "۲)", "۸)"))
+    B.build_settings(wb, sections=("۱)", "۲)", "۵)", "۸)", "۹)"))
     _input_sheet(wb)
     bubble = _bubble_sheet(wb)
     rows = _sample_history()
     _, hist_last = build_history_sheet(
         wb, "Gold_History", "تاریخچه روزانه سکه تمام بهار آزادی",
-        "ستون‌های A تا F ورودی؛ بقیه فرمول. ردیف‌های زرد خالی ظرفیت آماده‌اند.", rows)
+        "ستون‌های A تا F ورودی؛ بقیه فرمول. ستون P (حباب) را اسکریپت پایتون پر می‌کند.",
+        rows, valuation_label="حباب سکه")
+    build_history_sheet(
+        wb, "Hist_Gram18", "تاریخچه روزانه طلای ۱۸ عیار",
+        "با  python scripts/fetch_gold_fx.py --history  پر می‌شود.",
+        _sample_history(n=500, base=78_000_000, seed=41),
+        valuation_label="حباب گرم نسبت به فلز")
+    build_history_sheet(
+        wb, "Hist_Ons", "تاریخچه روزانه اونس طلای جهانی",
+        "با  python scripts/fetch_gold_fx.py --history  پر می‌شود.",
+        _sample_history(n=500, base=3300, seed=43))
+    asset_signals.build(
+        wb,
+        [("سکه تمام بهار آزادی", "Gold_History"),
+         ("طلای ۱۸ عیار", "Hist_Gram18"),
+         ("اونس طلای جهانی", "Hist_Ons")],
+        "سیگنال طلا و سکه",
+        "سنجه ارزش‌گذاری برای سکه و گرم، حباب نسبت به ارزش ذاتی فلز است. "
+        "برای اونس جهانی سنجه ارزش‌گذاری تعریف نشده — طلای جهانی «ارزش ذاتی» "
+        "قابل‌محاسبه‌ای ندارد که بتوان با آن سنجید، پس امتیاز ارزش‌گذاری آن صفر می‌ماند.")
     # ردیف شروع بلوک تفکیک در Coin_Bubble
     trend_row = 5 + len(COINS) + 2 + 1
     _dashboard(wb, hist_last, trend_row)

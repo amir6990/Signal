@@ -95,6 +95,13 @@ SETTINGS_ROWS = [
     ("P", "چرخه اسمی ۴", 160, "CYC_4", ""),
     ("P", "پنجره تحمل زمانی (± روز)", 3, "TIME_TOL", "برای تطبیق تاریخ‌های Gann/Fibonacci"),
     ("B", None, None, None, None),
+    ("S", "۹) وزن سیگنال دارایی‌های تک‌سری (طلا، سکه، دلار، تتر)", None, None, None),
+    ("P", "وزن روند", 0.35, "AW_TREND", "قیمت نسبت به سه میانگین متحرک"),
+    ("P", "وزن مومنتوم", 0.25, "AW_MOM", "بازده ۵ و ۲۰ و ۶۰ روزه"),
+    ("P", "وزن نوسان", 0.15, "AW_VOL", "نوسان جاری نسبت به میانه تاریخی"),
+    ("P", "وزن ارزش‌گذاری", 0.25, "AW_VAL", "صدک تاریخی حباب یا پریمیوم"),
+    ("F", "جمع وزن‌های دارایی", None, "AW_SUM", "بر همین تقسیم می‌شود"),
+    ("B", None, None, None, None),
     ("S", "۸) سایر", None, None, None),
     ("P", "پنجره ساختار روند کوتاه (سقف/کف)", 20, "STRUCT_S", "برای تشخیص Higher High / Lower Low"),
     ("P", "پنجره ساختار روند بلند (سقف/کف)", 60, "STRUCT_L", "روند میان‌مدت"),
@@ -133,6 +140,7 @@ def build_settings(wb, sections=None):
     widths(ws, [3, 46, 14, 46, 3])
     r = 4
     wsum_row = None
+    awsum_row = None
     keep = True
     for kind, label, val, name, desc in SETTINGS_ROWS:
         if kind == "S" and sections is not None:
@@ -158,7 +166,10 @@ def build_settings(wb, sections=None):
         c = ws.cell(row=r, column=3)
         if kind == "F":
             c.value = None      # پر می‌شود بعد از حلقه
-            wsum_row = r
+            if name == "AW_SUM":
+                awsum_row = r
+            else:
+                wsum_row = r
         else:
             c.value = val
             c.font = Font(name=FONT, size=10, bold=True, color=K.C_BLUE_INPUT)
@@ -171,6 +182,20 @@ def build_settings(wb, sections=None):
         if name:
             dn(name, "Settings", "$C$%d" % r)
         r += 1
+
+    # جمع وزن‌های دارایی
+    if awsum_row is not None and "AW_TREND" in DEFINED:
+        a_first = int(DEFINED["AW_TREND"].split("$")[-1])
+        a_last = int(DEFINED["AW_VAL"].split("$")[-1])
+        c = ws.cell(row=awsum_row, column=3, value="=SUM(C%d:C%d)" % (a_first, a_last))
+        c.number_format = F_PCT
+        c.font = Font(name=FONT, size=10, bold=True)
+        c.border = BORDER
+        dn("AW_SUM", "Settings", "$C$%d" % awsum_row)
+        ws.cell(row=awsum_row, column=4,
+                value='=IF(ROUND(C%d,6)=1,"✔ وزن‌ها معتبر است",'
+                      '"✘ خطا: جمع باید ۱۰۰٪ باشد")' % awsum_row).font = Font(
+            name=FONT, size=9, bold=True)
 
     # جمع وزن‌ها + کنترل خطا (فقط اگر بخش وزن‌ها در این فایل هست)
     if wsum_row is None or "W_TREND" not in DEFINED:

@@ -30,7 +30,8 @@ def get(url, timeout=15, retries=3, headers=None, referer=None):
             last = exc
             if attempt < retries - 1:
                 time.sleep(1.5 ** attempt)
-    raise FetchError("%s → %s" % (url, last))
+    raise FetchError("%s [%s] ← %s"
+                     % (last, type(last).__name__, url))
 
 
 def get_json(url, **kw):
@@ -38,7 +39,7 @@ def get_json(url, **kw):
     try:
         return json.loads(txt)
     except ValueError as exc:
-        raise FetchError("پاسخ JSON معتبر نبود از %s: %s" % (url, exc))
+        raise FetchError("پاسخ JSON معتبر نبود (%s) ← %s" % (exc, url))
 
 
 def post_json(url, payload, timeout=15, retries=3, headers=None):
@@ -57,7 +58,8 @@ def post_json(url, payload, timeout=15, retries=3, headers=None):
             last = exc
             if attempt < retries - 1:
                 time.sleep(1.5 ** attempt)
-    raise FetchError("%s → %s" % (url, last))
+    raise FetchError("%s [%s] ← %s"
+                     % (last, type(last).__name__, url))
 
 
 def to_number(v):

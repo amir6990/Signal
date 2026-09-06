@@ -47,6 +47,8 @@ def main(argv=None):
                     help="گرفتن قیمت طلا و ارز")
     ap.add_argument("--manual", default=None,
                     help="فایل JSON دستی برای طلا و ارز")
+    ap.add_argument("--gold-fx-history", action="store_true", dest="gfx_hist",
+                    help="پر کردن کل تاریخچه طلا و ارز از منبع، پیش از قیمت لحظه‌ای")
     ap.add_argument("--history", type=int, default=300)
     ap.add_argument("--skip-recalc", action="store_true",
                     help="بدون LibreOffice — فایل‌ها را خودتان در اکسل باز و ذخیره کنید")
@@ -78,15 +80,24 @@ def main(argv=None):
 
     print("═" * 70)
     print("گام ۰ — دریافت قیمت طلا و ارز")
-    if args.fetch_gfx or args.manual:
-        cmd = [sys.executable, os.path.join(HERE, "fetch_gold_fx.py"),
-               "--write", "--append-history", "--dir", d]
-        if args.manual:
-            cmd += ["--manual", args.manual]
-        if run(cmd) == 0:
+    if args.fetch_gfx or args.manual or args.gfx_hist:
+        ok = True
+        if args.gfx_hist:
+            # اول کل سری، بعد قیمت امروز روی آن. برعکسش، --history ردیف
+            # امروز را پاک می‌کرد.
+            ok = run([sys.executable, os.path.join(HERE, "fetch_gold_fx.py"),
+                      "--history", "--dir", d]) == 0
+        if ok and (args.fetch_gfx or args.manual):
+            cmd = [sys.executable, os.path.join(HERE, "fetch_gold_fx.py"),
+                   "--write", "--append-history", "--dir", d]
+            if args.manual:
+                cmd += ["--manual", args.manual]
+            ok = run(cmd) == 0
+        if ok:
             do_recalc(gold, fx)
     else:
-        print("  رد شد (برای فعال‌سازی: --fetch-gold-fx یا --manual FILE.json)")
+        print("  رد شد (برای فعال‌سازی: --fetch-gold-fx یا --manual FILE.json"
+              " یا --gold-fx-history)")
 
     print("═" * 70)
     print("گام ۱ — دریافت داده از API")

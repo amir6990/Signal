@@ -16,8 +16,8 @@
 Stocks_Signals.xlsx          سیگنال سهام بورس و فرابورس (۱۱ شیت)
 Options_Signals.xlsx         اختیار معامله (۵ شیت)
 Time_Analysis.xlsx           چرخه‌ها، لایه کلان، پیش‌بینی (۶ شیت)
-Gold_Analysis.xlsx           طلا و سکه (۶ شیت)
-FX_Analysis.xlsx             دلار و تتر (۶ شیت)
+Gold_Analysis.xlsx           طلا، سکه و اونس + سیگنال (۹ شیت)
+FX_Analysis.xlsx             دلار، تتر و نیمایی + سیگنال (۹ شیت)
 
 src/build_all.py             سازنده هر پنج فایل
 src/workbooks/               ترکیب‌کننده هر فایل از کتابخانه شیت‌ها
@@ -159,6 +159,8 @@ openpyxl از بین می‌رود. هر فایل خودکفاست و پایتو
 python scripts/fetch_gold_fx.py --probe                    # کدام منابع کار می‌کنند؟
 python scripts/fetch_gold_fx.py --write --append-history   # دریافت و نوشتن
 python scripts/fetch_gold_fx.py --manual my.json --write   # از فایل دستی
+python scripts/fetch_gold_fx.py --history                  # پر کردن کل تاریخچه
+python scripts/recalc.py Gold_Analysis.xlsx FX_Analysis.xlsx   # بعد از --history اجباری
 ```
 
 هفت منبع، ولی **فقط دو تا ساختار تأییدشده دارند**: فایل دستی و Nobitex (تتر).
