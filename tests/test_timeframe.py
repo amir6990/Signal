@@ -649,7 +649,10 @@ def main():
                test_cycle_detector_calibration, test_vba_cycle_port,
                test_macro_series_analysis, test_macro_workbook_shape,
                test_vba_macro_stats_port, test_regime_persistence_guard,
-               test_vba_options_parser):
+               test_vba_options_parser,
+               test_vba_distributable_encoding,
+               test_vba_module_declaration_order,
+               test_empty_source_guards):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -1822,6 +1825,221 @@ def test_vba_options_parser():
     check("Put از «ط» تشخیص داده می‌شود",
           not val_of(objs[1], "instrumentName").startswith("ض"))
 
+
+
+def test_vba_distributable_encoding():
+    section("۴۲) کدگذاری نسخه قابل ایمپورت ماکرو")
+    import glob
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    dist = os.path.join(root, "vba", "dist")
+    if not os.path.isdir(dist):
+        check("پوشه dist ساخته شده", False,
+              "اجرا کنید: python scripts/vba_pack.py")
+        return
+
+    # ⚠️ ویرایشگر VBA فایل .bas را با کدپیج محلی ویندوز می‌خواند، نه UTF-8.
+    # هر بایت بالای ۱۲۷ در فایل توزیعی یعنی متن خراب موقع ایمپورت — همان
+    # چیزی که کاربر دید: کامنت‌های ناخوانا و متن دکمه به‌هم‌ریخته.
+    files = sorted(glob.glob(os.path.join(dist, "*.bas")))
+    check("فایل توزیعی وجود دارد", len(files) >= 5, "%d فایل" % len(files))
+    for f in files:
+        raw = io.open(f, "rb").read()
+        bad = sum(1 for b in raw if b > 127)
+        check("%s فقط ASCII است" % os.path.basename(f), bad == 0,
+              "%d بایت غیر-ASCII" % bad)
+
+    # هر رشته فارسیِ منبع باید در نسخه توزیعی رمزگذاری شده باشد
+    def split_cc(line):
+        i, n, ins = 0, len(line), False
+        while i < n:
+            ch = line[i]
+            if ch == '"':
+                if ins and i + 1 < n and line[i + 1] == '"':
+                    i += 2
+                    continue
+                ins = not ins
+            elif ch == "'" and not ins:
+                return line[:i]
+            i += 1
+        return line
+
+    def lits(code):
+        out, i, n = [], 0, len(code)
+        while i < n:
+            if code[i] == '"':
+                j, buf = i + 1, []
+                while j < n:
+                    if code[j] == '"':
+                        if j + 1 < n and code[j + 1] == '"':
+                            buf.append('"')
+                            j += 2
+                            continue
+                        break
+                    buf.append(code[j])
+                    j += 1
+                out.append("".join(buf))
+                i = j + 1
+            else:
+                i += 1
+        return out
+
+    total = miss = 0
+    for f in sorted(glob.glob(os.path.join(root, "vba", "*.bas"))):
+        d = os.path.join(dist, os.path.basename(f))
+        if not os.path.exists(d):
+            continue
+        dtxt = io.open(d, encoding="ascii").read()
+        for line in io.open(f, encoding="utf-8").read().split("\n"):
+            for lit in lits(split_cc(line)):
+                if any(ord(c) > 127 for c in lit):
+                    total += 1
+                    h = "".join("%04X" % ord(c) for c in lit)
+                    if ('U("%s")' % h) not in dtxt:
+                        miss += 1
+    check("همه %d رشته فارسی رمزگذاری شده‌اند" % total, miss == 0,
+          "%d جا افتاد" % miss)
+
+    # رمزگشایی معکوس باید دقیقاً متن اصلی را بدهد
+    sample = os.path.join(dist, "MacroTime.bas")
+    if os.path.exists(sample):
+        txt = io.open(sample, encoding="ascii").read()
+        hexes = re.findall(r'U\("([0-9A-F]+)"\)', txt)
+        check("کد هگز پیدا شد", len(hexes) > 0, "%d رشته" % len(hexes))
+        okr = all(len(h) % 4 == 0 for h in hexes)
+        check("هر کد هگز مضرب ۴ است", okr)
+        if hexes:
+            dec = "".join(chr(int(hexes[0][i:i + 4], 16))
+                          for i in range(0, len(hexes[0]), 4))
+            check("رمزگشایی متن فارسی سالم می‌دهد",
+                  any("\u0600" <= c <= "\u06FF" for c in dec), dec[:40])
+
+    # تابع رمزگشا باید در هر فایلی که رشته دارد موجود باشد
+    for f in files:
+        t = io.open(f, encoding="ascii").read()
+        if 'U("' in t:
+            check("%s تابع رمزگشا دارد" % os.path.basename(f),
+                  "Private Function U(ByVal h As String)" in t)
+
+    # نصب‌کننده باید UTF-16LE با BOM باشد، وگرنه WSH متن فارسی را خراب
+    # می‌خواند و متن دکمه به‌هم می‌ریزد.
+    vbs = os.path.join(root, "Install_Buttons.vbs")
+    if os.path.exists(vbs):
+        raw = io.open(vbs, "rb").read()
+        check("نصب‌کننده BOM یونی‌کد دارد", raw[:2] == b"\xff\xfe",
+              "بایت‌های اول: %r" % raw[:2])
+        if raw[:2] == b"\xff\xfe":
+            t = raw[2:].decode("utf-16-le")
+            check("متن فارسی نصب‌کننده سالم است",
+                  "\u0628\u0647\u200c\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc" in t)
+            check("نصب‌کننده از نسخه ASCII ایمپورت می‌کند",
+                  "vba\\dist\\" in t)
+
+
+def test_vba_module_declaration_order():
+    section("۴۳) ترتیب اعلان‌ها در ماژول‌های ماکرو")
+    import glob
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    # ⚠️ VBA اعلان سطح‌ماژول (Const/Dim بدون تورفتگی) را فقط **پیش از**
+    # اولین رویه می‌پذیرد. یک Const جاافتاده وسط ماژول، خطای کامپایل
+    # «Only comments may appear after End Sub» می‌دهد و کل فایل را
+    # از کار می‌اندازد. این دقیقاً یک بار رخ داد.
+    for pat in ("vba/*.bas", "vba/dist/*.bas"):
+        for f in sorted(glob.glob(os.path.join(root, pat))):
+            first_proc, late = None, []
+            for i, l in enumerate(io.open(f, encoding="utf-8",
+                                          errors="replace").read().split("\n"), 1):
+                t = l.strip()
+                if t.startswith("'") or not t:
+                    continue
+                if (re.match(r"^(Public |Private )?(Sub|Function) ", t)
+                        and first_proc is None):
+                    first_proc = i
+                if (first_proc
+                        and re.match(r"^(Private |Public )?(Const|Dim) ", t)
+                        and not l[:1].isspace()):
+                    late.append(i)
+            rel = os.path.relpath(f, root)
+            check("%s اعلان دیرهنگام ندارد" % rel, not late, str(late))
+
+
+
+def test_empty_source_guards():
+    """قبل از اولین به‌روزرسانی، هیچ خانه‌ای نباید آشغال نشان دهد.
+
+    این تست را نمی‌شد با LibreOffice نوشت. لیبره‌آفیس ارجاع به خانه خالی را
+    «خالی» حساب می‌کند، اکسل **صفر**. پس فایلی که در بازمحاسبهٔ لیبره‌آفیس
+    پاک است، در اکسل کاربر می‌تواند «1900-01-00» و «#DIV/0!» نشان دهد — که
+    دقیقاً همان چیزی بود که در فایل کاربر دیده شد.
+
+    دامنه عمداً باریک است: فقط شیت‌هایی که **دکمه** پرشان می‌کند و تا آن
+    لحظه خالی‌اند. ارجاع به شیتی که خودِ سازنده پر کرده، خطرِ این کلاس را
+    ندارد و آوردنش فقط تست را پرنویز می‌کرد.
+    """
+    import openpyxl
+    section("۴۴) محافظ حالتِ «هنوز داده‌ای نیست»")
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    files = ["Stocks_Signals.xlsx", "Options_Signals.xlsx", "Time_Analysis.xlsx",
+             "Gold_Analysis.xlsx", "FX_Analysis.xlsx"]
+    # IFERROR تنها کافی نیست: ارجاع به خانه خالی خطا نیست، صفر است.
+    guards = ("ISNUMBER", "ISBLANK", "COUNT", "IFNA", '=""', "<5)", "<10,",
+              "<25,", "<65,", "<5,")
+    for f in files:
+        path = os.path.join(root, f)
+        if not os.path.exists(path):
+            check("%s موجود است" % f, False)
+            continue
+        wb = openpyxl.load_workbook(path)
+        # شیت خام = شیتی که ردیف‌های دادهٔ آن در فایلِ تازه‌ساخته خالی است.
+        raw = set()
+        for ws in wb:
+            if ws.max_row < 5:
+                continue
+            body = [ws.cell(r, c).value
+                    for r in range(5, min(ws.max_row, 40) + 1)
+                    for c in range(1, min(ws.max_column, 12) + 1)]
+            if all(v is None for v in body):
+                raw.add(ws.title)
+        pat = re.compile(r"(?:'(%s)'|\b(%s))!" % ("|".join(map(re.escape, raw)),
+                                                  "|".join(map(re.escape, raw)))
+                         ) if raw else None
+        bad = []
+        if pat:
+            for ws in wb:
+                if ws.title in raw:
+                    continue
+                for row in ws.iter_rows():
+                    for c in row:
+                        v = c.value
+                        if not isinstance(v, str) or not v.startswith("="):
+                            continue
+                        if not pat.search(v):
+                            continue
+                        if any(g in v for g in guards):
+                            continue
+                        bad.append("%s!%s" % (ws.title, c.coordinate))
+        check("%s: ارجاع بی‌محافظ به شیت خام ندارد" % f, not bad,
+              "شیت خام: %s | %d مورد: %s"
+              % (sorted(raw), len(bad), ", ".join(bad[:6])))
+
+    # حالتِ خالیِ Real_Index — همان جایی که خطا دیده شد.
+    wb = openpyxl.load_workbook(os.path.join(root, "Time_Analysis.xlsx"),
+                                data_only=True)
+    ri = wb["Real_Index"]
+    vals = [ri.cell(r, c).value for r in (5, 6, 7) for c in range(1, 10)]
+    check("Real_Index در حالت خالی کاملاً خالی است",
+          all(v is None for v in vals),
+          str([v for v in vals if v is not None])[:120])
+
+    # بازده «۱ ساله» نباید روی پنجرهٔ ناقص محاسبه شود.
+    wb2 = openpyxl.load_workbook(os.path.join(root, "Time_Analysis.xlsx"))
+    ri2 = wb2["Real_Index"]
+    early = [ri2.cell(r, 7).value for r in range(5, 249)]
+    check("۲۴۴ ردیف اولِ بازده یک‌ساله خالی است",
+          all(v == '=""' for v in early),
+          str(sorted(set(str(x) for x in early))[:2])[:160])
+    full = ri2.cell(250, 7).value
+    check("از ردیف ۲۵۰ پنجرهٔ کامل ۲۴۵ روزه دارد",
+          isinstance(full, str) and "$B5)" in full, str(full)[:120])
 
 
 if __name__ == "__main__":

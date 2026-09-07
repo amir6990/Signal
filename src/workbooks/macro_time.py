@@ -73,19 +73,27 @@ def build_real_index(wb):
     داده. این تعدیل در بیشتر تحلیل‌های داخلی غایب است.
     """
     last = FIRST + N_SPARE - 1
+    # ⚠️ ارجاع مستقیم به خانه خالی، در اکسل **صفر** برمی‌گرداند نه خالی — و
+    # IFERROR هم آن را نمی‌گیرد، چون خطا نیست. نتیجه‌اش در فایل کاربر این بود:
+    # ستون تاریخ «1900-01-00» و ستون بازده «#DIV/0!» قبل از اولین به‌روزرسانی.
+    # پس هر ارجاع به Macro_Series باید با ISNUMBER پوشش داده شود، نه IFERROR.
+    ref = '=IF(NOT(ISNUMBER(\'Macro_Series\'!${c}{r})),"",\'Macro_Series\'!${c}{r})'
     cols = [
-        ("تاریخ", 13, F_DATE, "='Macro_Series'!$A{r}"),
-        ("شاخص کل (ریالی)", 15, F_PRICE, "=IFERROR('Macro_Series'!$C{r},\"\")"),
-        ("دلار آزاد", 14, F_PRICE, "=IFERROR('Macro_Series'!$E{r},\"\")"),
+        ("تاریخ", 13, F_DATE, ref.format(c="A", r="{r}")),
+        ("شاخص کل (ریالی)", 15, F_PRICE, ref.format(c="C", r="{r}")),
+        ("دلار آزاد", 14, F_PRICE, ref.format(c="E", r="{r}")),
         ("شاخص به دلار", 15, F_NUM2,
          '=IF(OR(NOT(ISNUMBER($B{r})),NOT(ISNUMBER($C{r})),$C{r}=0),"",$B{r}/$C{r})'),
-        ("اونس طلا", 13, F_NUM2, "=IFERROR('Macro_Series'!$H{r},\"\")"),
+        ("اونس طلا", 13, F_NUM2, ref.format(c="H", r="{r}")),
         ("شاخص به طلا", 15, F_NUM2,
          '=IF(OR(NOT(ISNUMBER($D{r})),NOT(ISNUMBER($E{r})),$E{r}=0),"",$D{r}/$E{r})'),
+        # بازده یک‌ساله فقط وقتی معنی دارد که ۲۴۵ روز داده **قبل** از این ردیف
+        # باشد. قبلاً مبدأ به ردیف اول چسبانده می‌شد؛ یعنی ردیف ششم «بازده یک
+        # ساله»ای نشان می‌داد که در واقع بازده یک روز بود. حالا خالی می‌ماند.
         ("بازده ریالی ۱ ساله", 14, F_PCT,
-         '=IF(OR(NOT(ISNUMBER($B{r})),NOT(ISNUMBER($B{y}))),"",$B{r}/$B{y}-1)'),
+         '=IF(OR(NOT(ISNUMBER($B{r})),NOT(ISNUMBER($B{y})),$B{y}=0),"",$B{r}/$B{y}-1)'),
         ("بازده دلاری ۱ ساله", 14, F_PCT,
-         '=IF(OR(NOT(ISNUMBER($D{r})),NOT(ISNUMBER($D{y}))),"",$D{r}/$D{y}-1)'),
+         '=IF(OR(NOT(ISNUMBER($D{r})),NOT(ISNUMBER($D{y})),$D{y}=0),"",$D{r}/$D{y}-1)'),
         ("توهم تورمی", 14, F_PCT,
          '=IF(OR(NOT(ISNUMBER($G{r})),NOT(ISNUMBER($H{r}))),"",$G{r}-$H{r})'),
     ]
@@ -100,9 +108,12 @@ def build_real_index(wb):
          "۲۴۵ روز", "۲۴۵ روز", "ریالی − دلاری"])
     for i in range(N_SPARE):
         r = FIRST + i
-        y = max(FIRST, r - 245)
+        y = r - 245
         for j, (_l, _w, fmt, tmpl) in enumerate(cols, start=1):
-            c = ws.cell(row=r, column=j, value=tmpl.format(r=r, y=y))
+            if y < FIRST and j in (7, 8):      # پنجره یک‌ساله هنوز کامل نیست
+                c = ws.cell(row=r, column=j, value='=""')
+            else:
+                c = ws.cell(row=r, column=j, value=tmpl.format(r=r, y=y))
             c.font = Font(name=FONT, size=8)
             c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = BORDER

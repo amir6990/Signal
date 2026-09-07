@@ -15,6 +15,7 @@ Option Explicit
 Private Const UA As String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " & _
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
+Private Const CDN As String = "https://cdn.tsetmc.com/api"
 Private Const N_TGJU As Long = 5
 Private Const N_NOBITEX As Long = 2
 
@@ -254,7 +255,6 @@ End Sub
 ' =====================================================================
 '  سهام بورس و فرابورس — از cdn.tsetmc.com
 ' =====================================================================
-Private Const CDN As String = "https://cdn.tsetmc.com/api"
 
 ' ستون‌های Data_Input که این ماکرو پر می‌کند (A=1)
 '   9 آخرین قیمت      pDrCotVal

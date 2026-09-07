@@ -137,22 +137,26 @@ def build_history_sheet(wb, name, title, subtitle, rows, n_spare=700,
 
 LAST_ROW_FORMULA = '=COUNT($A$5:$A$%d)+4'
 
+# ⚠️ تا وقتی شیت تاریخچه خالی است، فرمول بالا عدد ۴ می‌دهد — و ردیف ۴ همان
+# ردیف سرستون است. پس هر INDEX زیر با «اشاره‌گر < ۵» محافظت شده تا به جای
+# خالی، متنِ سرستون در بلوک وضعیت روند ظاهر نشود.
+
 
 def trend_block(ws, sheet, last_row, start_row, label, ncol=6):
     """بلوک وضعیت روند از شیت تاریخچه — با یافتن آخرین ردیف دارای داده."""
     rows = [
         ("آخرین ردیف داده", LAST_ROW_FORMULA % last_row, "0"),
-        ("تاریخ آخرین داده", "=IFERROR(INDEX({s}!$A$1:$A${n},$B${r0}),\"\")", F_DATE),
-        ("تاریخ شمسی", "=IFERROR(INDEX({s}!$B$1:$B${n},$B${r0}),\"\")", None),
-        ("قیمت", "=IFERROR(INDEX({s}!$C$1:$C${n},$B${r0}),\"\")", F_PRICE),
-        ("بازده روز", "=IFERROR(INDEX({s}!$H$1:$H${n},$B${r0}),\"\")", F_PCT2),
-        ("MA کوتاه", "=IFERROR(INDEX({s}!$I$1:$I${n},$B${r0}),\"\")", F_PRICE),
-        ("MA میان‌مدت", "=IFERROR(INDEX({s}!$J$1:$J${n},$B${r0}),\"\")", F_PRICE),
-        ("MA بلند", "=IFERROR(INDEX({s}!$K$1:$K${n},$B${r0}),\"\")", F_PRICE),
-        ("نوسان سالانه", "=IFERROR(INDEX({s}!$L$1:$L${n},$B${r0}),\"\")", F_PCT),
-        ("سقف ۶۰ روزه", "=IFERROR(INDEX({s}!$M$1:$M${n},$B${r0}),\"\")", F_PRICE),
-        ("کف ۶۰ روزه", "=IFERROR(INDEX({s}!$N$1:$N${n},$B${r0}),\"\")", F_PRICE),
-        ("افت از سقف", "=IFERROR(INDEX({s}!$O$1:$O${n},$B${r0}),\"\")", F_PCT),
+        ("تاریخ آخرین داده", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$A$1:$A${n},$B${r0}),\"\"))", F_DATE),
+        ("تاریخ شمسی", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$B$1:$B${n},$B${r0}),\"\"))", None),
+        ("قیمت", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$C$1:$C${n},$B${r0}),\"\"))", F_PRICE),
+        ("بازده روز", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$H$1:$H${n},$B${r0}),\"\"))", F_PCT2),
+        ("MA کوتاه", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$I$1:$I${n},$B${r0}),\"\"))", F_PRICE),
+        ("MA میان‌مدت", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$J$1:$J${n},$B${r0}),\"\"))", F_PRICE),
+        ("MA بلند", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$K$1:$K${n},$B${r0}),\"\"))", F_PRICE),
+        ("نوسان سالانه", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$L$1:$L${n},$B${r0}),\"\"))", F_PCT),
+        ("سقف ۶۰ روزه", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$M$1:$M${n},$B${r0}),\"\"))", F_PRICE),
+        ("کف ۶۰ روزه", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$N$1:$N${n},$B${r0}),\"\"))", F_PRICE),
+        ("افت از سقف", "=IF($B${r0}<5,\"\",IFERROR(INDEX({s}!$O$1:$O${n},$B${r0}),\"\"))", F_PCT),
     ]
     r = start_row
     r0 = start_row

@@ -21,37 +21,57 @@ import common as K
 from common import (BORDER, F_NUM1, F_PCT, F_PRICE, F_X, FONT, hdr, note,
                     title_block, widths)
 
+# ⚠️ وقتی شیت تاریخچه هنوز خالی است، شمارنده «ردیف آخر» روی ۴ می‌ماند —
+# و ۴ دقیقاً ردیف سرستون است. بدون محافظ زیر، INDEX متنِ سرستون را برمی‌گرداند
+# و در ستون قیمت به جای خالی، یک رشته فارسی می‌نشیند. محافظ، اشاره‌گر را
+# می‌سنجد نه محتوا را: هر ردیفی کمتر از ۵ یعنی «هنوز داده‌ای نیست».
+def _idx(col, off=0):
+    ptr = "$C{r}" if not off else "$C{r}-%d" % off
+    body = 'INDEX(INDIRECT($B{r}&"!$%s:$%s"),%s)' % (col, col, ptr)
+    return body, '=IF($C{r}<%d,"",IFERROR(%%s,""))' % (5 + off)
+
+
+def _lookup(col, off=0):
+    body, wrap = _idx(col, off)
+    return wrap % body
+
+
 # (کلید، برچسب، عرض، قالب، الگوی فرمول)
 COLS = [
     ("asset",    "دارایی", 22, None, None),
     ("sheet",    "شیت تاریخچه", 16, None, None),
     ("lastrow",  "ردیف آخر", 10, "0", '=COUNT(INDIRECT($B{r}&"!$A$5:$A$5000"))+4'),
-    ("price",    "قیمت", 16, F_PRICE, '=IFERROR(INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}),"")'),
-    ("ma_s",     "MA کوتاه", 15, F_PRICE, '=IFERROR(INDEX(INDIRECT($B{r}&"!$I:$I"),$C{r}),"")'),
-    ("ma_m",     "MA میان‌مدت", 15, F_PRICE, '=IFERROR(INDEX(INDIRECT($B{r}&"!$J:$J"),$C{r}),"")'),
-    ("ma_l",     "MA بلند", 15, F_PRICE, '=IFERROR(INDEX(INDIRECT($B{r}&"!$K:$K"),$C{r}),"")'),
+    ("price",    "قیمت", 16, F_PRICE, _lookup("C")),
+    ("ma_s",     "MA کوتاه", 15, F_PRICE, _lookup("I")),
+    ("ma_m",     "MA میان‌مدت", 15, F_PRICE, _lookup("J")),
+    ("ma_l",     "MA بلند", 15, F_PRICE, _lookup("K")),
     ("n_above",  "MA زیر قیمت", 11, "0",
      '=IF(NOT(ISNUMBER($D{r})),"",'
      'IF($D{r}>$E{r},1,0)+IF($D{r}>$F{r},1,0)+IF($D{r}>$G{r},1,0))'),
     ("dist_m",   "فاصله از MA میان", 13, F_PCT, '=IFERROR($D{r}/$F{r}-1,"")'),
     ("ret5",     "بازده ۵ روزه", 12, F_PCT,
-     '=IFERROR($D{r}/INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}-5)-1,"")'),
+     '=IF(OR($C{r}<10,NOT(ISNUMBER($D{r}))),"",IFERROR($D{r}/'
+     'INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}-5)-1,""))'),
     ("ret20",    "بازده ۲۰ روزه", 12, F_PCT,
-     '=IFERROR($D{r}/INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}-20)-1,"")'),
+     '=IF(OR($C{r}<25,NOT(ISNUMBER($D{r}))),"",IFERROR($D{r}/'
+     'INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}-20)-1,""))'),
     ("ret60",    "بازده ۶۰ روزه", 12, F_PCT,
-     '=IFERROR($D{r}/INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}-60)-1,"")'),
-    ("vol",      "نوسان سالانه", 12, F_PCT, '=IFERROR(INDEX(INDIRECT($B{r}&"!$L:$L"),$C{r}),"")'),
+     '=IF(OR($C{r}<65,NOT(ISNUMBER($D{r}))),"",IFERROR($D{r}/'
+     'INDEX(INDIRECT($B{r}&"!$C:$C"),$C{r}-60)-1,""))'),
+    ("vol",      "نوسان سالانه", 12, F_PCT, _lookup("L")),
     ("vol_med",  "میانه نوسان", 12, F_PCT,
      '=IFERROR(MEDIAN(INDIRECT($B{r}&"!$L$5:$L$5000")),"")'),
     ("dd",       "افت از سقف ۶۰ روزه", 13, F_PCT,
-     '=IFERROR(INDEX(INDIRECT($B{r}&"!$O:$O"),$C{r}),"")'),
+     _lookup("O")),
     # ⚠️ INDEX روی یک سلول خالی، عددِ صفر برمی‌گرداند نه خالی. بدون ISBLANK،
     # «سنجه ارزش‌گذاری پر نشده» با «سنجه دقیقاً صفر» یکی می‌شد و امتیاز
     # ارزش‌گذاری را بی‌دلیل +۸ می‌کرد.
     ("val",      "سنجه ارزش‌گذاری", 15, F_PCT,
-     '=IFERROR(IF(ISBLANK(%(p)s),"",%(p)s),"")' % {"p": 'INDEX(INDIRECT($B{r}&"!$P:$P"),$C{r})'}),
+     '=IF($C{r}<5,"",IFERROR(IF(ISBLANK(%(p)s),"",%(p)s),""))'
+     % {"p": 'INDEX(INDIRECT($B{r}&"!$P:$P"),$C{r})'}),
     ("val_pct",  "صدک ارزش‌گذاری", 14, F_PCT,
-     '=IFERROR(IF(ISBLANK(%(q)s),"",%(q)s),"")' % {"q": 'INDEX(INDIRECT($B{r}&"!$Q:$Q"),$C{r})'}),
+     '=IF($C{r}<5,"",IFERROR(IF(ISBLANK(%(q)s),"",%(q)s),""))'
+     % {"q": 'INDEX(INDIRECT($B{r}&"!$Q:$Q"),$C{r})'}),
     ("t_score",  "امتیاز روند (T)", 12, F_NUM1,
      '=IF(NOT(ISNUMBER($D{r})),0,IFERROR(MAX(-10,MIN(10,'
      'IF($D{r}>$E{r},2.5,-2.5)+IF($D{r}>$F{r},3.5,-3.5)+IF($D{r}>$G{r},4,-4)'
