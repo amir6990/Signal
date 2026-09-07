@@ -14,3 +14,6 @@ out/
 
 # داده مرجع دانلودشده — با scripts/fetch_reference_series.py بازتولید می‌شود
 data/reference/
+
+# بسته تحویلی — از روی همین فایل‌های مخزن ساخته می‌شود، پس نسخه دوم لازم نیست
+Signal_Excel.zip
