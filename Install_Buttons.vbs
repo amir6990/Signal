@@ -25,6 +25,8 @@ Dim basMacro
 basMacro = fso.BuildPath(here, "vba\MacroTime.bas")
 Dim basStats
 basStats = fso.BuildPath(here, "vba\MacroStats.bas")
+Dim basOpt
+basOpt = fso.BuildPath(here, "vba\OptionsRefresh.bas")
 
 If Not fso.FileExists(basPath) Then
     MsgBox "فایل ماژول پیدا نشد:" & vbCrLf & basPath & vbCrLf & vbCrLf & _
@@ -90,11 +92,12 @@ For i = 0 To UBound(files)
 
             ' --- ماژول‌های قبلی را بردار تا نصب دوباره تمیز باشد ---
             Dim again
-            For again = 0 To 3
+            For again = 0 To 4
                 For Each vbc In wb.VBProject.VBComponents
                     If vbc.Name = "SignalRefresh" Or vbc.Name = "TimeCycles" _
                        Or vbc.Name = "MacroTime" _
-                       Or vbc.Name = "MacroStats" Then
+                       Or vbc.Name = "MacroStats" _
+                       Or vbc.Name = "OptionsRefresh" Then
                         wb.VBProject.VBComponents.Remove vbc
                         Exit For
                     End If
@@ -105,6 +108,7 @@ For i = 0 To UBound(files)
             wb.VBProject.VBComponents.Import basPath
             If fso.FileExists(basTime) Then wb.VBProject.VBComponents.Import basTime
             If fso.FileExists(basStats) Then wb.VBProject.VBComponents.Import basStats
+            If fso.FileExists(basOpt) Then wb.VBProject.VBComponents.Import basOpt
             If fso.FileExists(basMacro) Then wb.VBProject.VBComponents.Import basMacro
 
             If Err.Number <> 0 Then
@@ -128,7 +132,17 @@ For i = 0 To UBound(files)
                 shp.TextFrame2.TextRange.Font.Size = 12
                 shp.TextFrame2.TextRange.Font.Bold = True
                 shp.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-                shp.OnAction = "SignalRefresh.RefreshAll"
+                ' فایل آپشن، مسیر خودش را دارد
+                Dim hasOpt, wsO
+                hasOpt = False
+                For Each wsO In wb.Worksheets
+                    If wsO.Name = "Options" Then hasOpt = True
+                Next
+                If hasOpt Then
+                    shp.OnAction = "OptionsRefresh.RefreshOptions"
+                Else
+                    shp.OnAction = "SignalRefresh.RefreshAll"
+                End If
 
                 ' --- دکمه دوم: تحلیل چرخه زمانی، فقط جایی که شیت را دارد ---
                 Dim hasTC, wsAny

@@ -648,7 +648,8 @@ def main():
                test_vba_structure, test_vba_parsing_logic,
                test_cycle_detector_calibration, test_vba_cycle_port,
                test_macro_series_analysis, test_macro_workbook_shape,
-               test_vba_macro_stats_port, test_regime_persistence_guard):
+               test_vba_macro_stats_port, test_regime_persistence_guard,
+               test_vba_options_parser):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -1722,6 +1723,104 @@ def test_regime_persistence_guard():
         ss = m.steady_state
         check("توزیع بلندمدت رژیم‌ها جمعش ۱ است", abs(sum(ss) - 1.0) < 1e-9,
               "%.3f + %.3f" % (ss[0], ss[1]))
+
+
+
+def test_vba_options_parser():
+    section("۴۱) تجزیه دیده‌بان آپشن در ماکرو")
+    src = _vba_src("OptionsRefresh.bas")
+    if src is None:
+        check("ماژول OptionsRefresh موجود است", False)
+        return
+
+    # ⚠️ باگی که همین تست گرفت: اگر پیمایش از ابتدای رشته شروع شود،
+    # اولین { شیء بیرونی {"Items":[...]} است و کل پاسخ را یکجا می‌بلعد —
+    # یعنی فقط یک قرارداد پیدا می‌شود به‌جای همه.
+    check("پیمایش از بعدِ براکت آرایه شروع می‌شود",
+          'i = InStr(1, js, "[")' in src)
+    check("فرمول‌های ستون O به بعد پاک نمی‌شوند",
+          "ws.Cells(4 + MAXROWS, 14)" in src,
+          "فقط ستون‌های خام A تا N پاک می‌شوند")
+    check("نام‌های جایگزین فیلد پشتیبانی می‌شوند",
+          '"openInterest", "mojoodiMoghiatBaz"' in src
+          and '"baghimandetasarresid", "baqimandeTaSarresId"' in src)
+
+    def val_of(js, k1, k2=""):
+        q = js.lower().find('"' + k1.lower() + '"')
+        if q < 0 and k2:
+            q = js.lower().find('"' + k2.lower() + '"')
+        if q < 0:
+            return ""
+        q = js.find(":", q)
+        if q < 0:
+            return ""
+        q += 1
+        while q < len(js) and js[q] == " ":
+            q += 1
+        if js[q] == '"':
+            q += 1
+            e = js.find('"', q)
+        else:
+            e = q
+            while e < len(js) and js[e] in "0123456789.-eE+":
+                e += 1
+        return js[q:e] if e > q else ""
+
+    def num_of(s):
+        o = []
+        for ch in s:
+            c = ord(ch)
+            if 0x6F0 <= c <= 0x6F9:
+                o.append(str(c - 0x6F0))
+            elif ch in "0123456789.-":
+                o.append(ch)
+        t = "".join(o)
+        if t in ("", "-", "."):
+            return -1
+        try:
+            return float(t)
+        except ValueError:
+            return -1
+
+    js = ('{"Items":['
+          '{"instrumentName":"ضفلا701","qeymateEmal":9000,'
+          '"baghimandetasarresid":92,"lastPrice":850,"openInterest":3400},'
+          '{"instrumentName":"طفلا702","qeymateEmal":8500,'
+          '"baqimandeTaSarresId":92,"lastPrice":410,"mojoodiMoghiatBaz":900},'
+          '{"instrumentName":"ضخود801","qeymateEmal":2500,'
+          '"lastPrice":120}]}')
+    objs = []
+    i = js.find("[")
+    if i < 0:
+        i = 0
+    while i < len(js):
+        if js[i] == "{":
+            s0 = i
+            dep = 0
+            while i < len(js):
+                if js[i] == "{":
+                    dep += 1
+                if js[i] == "}":
+                    dep -= 1
+                    if dep == 0:
+                        break
+                i += 1
+            objs.append(js[s0:i + 1])
+        i += 1
+    check("هر سه قرارداد جدا می‌شوند", len(objs) == 3, "%d" % len(objs))
+    check("قیمت اعمال درست", num_of(val_of(objs[0], "qeymateEmal")) == 9000)
+    check("نام فیلد جایگزین کار می‌کند",
+          num_of(val_of(objs[1], "baghimandetasarresid",
+                        "baqimandeTaSarresId")) == 92)
+    check("موقعیت باز با نام جایگزین",
+          num_of(val_of(objs[1], "openInterest", "mojoodiMoghiatBaz")) == 900)
+    check("فیلد غایب ← ‎−۱ و نوشته نمی‌شود",
+          num_of(val_of(objs[2], "openInterest", "mojoodiMoghiatBaz")) == -1)
+    # «ض» = اختیار خرید، «ط» = اختیار فروش در نام‌گذاری بورس ایران
+    check("Call از «ض» تشخیص داده می‌شود",
+          val_of(objs[0], "instrumentName").startswith("ض"))
+    check("Put از «ط» تشخیص داده می‌شود",
+          not val_of(objs[1], "instrumentName").startswith("ض"))
 
 
 
