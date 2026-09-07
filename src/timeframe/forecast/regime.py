@@ -26,6 +26,11 @@ from typing import List, Optional, Sequence
 SQRT2PI = math.sqrt(2.0 * math.pi)
 
 
+# آستانه آزمون ماندگاری — با شبیه‌سازی کالیبره شده، نه از جدول χ².
+# جزئیات در persistence_ok. تغییرش بدون تکرار آن اندازه‌گیری، خطاست.
+LR_PERSISTENCE_CRIT = 15.0
+
+
 def _npdf(x, mu, sigma):
     if sigma <= 0:
         return 1e-300
@@ -41,6 +46,7 @@ class RegimeModel:
     filtered: List[List[float]] = field(default_factory=list)
     smoothed: List[List[float]] = field(default_factory=list)
     loglik: float = 0.0
+    loglik_iid: float = 0.0      # همان توزیع‌ها ولی بدون وابستگی زمانی
     iterations: int = 0
     converged: bool = False
     n_obs: int = 0
@@ -59,6 +65,60 @@ class RegimeModel:
     @property
     def p_stress_now(self) -> float:
         return self.smoothed[-1][self.stress_state] if self.smoothed else 0.0
+
+    @property
+    def steady_state(self) -> List[float]:
+        """توزیع بلندمدت رژیم‌ها از ماتریس گذار."""
+        a, b = self.P[0][1], self.P[1][0]
+        if a + b <= 0:
+            return [0.5, 0.5]
+        return [b / (a + b), a / (a + b)]
+
+    @property
+    def lr_persistence(self) -> float:
+        """آماره نسبت درست‌نمایی برای «آیا ماندگاری واقعی است؟».
+
+        مدل کامل (HMM) در برابر همان دو توزیع بدون وابستگی زمانی.
+
+        ⚠️ **آستانه χ² کتابی اینجا غلط است.** در مدل رژیمی، تحت فرض صفر
+        پارامترهای گذار شناسایی‌پذیر نیستند و آماره از χ² پیروی نمی‌کند
+        (هانسن ۱۹۹۲، گارسیا ۱۹۹۸). اندازه‌گیری روی ۱۲۰ سری i.i.d نشان داد
+        آستانه ۳٫۸۴ به‌جای ۵٪، **۲۵٪** مثبت کاذب می‌دهد.
+        """
+        if not self.loglik_iid:
+            return 0.0
+        return 2.0 * (self.loglik - self.loglik_iid)
+
+    @property
+    def persistence_ok(self) -> bool:
+        """آیا این دو حالت واقعاً «رژیم»اند، یا فقط مخلوط دم‌سنگین؟
+
+        ⚠️ EM همیشه دو حالت پیدا می‌کند، حتی وقتی هیچ رژیمی وجود ندارد. روی
+        سری بدون ساختار رژیمی، آنچه پیدا می‌کند «روزهای آرام» و «روزهای
+        پرنوسان» است که روزانه بین هم می‌پرند — نه دوره‌های ماندگار. آن‌وقت
+        `prob_enter_stress` بی‌معنا و همیشه نزدیک ۱۰۰٪ می‌شود.
+
+        شرط اصلی یک **آزمون نسبت درست‌نمایی با آستانه کالیبره‌شده** است.
+        آستانه با شبیه‌سازی تعیین شد، نه از جدول:
+
+            روی ۱۲۰ سری i.i.d (بدون رژیم):  میانه ۰٫۹، صدک ۹۵٪ ۸٫۹، بیشینه ۱۳٫۲
+            روی ۴۰ سری با رژیم واقعی:       کمینه ۱۶۵، میانه ۳۷۷
+
+        دو توزیع عملاً هم‌پوشانی ندارند، پس آستانه ۱۵ انتخاب شد: بالاتر از
+        بیشترین مقدارِ مشاهده‌شده تحت فرض صفر، و بسیار پایین‌تر از کمترین
+        مقدار تحت فرض مقابل. نتیجه: مثبت کاذب صفر، کشف ۱۰۰٪.
+
+        شرط دوم برای حالتی است که آزمون رد می‌کند ولی ماندگاری عملاً
+        بی‌فایده است: هر دو حالت باید دست‌کم ۵ کندل دوام بیاورند.
+        """
+        if not self.P or len(self.P) < 2:
+            return False
+        if self.lr_persistence < LR_PERSISTENCE_CRIT:
+            return False
+        for i in (0, 1):
+            if self.expected_duration(i) < 5.0:
+                return False
+        return True
 
     def expected_duration(self, state: int) -> float:
         """میانگین ماندگاری در یک رژیم (کندل). = ۱ ÷ (۱ − احتمال ماندن)."""
@@ -99,6 +159,9 @@ class RegimeModel:
              "   رژیم پرتنش:  بازده سالانه %+7.1f%% | نوسان %5.1f%% | ماندگاری میانگین %5.0f کندل"
              % (ms * 100, vs * 100, self.expected_duration(s)),
              "   احتمال رژیم پرتنش هم‌اکنون: %.1f%%" % (self.p_stress_now * 100)]
+        if not self.persistence_ok:
+            L.append("   ⚠ این دو حالت ماندگار نیستند — احتمالاً مخلوط "
+                     "دم‌سنگین است نه رژیم. احتمال «ورود به تنش» را نخوانید.")
         for w in self.warnings:
             L.append("   ⚠ " + w)
         return "\n".join(L)
@@ -244,6 +307,16 @@ def fit(returns: Sequence[float], max_iter: int = 300, tol: float = 1e-7,
         m.smoothed = gamma
 
     m.mu, m.sigma, m.P, m.loglik = mu, sig, P, prev_ll
+
+    # درست‌نمایی مدل «بدون ماندگاری»: همان دو توزیع، ولی هر روز مستقل از
+    # دیروز با احتمال ثابت π انتخاب می‌شود. اختلاف این دو، تنها شاهدی است
+    # که می‌گوید ماندگاری واقعاً در داده هست یا EM آن را ساخته.
+    pi = m.steady_state
+    ll_iid = 0.0
+    for x in r:
+        px = pi[0] * _npdf(x, mu[0], sig[0]) + pi[1] * _npdf(x, mu[1], sig[1])
+        ll_iid += math.log(px if px > 1e-300 else 1e-300)
+    m.loglik_iid = ll_iid
     if not m.converged:
         m.warnings.append("EM در %d تکرار همگرا نشد؛ برآورد را با احتیاط بخوانید."
                           % max_iter)

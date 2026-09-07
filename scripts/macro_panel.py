@@ -179,6 +179,84 @@ def main(argv=None):
             print("  هیچ رویدادی در شیت Geo_Events ثبت نشده. "
                   "تاریخ و عنوان را خودتان وارد کنید.")
 
+    # ---------------- چشم‌انداز احتمالاتی ----------------
+    if "Forecast" in wb.sheetnames:
+        from timeframe.forecast import base_rates, regime
+        from timeframe.series import Bar, TimeSeries
+        wf = wb["Forecast"]
+        print("\nچشم‌انداز سه‌ماهه:")
+        FC = [("شاخص کل", "tedpix"), ("دلار آزاد", "usd"),
+              ("اونس طلا", "ons"), ("سکه تمام", "coin")]
+        H = 63                      # حدود سه ماه معاملاتی
+        for i, (lbl, key) in enumerate(FC):
+            r = 5 + i
+            for c in range(2, 15):
+                wf.cell(row=r, column=c).value = None
+            pairs = [(d, v) for d, v in zip(dates, cols[key]) if v]
+            if len(pairs) < 150:
+                wf.cell(row=r, column=14, value="داده کافی نیست")
+                print("  %-10s داده کافی نیست (%d)" % (lbl, len(pairs)))
+                continue
+            px = [v for _d, v in pairs]
+            m = regime.fit(SA.log_returns(px))
+            if m is None or not m.mu:
+                wf.cell(row=r, column=14, value="مدل رژیم برازش نشد")
+                print("  %-10s مدل برازش نشد" % lbl)
+                continue
+            s_, c_ = m.stress_state, m.calm_state
+            mc, vc = m.annualized(c_)
+            ms, vs = m.annualized(s_)
+            wf.cell(row=r, column=2,
+                    value="پرتنش" if m.p_stress_now > 0.5 else "آرام")
+            wf.cell(row=r, column=3, value=round(m.p_stress_now, 4))
+            wf.cell(row=r, column=4, value=round(mc, 4))
+            wf.cell(row=r, column=5, value=round(ms, 4))
+            wf.cell(row=r, column=6, value=round(vc, 4))
+            wf.cell(row=r, column=7, value=round(vs, 4))
+            dur_c = m.expected_duration(c_)
+            dur_s = m.expected_duration(s_)
+            if dur_c != float("inf"):
+                wf.cell(row=r, column=8, value=round(dur_c, 1))
+            if dur_s != float("inf"):
+                wf.cell(row=r, column=9, value=round(dur_s, 1))
+            # ⚠️ اگر رژیم‌ها ماندگار نباشند، این عدد همیشه نزدیک ۱۰۰٪
+            # می‌شود و هیچ اطلاعاتی ندارد. نوشتنش بدتر از ننوشتنش است.
+            if m.persistence_ok:
+                wf.cell(row=r, column=10, value=round(m.prob_enter_stress(H), 4))
+
+            # ⚠️ ستون ۱۱ و ۱۲ باید **یک رویداد** را بسنجند، وگرنه مقایسه
+            # بی‌معناست: هر دو «بازده افق < ‎−۱۰٪»، نه یکی افت درون‌دوره.
+            sim = regime.simulate(m, H)
+            p_model = None
+            if sim:
+                p_model = sim["p_below_10"]
+                wf.cell(row=r, column=11, value=round(p_model, 4))
+
+            ts = TimeSeries(lbl, [Bar(date=d, close=v) for d, v in pairs])
+            d_un = base_rates.unconditional(ts, H)
+            warn = ""
+            if d_un is not None:
+                wf.cell(row=r, column=12, value=round(d_un.p_below_10, 4))
+                wf.cell(row=r, column=13, value=int(d_un.n_effective))
+                if d_un.n_effective < 10:
+                    warn = "n مؤثر %d — نرخ پایه حکایت است نه آمار" % int(d_un.n_effective)
+            if not m.persistence_ok:
+                warn = ("رژیم ماندگار نیست (ماندگاری %.1f و %.1f کندل) — "
+                        "مخلوط دم‌سنگین است نه رژیم" % (dur_c, dur_s))
+            if not m.converged:
+                warn = (warn + " | EM همگرا نشد").strip(" |")
+            if warn:
+                wf.cell(row=r, column=14, value=warn)
+            print("  %-10s رژیم=%-6s p(تنش الان)=%3.0f%% p(ورود ۳ماه)=%s "
+                  "مدل=%s تجربی=%s n=%s"
+                  % (lbl, "پرتنش" if m.p_stress_now > 0.5 else "آرام",
+                     m.p_stress_now * 100,
+                     ("%3.0f%%" % (m.prob_enter_stress(H) * 100))
+                     if m.persistence_ok else "بی‌معنا",
+                     ("%.0f%%" % (p_model * 100)) if p_model is not None else "-",
+                     ("%.0f%%" % (d_un.p_below_10 * 100)) if d_un else "-",
+                     int(d_un.n_effective) if d_un else "-"))
+
     wb.save(args.workbook)
     print("\n✓ %s به‌روز شد." % args.workbook)
     print("  فایل را در اکسل باز کنید تا فرمول‌ها دوباره حساب شوند.")

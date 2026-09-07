@@ -102,13 +102,10 @@ def build(out_path, hist=None, **_kw):
     MT.build_lead_lag(wb)
     MT.build_cointegration(wb)
     MT.build_geo_events(wb)
+    MT.build_forecast(wb)
 
     # چرخه تک‌سهم هنوز هست ولی دیگر موضوع اصلی نیست
     B.build_time_cycles(wb, symbols, hist, standalone=True)
-    _placeholder(wb, "Forecast", "چشم‌انداز احتمالاتی",
-                 "مدل رژیم مارکوف، نرخ پایه تجربی، توزیع افت و دفتر پیش‌بینی",
-                 "python -m timeframe export --workbook Time_Analysis.xlsx "
-                 "--data Stocks_Signals.xlsx")
     _sources_sheet(wb)
     B.build_documentation(wb, scope="time", extra=TIME_DOC_EXTRA)
 

@@ -648,7 +648,7 @@ def main():
                test_vba_structure, test_vba_parsing_logic,
                test_cycle_detector_calibration, test_vba_cycle_port,
                test_macro_series_analysis, test_macro_workbook_shape,
-               test_vba_macro_stats_port):
+               test_vba_macro_stats_port, test_regime_persistence_guard):
         fn()
     print("\n" + "═" * 70)
     if FAILS:
@@ -1654,6 +1654,74 @@ def test_vba_macro_stats_port():
             dif += 1
     check("هم‌انباشتگی و ADF ماکرو با پایتون یکی‌اند", dif == 0,
           "%d اختلاف از ۱۶ مقایسه" % dif)
+
+
+
+def test_regime_persistence_guard():
+    section("۴۰) محافظ ماندگاری رژیم")
+    import random as _r
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from timeframe.forecast import regime
+
+    # --- سری با رژیم واقعی: باید ماندگار تشخیص داده شود ---
+    _r.seed(1404)
+    st = 0
+    rets = []
+    for _ in range(1500):
+        if st == 0:
+            st = 0 if _r.random() < 0.985 else 1
+        else:
+            st = 1 if _r.random() < 0.94 else 0
+        mu, sg = (0.0009, 0.006) if st == 0 else (-0.0015, 0.022)
+        rets.append(_r.gauss(mu, sg))
+    m = regime.fit(rets)
+    check("رژیم واقعی، ماندگار تشخیص داده می‌شود",
+          m is not None and m.persistence_ok,
+          "ماندگاری %.1f و %.1f" % (m.expected_duration(0), m.expected_duration(1))
+          if m else "برازش نشد")
+
+    # --- سری بدون رژیم (i.i.d نرمال): EM باز هم دو حالت می‌سازد،
+    #     ولی محافظ باید بگیردش. بدون این، «احتمال ورود به تنش» همیشه
+    #     نزدیک ۱۰۰٪ می‌شد و کاربر آن را جدی می‌گرفت.
+    bad = 0
+    for k in range(10):
+        _r.seed(5000 + k)
+        r2 = [_r.gauss(0.0005, 0.012) for _ in range(1500)]
+        m2 = regime.fit(r2)
+        if m2 is not None and m2.persistence_ok:
+            bad += 1
+    check("سری بدون رژیم، ماندگار اعلام نمی‌شود", bad == 0,
+          "%d از ۱۰ اشتباه ماندگار خوانده شد" % bad)
+
+    # آستانه کتابی χ²(۱)=۳٫۸۴ اینجا غلط است — این را ثبت می‌کنیم تا کسی
+    # بی‌دلیل «اصلاحش» نکند.
+    from timeframe.forecast.regime import LR_PERSISTENCE_CRIT
+    check("آستانه ماندگاری کالیبره‌شده است، نه χ² کتابی",
+          LR_PERSISTENCE_CRIT > 10.0, "%.1f در برابر ۳٫۸۴" % LR_PERSISTENCE_CRIT)
+
+    # --- مخلوط دم‌سنگین بدون ماندگاری: حالت کلاسیکِ فریب ---
+    _r.seed(77)
+    r3 = []
+    for _ in range(1500):
+        if _r.random() < 0.9:
+            r3.append(_r.gauss(0.0005, 0.006))
+        else:
+            r3.append(_r.gauss(-0.001, 0.030))     # جهش‌های مستقل، نه دوره‌ای
+    m3 = regime.fit(r3)
+    check("مخلوط دم‌سنگین، رژیم خوانده نمی‌شود",
+          m3 is not None and not m3.persistence_ok,
+          "ماندگاری %.1f و %.1f" % (m3.expected_duration(0), m3.expected_duration(1))
+          if m3 else "برازش نشد")
+    if m3 is not None:
+        check("و در همان حالت، احتمال ورود به تنش تقریباً ۱۰۰٪ است",
+              m3.prob_enter_stress(63) > 0.95,
+              "%.0f%% — دلیل وجود محافظ" % (m3.prob_enter_stress(63) * 100))
+
+    # توزیع بلندمدت باید جمعش ۱ باشد
+    if m is not None:
+        ss = m.steady_state
+        check("توزیع بلندمدت رژیم‌ها جمعش ۱ است", abs(sum(ss) - 1.0) < 1e-9,
+              "%.3f + %.3f" % (ss[0], ss[1]))
 
 
 
