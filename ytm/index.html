@@ -175,7 +175,7 @@ tr:last-child td{border-bottom:0}
           <option value="all">هزینه واقعی بانی — با الحاقیه</option></select></div>
       </div>
       <div style="margin-top:11px"><label>کدام متغیر حل شود</label><select id="unk"></select></div>
-      <p class="note">هر چیزی جز متغیر مجهول را خودتان تثبیت می‌کنید — نرخ کوپن، مبلغ انتشار، متعهد پذیره‌نویسی و نرخ الحاقیه.</p>
+      <p class="note" id="ask"></p>
     </div>
 
     <div id="solve" style="margin-top:12px"></div>
@@ -333,10 +333,14 @@ const opts=(o,cur)=>Object.entries(o).map(([k,v])=>'<option value="'+k+'"'+(cur=
 
 function drawFees(){
   const box=document.getElementById('fees');box.innerHTML='';
+  const uk=(document.getElementById('unk')||{}).value;
   fees.forEach((f,i)=>{
+    const isUnk = mode==='fee' && uk==='f'+i;
     const el=document.createElement('div');el.className='fee';
+    if(isUnk)el.style.borderColor='var(--acc)';
     el.innerHTML=
-      '<div class="top"><input value="'+f.n.replace(/"/g,'&quot;')+'" data-k="n" aria-label="نام رکن">'+
+      '<div class="top">'+(isUnk?'<span class="badge" style="flex:none">مجهول</span>':'')+
+      '<input value="'+f.n.replace(/"/g,'&quot;')+'" data-k="n" aria-label="نام رکن">'+
       '<button class="x" data-del="'+i+'" aria-label="حذف">×</button></div>'+
       '<div class="row"><div><label>'+(f.u==='A'?'مبلغ (میلیون ریال)':'درصد ٪')+'</label>'+
       '<input inputmode="decimal" value="'+f.p+'" data-k="p"></div>'+
@@ -508,10 +512,24 @@ function solveUnknown(box){
   const all=document.getElementById('tbase').value==='all';
   const cpn=num('cpn')/100;
 
+  /* restate the question in words, so the controls never have to be decoded */
+  const ask=document.getElementById('ask');
+  if(ask){
+    const name = key==='cpn'?'نرخ کوپن' : key==='amt'?'مبلغ انتشار'
+               : (fees[parseInt(key.slice(1),10)]||{}).n || '—';
+    const held = [key!=='cpn'?'نرخ کوپن '+fa(num('cpn'))+'٪':null,
+                  key!=='amt'?'مبلغ '+money(num('amt'))+' م.ر':null]
+                 .filter(Boolean).join(' و ');
+    ask.innerHTML='<b>سؤال:</b> با '+held+' و بقیهٔ ارکان همان‌طور که هست، '+
+      '<b>'+name+'</b> چقدر باشد تا '+
+      (all?'هزینهٔ واقعی بانی':'نرخ سازمان')+' برسد به '+pct(tgt)+'؟';
+  }
+
   /* --- coupon --- */
   if(key==='cpn'){
     const f=x=>xirr(build(x,null,all,false));
-    return report(box,f,0,3,tgt,all,'نرخ کوپن',v=>pct(v),null);
+    return report(box,f,0,3,tgt,all,'نرخ کوپن',v=>pct(v),
+      v=>{document.getElementById('cpn').value=(v*100).toFixed(4);calc();},null);
   }
 
   /* --- issuance amount --- */
@@ -531,30 +549,63 @@ function solveUnknown(box){
   const i=parseInt(key.slice(1),10);
   if(!(i>=0)||!fees[i]){box.innerHTML='<p class="note">متغیر مجهول را انتخاب کنید.</p>';return;}
   if(!all&&!fees[i].r){
-    box.innerHTML='<div class="flag bad">«'+fees[i].n+'» در نرخ سازمان لحاظ نمی‌شود، پس تغییرش آن نرخ را تکان نمی‌دهد. یا مبنای هدف را روی هزینه واقعی بگذارید، یا تیک «در نرخ سازمان» این ردیف را بزنید.</div>';
+    box.innerHTML=
+      '<div class="flag bad">تیک «در نرخ سازمان» برای «'+fees[i].n+'» برداشته شده، پس این رکن اصلاً وارد نرخ سازمان نمی‌شود و هرچه تغییرش بدهیم آن نرخ تکان نمی‌خورد.</div>'+
+      '<button class="add" id="fixr" style="margin-top:10px">تیک «در نرخ سازمان» را بزن و دوباره حل کن</button>'+
+      '<p class="note">یا اگر عمداً برداشته‌اید، «هدف بر مبنای» را روی «هزینه واقعی بانی» بگذارید.</p>';
+    const fb=document.getElementById('fixr');
+    if(fb)fb.addEventListener('click',()=>{fees[i].r=true;drawFees();calc();});
     return;
   }
   const orig=fees[i].p;
   const f=x=>{fees[i].p=x;const r=xirr(build(cpn,null,all,false));fees[i].p=orig;return r;};
-  const hiB=fees[i].u==='A'?num('amt')*5:400;
+  const hiB=fees[i].u==='A'?num('amt')*2:200;
   const fmt=v=>fees[i].u==='A'?money(v)+' م.ر':fa(v.toFixed(4))+'٪';
   return report(box,f,0,hiB,tgt,all,'«'+fees[i].n+'»',fmt,
     v=>{fees[i].p=parseFloat(v.toFixed(4));drawFees();calc();},false,i);
 }
 
 /* shared bisection + reporting; `desc` descending means higher x -> lower rate */
-function report(box,f,lo,hi,tgt,all,label,fmt,apply,desc,feeIdx){
-  const a=f(lo), b=f(hi);
-  if(!isFinite(a)||!isFinite(b)){box.innerHTML='<p class="note">محاسبه ممکن نشد.</p>';return;}
-  const up=b>a;                           // does raising x raise the rate?
-  const reach=up?(a<=tgt&&tgt<=b):(b<=tgt&&tgt<=a);
-  if(!reach){
-    box.innerHTML='<div class="flag bad">با تغییر '+label+' به‌تنهایی به '+pct(tgt)+
-      ' نمی‌رسید. دامنهٔ ممکن از '+pct(Math.min(a,b))+' تا '+pct(Math.max(a,b))+' است.</div>';
+function report(box,f,lo,hiMax,tgt,all,label,fmt,apply,desc,feeIdx){
+  /* Walk a widening ladder of candidate values and stop where the maths breaks
+     down — past a point the fees exceed the proceeds, the cash flows never
+     change sign and no rate of return exists. Then bisect inside the one step
+     that straddles the target. This is what the old fixed 0–400 bracket got
+     wrong: it evaluated at an impossible value and gave up. */
+  const pts=[]; let xi=lo, step=Math.max((hiMax-lo)/4096,1e-9);
+  for(let g=0;g<200;g++){
+    const v=f(xi);
+    if(!isFinite(v))break;
+    pts.push({x:xi,v});
+    if(xi>=hiMax)break;
+    xi=Math.min(hiMax,xi+step); step*=2;
+  }
+  if(pts.length<2){
+    box.innerHTML='<div class="flag bad">با این ورودی‌ها اصلاً نرخی محاسبه نمی‌شود. معمولاً یعنی مبلغ انتشار صفر است، یا کارمزدها از کل مبلغ انتشار بیشتر شده‌اند و دیگر چیزی به دست بانی نمی‌رسد.</div>';
     return;
   }
-  let L=lo,H=hi;
-  for(let k=0;k<160;k++){const m=(L+H)/2; if((f(m)<=tgt)===up)L=m; else H=m;}
+  const lowV=Math.min(...pts.map(p=>p.v)), highV=Math.max(...pts.map(p=>p.v));
+  if(highV-lowV<1e-9){
+    box.innerHTML='<div class="flag bad">تغییر '+label+' روی این نرخ هیچ اثری ندارد، پس چیزی برای حل کردن نیست.'+
+      (label==='مبلغ انتشار'?' وقتی همهٔ کارمزدها درصدی‌اند، مبلغ انتشار نرخ مؤثر را عوض نمی‌کند.':'')+'</div>';
+    return;
+  }
+  let pair=null;
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    if((a.v<=tgt&&tgt<=b.v)||(b.v<=tgt&&tgt<=a.v)){pair={a,b};break;}
+  }
+  if(!pair){
+    box.innerHTML='<div class="flag bad">با تغییر '+label+' به‌تنهایی به '+pct(tgt)+
+      ' نمی‌رسید. با بقیهٔ ورودی‌های فعلی، نرخ فقط بین '+pct(lowV)+' و '+pct(highV)+' جابه‌جا می‌شود.</div>'+
+      '<p class="note">'+(tgt<lowV
+        ? 'هدف از کف این دامنه پایین‌تر است — نرخ کوپن یا یکی از ارکان دیگر را کم کنید.'
+        : 'هدف از سقف این دامنه بالاتر است — نرخ کوپن را بالا ببرید یا رکن دیگری اضافه کنید.')+'</p>';
+    return;
+  }
+  const up=pair.b.v>pair.a.v;
+  let L=pair.a.x,H=pair.b.x;
+  for(let k=0;k<120;k++){const m=(L+H)/2; if((f(m)<=tgt)===up)L=m; else H=m;}
   const x=up?L:H;
 
   const keepF=feeIdx!=null?fees[feeIdx].p:null;
@@ -655,7 +706,9 @@ document.querySelectorAll('#mode button').forEach(b=>b.addEventListener('click',
   b.setAttribute('aria-pressed','true');mode=b.dataset.m;
   document.getElementById('m1').style.display=mode==='rate'?'':'none';
   document.getElementById('m2').style.display=mode==='fee'?'':'none';
-  calc();}));
+  document.getElementById('ask').textContent='';
+  drawFees();calc();}));
+document.getElementById('unk').addEventListener('change',()=>{drawFees();calc();});
 
 if(!load())fees=DEF.map(x=>({...x}));
 drawFees();calc();

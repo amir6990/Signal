@@ -1,5 +1,5 @@
 /* Cache the page shell so the app keeps working with no network. */
-const C = 'ytm-v5';
+const C = 'ytm-v7';
 const SHELL = ['./', './index.html', './icon-180.png', './icon-192.png', './icon-512.png', './app.webmanifest'];
 
 self.addEventListener('install', e => {
