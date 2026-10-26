@@ -1,0 +1,454 @@
+<title>ارزش‌گذاری DCF</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="DCF">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1F5E57">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="app.webmanifest">
+<style>
+:root{
+  --bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
+  --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;
+  --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
+  --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;
+  --acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;color-scheme:dark;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;
+  direction:rtl;-webkit-text-size-adjust:100%;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:680px;margin-inline:auto;padding-top:20px}
+h1{font-size:21px;font-weight:800;margin:0 0 2px}
+.sub{color:var(--soft);font-size:12.5px;margin:0 0 6px}
+a{color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card>h2{font-size:13px;font-weight:700;margin:0 0 12px;color:var(--acc)}
+label{display:block;font-size:12px;font-weight:600;color:var(--soft);margin-bottom:4px}
+input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);
+  background:var(--field);border:1px solid var(--line);border-radius:10px;padding:10px 11px;
+  appearance:none;direction:ltr;text-align:right}
+select{direction:rtl;padding-left:30px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
+  background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:var(--acc)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g2+.g2{margin-top:10px}
+.res{background:var(--acc);color:var(--acc-ink);border-radius:14px;padding:16px;margin-bottom:12px}
+.res h2{color:var(--acc-ink);opacity:.72;font-size:12px;margin:0 0 10px;font-weight:700}
+.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;
+  border-bottom:1px solid rgba(255,255,255,.16)}
+.big:last-of-type{border-bottom:0}
+.big .k{font-size:13px;opacity:.85;font-weight:600}
+.big .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
+.big.sm .v{font-size:16px;font-weight:700}
+.flag{margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.14)}
+.flag.bad{background:var(--warn-wash);color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 3px;border-bottom:1px solid var(--line);text-align:center}
+th:first-child,td:first-child{text-align:right;white-space:nowrap;font-weight:600}
+th{font-size:10.5px;color:var(--soft);font-weight:700}
+td{direction:ltr}
+td:first-child{direction:rtl}
+tr:last-child td{border-bottom:0}
+tr.hi td{background:var(--wash);font-weight:700}
+.tw{overflow-x:auto;margin-top:4px}
+.note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
+.warn{color:var(--warn)}
+.badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;
+  background:var(--wash);color:var(--acc)}
+.badge.old{background:var(--warn-wash);color:var(--warn)}
+.seg{display:flex;gap:6px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
+.seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);
+  font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h1>ارزش‌گذاری DCF</h1>
+  <p class="sub">جریان نقد آزاد بنگاه · مبالغ به میلیون ریال · <a href="../val/">ابزار ضرایب</a></p>
+  <p class="sub" id="offline" style="margin-bottom:16px"></p>
+
+  <div class="res" id="res"></div>
+
+  <div class="card">
+    <h2>۱ · مبنای محاسبه</h2>
+    <div class="seg" id="basis" role="group">
+      <button data-x="nom" aria-pressed="true">اسمی — با تورم</button>
+      <button data-x="real" aria-pressed="false">حقیقی — بدون تورم</button>
+    </div>
+    <div class="g2" style="margin-top:11px">
+      <div><label>تورم بلندمدت مفروض ٪</label><input id="infl" inputmode="decimal" value="35"></div>
+      <div><label>افق پیش‌بینی (سال)</label><input id="yrs" inputmode="numeric" value="5"></div>
+    </div>
+    <p class="note" id="basisnote"></p>
+  </div>
+
+  <div class="card">
+    <h2>۲ · نرخ تنزیل (WACC)</h2>
+    <div class="seg" id="rfsrc" role="group">
+      <button data-r="live" aria-pressed="true">نرخ بدون ریسک از اخزا</button>
+      <button data-r="man" aria-pressed="false">دستی</button>
+    </div>
+    <div id="akhza" style="margin:11px 0"></div>
+    <div class="g2">
+      <div><label>نرخ بدون ریسک ٪</label><input id="rf" inputmode="decimal" value="44.8"></div>
+      <div><label>صرف ریسک بازار ٪</label><input id="erp" inputmode="decimal" value="8"></div>
+      <div><label>بتا</label><input id="beta" inputmode="decimal" value="1.0"></div>
+      <div><label>صرف ریسک خاص ٪</label><input id="alpha" inputmode="decimal" value="0"></div>
+      <div><label>هزینه بدهی ٪</label><input id="kd" inputmode="decimal" value="28"></div>
+      <div><label>نرخ مالیات ٪</label><input id="tax" inputmode="decimal" value="25"></div>
+      <div><label>بدهی مالی</label><input id="debt" inputmode="numeric" value="0"></div>
+      <div><label>ارزش بازار حقوق صاحبان سهام</label><input id="eqmv" inputmode="numeric" value="0"></div>
+    </div>
+    <p class="note" id="waccnote"></p>
+  </div>
+
+  <div class="card">
+    <h2>۳ · محرک‌های پیش‌بینی</h2>
+    <div class="g2">
+      <div><label>فروش سال پایه</label><input id="s0" inputmode="numeric" value="1000000"></div>
+      <div><label>نرخ مالیات مؤثر ٪</label><input id="taxop" inputmode="decimal" value="25"></div>
+      <div><label>رشد فروش سال ۱ ٪</label><input id="g1" inputmode="decimal" value="40"></div>
+      <div><label>رشد فروش سال آخر ٪</label><input id="gN" inputmode="decimal" value="35"></div>
+      <div><label>حاشیه EBITDA سال ۱ ٪</label><input id="m1" inputmode="decimal" value="25"></div>
+      <div><label>حاشیه EBITDA سال آخر ٪</label><input id="mN" inputmode="decimal" value="22"></div>
+      <div><label>استهلاک ٪ از فروش</label><input id="da" inputmode="decimal" value="4"></div>
+      <div><label>مخارج سرمایه‌ای ٪ از فروش</label><input id="capex" inputmode="decimal" value="6"></div>
+      <div><label>سرمایه در گردش ٪ از رشد فروش</label><input id="nwc" inputmode="decimal" value="20"></div>
+      <div><label>تنزیل</label><select id="mid">
+        <option value="0" selected>پایان سال</option><option value="1">میانهٔ سال</option></select></div>
+    </div>
+    <p class="note">رشد و حاشیه به‌صورت خطی از سال اول به سال آخر میل می‌کنند، پس لازم نیست سال‌به‌سال وارد کنید.</p>
+  </div>
+
+  <div class="card">
+    <h2>۴ · ارزش نهایی</h2>
+    <div class="seg" id="tvm" role="group">
+      <button data-t="g" aria-pressed="true">رشد دائمی</button>
+      <button data-t="x" aria-pressed="false">ضریب خروج</button>
+    </div>
+    <div class="g2" style="margin-top:11px">
+      <div id="tvg"><label>رشد دائمی ٪</label><input id="gterm" inputmode="decimal" value="30"></div>
+      <div id="tvx" style="display:none"><label>EV/EBITDA خروج</label><input id="xmult" inputmode="decimal" value="5"></div>
+      <div><label>صنعت برای مقایسه</label><select id="ind"></select></div>
+    </div>
+    <p class="note" id="tvnote"></p>
+  </div>
+
+  <div class="card">
+    <h2>۵ · پل به ارزش حقوق صاحبان سهام</h2>
+    <div class="g2">
+      <div><label>بدهی مالی</label><input id="bdebt" inputmode="numeric" value="0"></div>
+      <div><label>وجه نقد</label><input id="bcash" inputmode="numeric" value="0"></div>
+      <div><label>سهم اقلیت</label><input id="bminor" inputmode="numeric" value="0"></div>
+      <div><label>دارایی غیرعملیاتی</label><input id="bnonop" inputmode="numeric" value="0"></div>
+    </div>
+    <div style="margin-top:10px"><label>تعداد سهام (میلیون برگه) — اختیاری</label>
+      <input id="shares" inputmode="numeric" value="0"></div>
+  </div>
+
+  <div class="card">
+    <h2>پیش‌بینی و جریان نقد</h2>
+    <div class="tw" id="proj"></div>
+  </div>
+
+  <div class="card">
+    <h2>حساسیت — WACC در برابر رشد دائمی</h2>
+    <div class="tw" id="sens"></div>
+    <p class="note">ارزش حقوق صاحبان سهام به میلیون ریال. خانهٔ وسط، سناریوی پایه است.</p>
+  </div>
+
+  <p class="note">FCFF = EBIT×(۱−نرخ مالیات) + استهلاک − مخارج سرمایه‌ای − تغییر سرمایه در گردش. ارزش بنگاه، مجموع ارزش فعلی جریان‌های افق به‌علاوهٔ ارزش فعلی ارزش نهایی است؛ سپس بدهی خالص و سهم اقلیت کسر و دارایی غیرعملیاتی اضافه می‌شود.</p>
+</div>
+
+<script>
+const IND = [{"name":"سرمایه گذاری","evebit":9.7,"pe":8.9,"pb":4.3,"ps":9.5},{"name":"تولید فلزات گرانبهای غیراهن","evebit":10.3,"pe":18.3,"pb":10.1,"ps":8.0},{"name":"فراورده های نفتی","evebit":3.1,"pe":3.7,"pb":2.9,"ps":0.6},{"name":"مواد شیمیایی-متنوع","evebit":7.4,"pe":9.9,"pb":6.3,"ps":2.1},{"name":"بانکها و موسسات اعتباری","evebit":1.0,"pe":4.0,"pb":1.3,"ps":1.7},{"name":"آهن و فولاد","evebit":5.7,"pe":7.3,"pb":2.4,"ps":1.2},{"name":"کانی های فلزی","evebit":10.2,"pe":11.0,"pb":3.8,"ps":2.4},{"name":"دارویی","evebit":6.7,"pe":10.9,"pb":6.8,"ps":2.5},{"name":"تولید کود و ترکیبات نیتروژن","evebit":6.8,"pe":6.5,"pb":4.9,"ps":2.9},{"name":"سیمان، اهک و گچ","evebit":6.8,"pe":8.2,"pb":5.6,"ps":4.0},{"name":"بیمه","evebit":64.5,"pe":7.1,"pb":2.5,"ps":0.7},{"name":"خودرو","evebit":207,"pe":0,"pb":1.5,"ps":0.4},{"name":"سایر محصولات غذایی","evebit":6.8,"pe":7.0,"pb":4.7,"ps":1.1},{"name":"خرده فروشی،باستثنای وسایل نقلیه موتوری","evebit":7.9,"pe":10.7,"pb":9.2,"ps":0.6},{"name":"سرمایه گذاری استانی","evebit":4.1,"pe":6.6,"pb":0.6,"ps":6.6},{"name":"فعالیت مهندسی","evebit":4.3,"pe":4.6,"pb":1.8,"ps":1.5},{"name":"مخابرات","evebit":6.6,"pe":8.4,"pb":1.7,"ps":1.3},{"name":"نرم افزار و خدمات","evebit":7.4,"pe":9.4,"pb":4.3,"ps":1.9},{"name":"محصولات پاک کننده","evebit":8.2,"pe":11.3,"pb":5.8,"ps":2.4},{"name":"محصولات کشاورزی","evebit":12.1,"pe":6.4,"pb":3.6,"ps":1.6},{"name":"تامین سرمایه","evebit":2.7,"pe":4.8,"pb":2.1,"ps":2.6},{"name":"فعالیتهای مرتبط با اوراق بهادار","evebit":9.3,"pe":11.7,"pb":6.0,"ps":11.2},{"name":"سایر محصولات کانی غیرفلزی","evebit":13.3,"pe":12.3,"pb":4.4,"ps":4.0},{"name":"خدمات رفاهی متنوع","evebit":7.5,"pe":4.9,"pb":5.0,"ps":0.8},{"name":"شیرینیجات","evebit":5.5,"pe":6.7,"pb":2.3,"ps":2.0},{"name":"خدمات رفاهی-برق","evebit":7.7,"pe":10.0,"pb":4.2,"ps":4.3},{"name":"ماشین الات الکتریکی","evebit":4.7,"pe":6.7,"pb":2.0,"ps":2.2},{"name":"انبوه سازی، املاک و مستغلات","evebit":8.0,"pe":8.0,"pb":2.1,"ps":4.8},{"name":"قطعات خودرو","evebit":5.2,"pe":8.0,"pb":2.4,"ps":0.6},{"name":"محصولات لبنی","evebit":9.8,"pe":10.2,"pb":3.4,"ps":1.0},{"name":"لاستیک و پلاستیک","evebit":5.1,"pe":7.1,"pb":3.3,"ps":1.0},{"name":"سخت افزار و تجهیزات","evebit":10.7,"pe":11.7,"pb":5.4,"ps":3.1},{"name":"وسایل خانگی","evebit":6.0,"pe":7.3,"pb":2.0,"ps":0.9},{"name":"بنادر و کشتیرانی","evebit":6.1,"pe":7.8,"pb":3.8,"ps":3.6},{"name":"شکر","evebit":5.9,"pe":8.1,"pb":3.1,"ps":1.2},{"name":"محصولات فلزی","evebit":6.1,"pe":7.8,"pb":2.1,"ps":1.7},{"name":"کاشی و سرامیک","evebit":6.0,"pe":7.0,"pb":3.1,"ps":1.8},{"name":"حمل و نقل از طریق خطوط راه اهن","evebit":4.5,"pe":5.0,"pb":1.8,"ps":1.0},{"name":"ماشین الات","evebit":2.9,"pe":4.2,"pb":2.0,"ps":0.6},{"name":"لیزینگ","evebit":11.1,"pe":9.5,"pb":2.4,"ps":2.3},{"name":"محصولات کاغذی","evebit":8.9,"pe":11.5,"pb":4.5,"ps":2.0},{"name":"نساجی","evebit":7.0,"pe":8.2,"pb":4.2,"ps":2.6},{"name":"حمل و نقل بار زمینی","evebit":32.3,"pe":39.4,"pb":6.9,"ps":3.5},{"name":"تجهیزات صنعتی","evebit":5.9,"pe":10.7,"pb":1.1,"ps":1.1},{"name":"زغال سنگ","evebit":7.1,"pe":14.0,"pb":5.2,"ps":2.1},{"name":"سایر مواد معدنی","evebit":11.8,"pe":10.5,"pb":4.3,"ps":4.8},{"name":"حفاری","evebit":1.4,"pe":1.8,"pb":0.9,"ps":0.6},{"name":"نوشیدنی","evebit":8.5,"pe":8.7,"pb":3.2,"ps":0.6},{"name":"چوب","evebit":8.4,"pe":10.7,"pb":5.3,"ps":2.9},{"name":"هتل و رستوران","evebit":14.2,"pe":19.7,"pb":2.0,"ps":2.6},{"name":"چاپ و نشر","evebit":6.7,"pe":7.1,"pb":4.6,"ps":3.4},{"name":"پیمانکاری صنعتی","evebit":10.3,"pe":26.7,"pb":10.2,"ps":1.0}];
+const IND_ASOF = "1405/08/04";
+
+const FA='۰۱۲۳۴۵۶۷۸۹';
+const fa=s=>String(s).replace(/\d/g,d=>FA[d]);
+const n=id=>{const e=document.getElementById(id);if(!e)return 0;
+  const v=parseFloat(String(e.value).replace(/[^\d.\-]/g,''));return isFinite(v)?v:0;};
+const money=x=>fa(Math.round(x).toLocaleString('en-US'));
+const hemat=x=>fa((x/1e7).toFixed(2));
+const pc=x=>fa((x*100).toFixed(2))+'٪';
+const BIGR=(k,v)=>'<div class="big"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';
+const SM=(k,v)=>'<div class="big sm"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';
+
+let basis='nom', tvMode='g', rfSrc='live', curve=[], curveSel=-1, curveState='';
+
+/* ===== Jalali, to read اخزا maturities out of their instrument names ===== */
+const _d=(a,b)=>~~(a/b), _m=(a,b)=>a-~~(a/b)*b;
+const _BR=[-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
+function _jc(jy){let bl=_BR.length,gy=jy+621,lJ=-14,jp=_BR[0],jm,jump=0,leap,k,i;
+  for(i=1;i<bl;i++){jm=_BR[i];jump=jm-jp;if(jy<jm)break;lJ=lJ+_d(jump,33)*8+_d(_m(jump,33),4);jp=jm;}
+  k=jy-jp;lJ=lJ+_d(k,33)*8+_d(_m(k,33)+3,4);
+  if(_m(jump,33)===4&&jump-k===4)lJ++;
+  const lG=_d(gy,4)-_d((_d(gy,100)+1)*3,4)-150, march=20+lJ-lG;
+  if(jump-k<6)k=k-jump+_d(jump+4,33)*33;
+  leap=_m(_m(k+1,33)-1,4); if(leap===-1)leap=4;
+  return {leap,gy,march};}
+function _g2d(gy,gm,gd){let x=_d((gy+_d(gm-8,6)+100100)*1461,4)+_d(153*_m(gm+9,12)+2,5)+gd-34840408;
+  return x-_d(_d(gy+100100+_d(gm-8,6),100)*3,4)+752;}
+function _j2d(jy,jm,jd){const r=_jc(jy);return _g2d(r.gy,3,r.march)+(jm-1)*31-_d(jm,7)*(jm-7)+jd-1;}
+function todayJdn(){const t=new Date();return _g2d(t.getFullYear(),t.getMonth()+1,t.getDate());}
+
+/* ===== the Iranian risk-free curve, from traded treasury bills =====
+   اخزا are zero-coupon, face 1,000,000 rial, and their instrument name ends in
+   the Jalali maturity (…-050923 = 1405/09/23). Yield = (face/price)^(365/days)-1.
+   Bills under a month are dropped (a few rials of noise swamps the annualised
+   figure) and so are untraded ones still quoted at par. */
+const FACE=1e6;
+async function loadCurve(force){
+  try{
+    const c=JSON.parse(localStorage.getItem('akhza')||'null');
+    if(!force&&c&&Date.now()-c.t<6*36e5){curve=c.rows;pickDefault();drawCurve();applyRf();return;}
+  }catch(e){}
+  curveState='در حال گرفتن…';drawCurve();
+  try{
+    const j=await (await fetch('https://cdn.tsetmc.com/api/Instrument/GetInstrumentSearch/'+encodeURIComponent('اخزا'))).json();
+    const list=(j.instrumentSearch||[]).filter(x=>x.lastDate===1);
+    const today=todayJdn(), rows=[];
+    for(let i=0;i<list.length;i+=6){
+      await Promise.all(list.slice(i,i+6).map(async x=>{
+        const m=/-(\d{2})(\d{2})(\d{2})$/.exec(x.lVal30||''); if(!m)return;
+        let mat; try{mat=_j2d(1400+ +m[1],+m[2],+m[3]);}catch(e){return;}
+        const days=mat-today;
+        if(days<30||days>4000)return;
+        try{
+          const cp=await (await fetch('https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceInfo/'+x.insCode)).json();
+          const p=(cp.closingPriceInfo||cp).pClosing;
+          if(!p||p<=0||p>=FACE*0.999)return;            // still at par = not really traded
+          const y=Math.pow(FACE/p,365/days)-1;
+          if(y<0.10||y>0.80)return;                      // obvious noise
+          rows.push({s:x.lVal18AFC,d:days,p,y});
+        }catch(e){}
+      }));
+    }
+    rows.sort((a,b)=>a.d-b.d);
+    if(!rows.length)throw new Error('empty');
+    curve=rows;curveState='';
+    try{localStorage.setItem('akhza',JSON.stringify({t:Date.now(),rows}));}catch(e){}
+  }catch(e){ curveState='نشد'; }
+  pickDefault();drawCurve();applyRf();
+}
+function pickDefault(){
+  if(!curve.length){curveSel=-1;return;}
+  if(curveSel<0||curveSel>=curve.length)curveSel=curve.length-1;  // longest maturity
+}
+function applyRf(){
+  if(rfSrc!=='live'||curveSel<0)return;
+  const el=document.getElementById('rf');
+  el.value=(curve[curveSel].y*100).toFixed(2);
+  el.readOnly=true;
+  calc();
+}
+function drawCurve(){
+  const box=document.getElementById('akhza');
+  if(rfSrc!=='live'){box.innerHTML='';document.getElementById('rf').readOnly=false;return;}
+  if(curveState==='در حال گرفتن…'){box.innerHTML='<p class="note"><span class="badge">در حال گرفتن منحنی اخزا…</span></p>';return;}
+  if(!curve.length){
+    box.innerHTML='<p class="note"><span class="badge old">منحنی اخزا در دسترس نیست</span> از آدرس اینترنتی عادی خوانده می‌شود؛ روی فایل محلی و claude.ai مسدود است. نرخ را دستی بگذارید.</p>';
+    return;
+  }
+  let h='<label>سررسید مرجع</label><select id="cursel">'+
+    curve.map((r,i)=>'<option value="'+i+'"'+(i===curveSel?' selected':'')+'>'+
+      r.s+' — '+fa(r.d)+' روز — '+fa((r.y*100).toFixed(2))+'٪</option>').join('')+'</select>';
+  const lo=curve[0], hi=curve[curve.length-1];
+  h+='<p class="note"><span class="badge">'+fa(curve.length)+' ورقه · زنده</span> '+
+     'کوتاه‌ترین '+fa(lo.d)+' روز '+fa((lo.y*100).toFixed(2))+'٪ · بلندترین '+fa(hi.d)+' روز '+fa((hi.y*100).toFixed(2))+'٪. '+
+     'برای افق چندساله، بلندترین سررسید مبنای درست‌تری است.</p>'+
+     '<button class="add" id="curref" style="margin-top:6px">به‌روزرسانی منحنی</button>';
+  box.innerHTML=h;
+  document.getElementById('cursel').addEventListener('change',e=>{curveSel=+e.target.value;applyRf();});
+  document.getElementById('curref').addEventListener('click',()=>loadCurve(true));
+}
+
+/* Fisher, used only to show the other basis and to catch a mismatch */
+const toReal=(nom,inf)=>(1+nom)/(1+inf)-1;
+const toNom =(re ,inf)=>(1+re )*(1+inf)-1;
+
+function wacc(){
+  const rf=n('rf')/100, erp=n('erp')/100, b=n('beta'), al=n('alpha')/100;
+  const kd=n('kd')/100, t=n('tax')/100;
+  const D=n('debt'), E=n('eqmv');
+  const ke=rf+b*erp+al;
+  const kdAt=kd*(1-t);
+  const V=D+E;
+  const wd=V>0?D/V:0, we=V>0?E/V:1;
+  return {ke,kdAt,wd,we,v:we*ke+wd*kdAt};
+}
+
+function project(){
+  const N=Math.max(1,Math.min(10,Math.round(n('yrs'))));
+  const s0=n('s0'), g1=n('g1')/100, gN=n('gN')/100;
+  const m1=n('m1')/100, mN=n('mN')/100;
+  const da=n('da')/100, cx=n('capex')/100, nw=n('nwc')/100, t=n('taxop')/100;
+  const rows=[]; let s=s0;
+  for(let i=1;i<=N;i++){
+    const f=N>1?(i-1)/(N-1):0;
+    const g=g1+(gN-g1)*f, m=m1+(mN-m1)*f;
+    const prev=s; s=prev*(1+g);
+    const ebitda=s*m, dep=s*da, ebit=ebitda-dep;
+    const capex=s*cx, dnwc=(s-prev)*nw;
+    const fcff=ebit*(1-t)+dep-capex-dnwc;
+    rows.push({i,g,sales:s,m,ebitda,dep,ebit,nopat:ebit*(1-t),capex,dnwc,fcff});
+  }
+  return rows;
+}
+
+function valueAt(w,gt,xm){
+  const rows=project(), N=rows.length, mid=n('mid')===1?0.5:0;
+  let pv=0;
+  rows.forEach(r=>{ pv+=r.fcff/Math.pow(1+w,r.i-mid); });
+  const last=rows[N-1];
+  let tv=null, tvErr=null;
+  if(tvMode==='g'){
+    if(gt>=w) tvErr='رشد دائمی از WACC بزرگ‌تر یا برابر است — فرمول گوردون در این حالت بی‌معنا می‌شود.';
+    else tv=last.fcff*(1+gt)/(w-gt);
+  }else{
+    tv=last.ebitda*xm;
+  }
+  const pvTV = tv===null?0:tv/Math.pow(1+w,N-mid);
+  const ev=pv+pvTV;
+  return {rows,N,pv,tv,pvTV,ev,tvErr,last,
+          tvShare: ev!==0?pvTV/ev:0,
+          impliedX: (tv!==null&&last.ebitda>0)?tv/last.ebitda:null};
+}
+
+function calc(){
+  const inf=n('infl')/100, W=wacc();
+  const w=W.v, gt=n('gterm')/100, xm=n('xmult');
+
+  document.getElementById('basisnote').innerHTML = basis==='nom'
+    ? 'ورودی‌ها اسمی‌اند: رشد فروش باید شامل تورم باشد و WACC هم اسمی است. معادل حقیقی این WACC: <b>'+pc(toReal(w,inf))+'</b>'
+    : 'ورودی‌ها حقیقی‌اند: رشد فروش باید بدون تورم باشد و WACC هم باید حقیقی باشد. معادل اسمی این WACC: <b>'+pc(toNom(w,inf))+'</b>';
+
+  document.getElementById('waccnote').innerHTML =
+    'هزینهٔ حقوق صاحبان سهام '+pc(W.ke)+' · هزینهٔ بدهی پس از مالیات '+pc(W.kdAt)+
+    ' · وزن بدهی '+pc(W.wd)+' · <b>WACC '+pc(w)+'</b>'+
+    (n('debt')+n('eqmv')===0?' — بدهی و ارزش بازار صفر است، پس کل وزن روی حقوق صاحبان سهام افتاده.':'');
+
+  const R=valueAt(w,gt,xm);
+  const nd=n('bdebt')-n('bcash');
+  const eq=R.ev-nd-n('bminor')+n('bnonop');
+  const sh=n('shares');
+
+  const box=document.getElementById('res');
+  if(R.tvErr){
+    box.innerHTML='<h2>ارزش بنگاه</h2><div class="flag bad">'+R.tvErr+
+      '<br>رشد دائمی '+pc(gt)+' در برابر WACC '+pc(w)+'. رشد دائمی را پایین‌تر از WACC بگذارید، یا روش ضریب خروج را انتخاب کنید.</div>';
+  }else{
+    let h='<h2>ارزش حقوق صاحبان سهام</h2>'+
+      BIGR('پایه',money(eq))+
+      SM('به همت',hemat(eq))+
+      SM('ارزش بنگاه',money(R.ev))+
+      SM('ارزش فعلی افق · ارزش نهایی',money(R.pv)+' · '+money(R.pvTV));
+    if(sh>0)h+=SM('هر سهم (ریال)',money(eq/sh));
+
+    const notes=[];
+    if(R.tvShare>0.75)notes.push({bad:true,t:'ارزش نهایی '+pc(R.tvShare)+' کل ارزش را می‌سازد. یعنی عملاً دارید یک عدد را حدس می‌زنید و افق پیش‌بینی تزئین است. افق را بلندتر کنید یا فرض ارزش نهایی را با ضریب خروج مقابله کنید.'});
+    else notes.push({t:'سهم ارزش نهایی از کل: '+pc(R.tvShare)+'.'});
+
+    if(basis==='nom'&&n('gN')/100 < inf)
+      notes.push({bad:true,t:'مبنا اسمی است ولی رشد فروش سال آخر ('+pc(n('gN')/100)+') از تورم مفروض ('+pc(inf)+') کمتر است. یعنی فرض کرده‌اید فروش به‌صورت حقیقی کوچک می‌شود. اگر منظورتان این نبوده، یا رشد را بالا ببرید یا مبنا را حقیقی کنید.'});
+    if(basis==='nom'&&tvMode==='g'&&gt>inf+0.05)
+      notes.push({bad:true,t:'رشد دائمی '+pc(gt)+' بیش از پنج واحد بالاتر از تورم است. یعنی فرض کرده‌اید این شرکت تا ابد از اقتصاد سریع‌تر رشد می‌کند، که قابل دفاع نیست.'});
+    if(basis==='real'&&gt>0.05)
+      notes.push({bad:true,t:'در مبنای حقیقی، رشد دائمی بالای پنج درصد یعنی رشد ابدی بالاتر از رشد اقتصاد. محتاط باشید.'});
+
+    if(R.impliedX!==null){
+      const ind=IND[document.getElementById('ind').value];
+      let cmp='';
+      if(ind&&ind.evebit>0){
+        const d=(R.impliedX/ind.evebit-1)*100;
+        cmp=' در برابر EV/EBIT صنعت '+fa(ind.evebit.toFixed(1))+'× ('+IND_ASOF+')'+
+            (Math.abs(d)>50?' — اختلاف '+fa(Math.abs(d).toFixed(0))+'٪':'');
+      }
+      notes.push({bad:(ind&&ind.evebit>0&&Math.abs(R.impliedX/ind.evebit-1)>0.5),
+        t:(tvMode==='g'?'ضریب خروج ضمنی ':'ضریب خروج ')+fa(R.impliedX.toFixed(2))+'× روی EBITDA سال آخر'+cmp+'.'});
+    }
+    if(eq<0)notes.push({bad:true,t:'ارزش حقوق صاحبان سهام منفی شد — بدهی خالص از ارزش بنگاه بیشتر است.'});
+    notes.forEach(o=>h+='<div class="flag'+(o.bad?' bad':'')+'">'+o.t+'</div>');
+    box.innerHTML=h;
+  }
+
+  /* projection table */
+  const r=R.rows;
+  const hd=['','فروش','رشد','EBITDA','حاشیه','EBIT','NOPAT','استهلاک','سرمایه‌ای','سرمایه در گردش','FCFF'];
+  let p='<table><thead><tr>'+hd.map((x,i)=>'<th>'+(i===0?'سال':x)+'</th>').join('')+'</tr></thead><tbody>';
+  r.forEach(x=>{
+    p+='<tr><td>'+fa(x.i)+'</td><td>'+money(x.sales)+'</td><td>'+pc(x.g)+'</td><td>'+money(x.ebitda)+
+       '</td><td>'+pc(x.m)+'</td><td>'+money(x.ebit)+'</td><td>'+money(x.nopat)+'</td><td>'+money(x.dep)+
+       '</td><td>'+money(x.capex)+'</td><td>'+money(x.dnwc)+'</td><td><b>'+money(x.fcff)+'</b></td></tr>';
+  });
+  p+='</tbody></table>';
+  document.getElementById('proj').innerHTML=p;
+
+  document.getElementById('tvnote').innerHTML = tvMode==='g'
+    ? 'گوردون: FCFF سال آخر × (۱+g) ÷ (WACC − g). با WACC '+pc(w)+' و g '+pc(gt)+'، مخرج '+pc(w-gt)+' است — هرچه این عدد کوچک‌تر، ارزش نهایی شکننده‌تر.'
+    : 'ارزش نهایی = EBITDA سال آخر × ضریب خروج. این روش فرض رشد ابدی را کنار می‌گذارد و به‌جایش به بازار ارجاع می‌دهد.';
+
+  /* sensitivity: WACC against terminal growth (or exit multiple) */
+  const ws=[-0.06,-0.03,0,0.03,0.06].map(d=>w+d);
+  const gs=tvMode==='g'?[-0.06,-0.03,0,0.03,0.06].map(d=>gt+d)
+                       :[-2,-1,0,1,2].map(d=>xm+d);
+  let s='<table><thead><tr><th>WACC \\ '+(tvMode==='g'?'g':'ضریب')+'</th>'+
+        gs.map(g=>'<th>'+(tvMode==='g'?pc(g):fa(g.toFixed(1))+'×')+'</th>').join('')+'</tr></thead><tbody>';
+  ws.forEach(ww=>{
+    s+='<tr'+(Math.abs(ww-w)<1e-9?' class="hi"':'')+'><td>'+pc(ww)+'</td>';
+    gs.forEach(gg=>{
+      const v=valueAt(ww, tvMode==='g'?gg:gt, tvMode==='g'?xm:gg);
+      s+='<td>'+(v.tvErr?'—':money(v.ev-nd-n('bminor')+n('bnonop')))+'</td>';
+    });
+    s+='</tr>';
+  });
+  s+='</tbody></table>';
+  document.getElementById('sens').innerHTML=s;
+}
+
+/* wiring */
+(function(){
+  const sel=document.getElementById('ind');
+  sel.innerHTML=IND.map((x,i)=>'<option value="'+i+'">'+x.name+'</option>').join('');
+  const steel=IND.findIndex(x=>x.name.indexOf('آهن و فولاد')>=0);
+  if(steel>=0)sel.value=String(steel);
+})();
+document.querySelectorAll('#basis button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#basis button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');basis=b.dataset.x;calc();}));
+document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#tvm button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');tvMode=b.dataset.t;
+  document.getElementById('tvg').style.display=tvMode==='g'?'':'none';
+  document.getElementById('tvx').style.display=tvMode==='x'?'':'none';
+  calc();}));
+['infl','yrs','rf','erp','beta','alpha','kd','tax','debt','eqmv','s0','taxop','g1','gN','m1','mN',
+ 'da','capex','nwc','mid','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares']
+ .forEach(id=>{const e=document.getElementById(id);if(e){e.addEventListener('input',calc);e.addEventListener('change',calc);}});
+
+document.querySelectorAll('#rfsrc button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#rfsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');rfSrc=b.dataset.r;
+  drawCurve();applyRf();calc();}));
+
+calc();
+loadCurve(false);
+
+(function(){
+  const el=document.getElementById('offline');
+  const say=(t,w)=>{if(el)el.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
+  if(location.protocol==='file:'){say('فایل محلی — همیشه آفلاین');return;}
+  if(!('serviceWorker' in navigator)){say('این مرورگر حالت آفلاین را پشتیبانی نمی‌کند',1);return;}
+  navigator.serviceWorker.register('sw.js').then(()=>say('آفلاین آماده است'))
+    .catch(()=>say('حالت آفلاین فعال نشد',1));
+})();
+</script>
