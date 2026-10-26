@@ -1,5 +1,5 @@
 /* Cache the page shell so the app keeps working with no network. */
-const C = 'val-v3';
+const C = 'val-v4';
 const SHELL = ['./', './index.html', './icon-180.png', './icon-192.png', './icon-512.png', './app.webmanifest'];
 
 self.addEventListener('install', e => {

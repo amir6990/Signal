@@ -131,7 +131,12 @@ button.solid{width:100%;padding:11px;border-radius:10px;border:0;background:var(
       <button data-s="man" aria-pressed="false">ورود دستی</button>
     </div>
 
-    <div id="refbox" style="margin-top:12px"></div>
+    <div class="seg sm" id="segref" role="group" style="margin-top:10px">
+      <button data-r="tse" aria-pressed="true">TSETMC — زنده</button>
+      <button data-r="bv" aria-pressed="false">بورس‌ویو — دستی</button>
+    </div>
+    <div id="tsebox" style="margin-top:12px"></div>
+    <div id="refbox" style="margin-top:12px;display:none"></div>
 
     <div id="peerbox" style="margin-top:12px;display:none">
       <div id="peers"></div>
@@ -180,6 +185,8 @@ const RATIOS=[
   ['evebitda','EV/EBITDA','ارزش بنگاه به سود عملیاتی پیش از استهلاک']
 ];
 
+const TSE=[["01","زراعت و خدمات وابسته","45519261544951819",5],["10","استخراج زغال سنگ","8977369674477111",8.18],["11","استخراج نفت گاز و خدمات جنبي جز اكتشاف","28809886765682162",1.81],["13","استخراج كانه هاي فلزي","8175784894140974",14.88],["14","استخراج ساير معادن","67690708346979840",23.47],["17","منسوجات","46934177065273437",7.49],["19","دباغي، پرداخت چرم و ساخت انواع پاپوش","41796741644273824",81.99],["20","محصولات چوبي","41122066907413786",8.99],["21","محصولات كاغذي","64380036977879368",8.03],["22","انتشار، چاپ و تكثير","23936607891892333",7.05],["23","فراورده هاي نفتي، كك و سوخت هسته اي","7745894403636165",3.6],["25","لاستيك و پلاستيك","64040731253329985",6.74],["26","توليد محصولات كامپيوتري الكترونيكي ونوري","60235881999727383",11.64],["27","فلزات اساسي","35425587644337450",11.17],["28","ساخت محصولات فلزي","64897340312196634",5.01],["29","ماشين آلات و تجهيزات","55897939403232751",4.47],["31","ماشين آلات و دستگاه‌هاي برقي","30199365830132996",6.8],["32","ساخت دستگاه‌ها و وسايل ارتباطي","5187018329202415",19.77],["34","خودرو و ساخت قطعات","45895339414786358",-17.54],["38","قند و شكر","71523986304961239",9.62],["39","شركتهاي چند رشته اي صنعتي","48010225447410247",8.78],["40","عرضه برق، گاز، بخاروآب گرم","27922860956133067",5.09],["42","محصولات غذايي و آشاميدني به جز قند و شكر","35158826900216508",7.34],["43","مواد و محصولات دارويي","43450146028916610",7.13],["44","محصولات شيميايي","22560050433388046",9.49],["45","پيمانكاري صنعتي","8646067353086740",26.73],["47","خرده فروشي،باستثناي وسايل نقليه موتوري","49502666250908008",11.65],["49","كاشي و سراميك","29122854902865456",6.96],["53","سيمان، آهك و گچ","61310599391543522",6.95],["54","ساير محصولات كاني غيرفلزي","57639364758870873",12.84],["55","هتل و رستوران","10114441830266109",4.9],["56","سرمايه گذاريها","33938004134399485",4.65],["57","بانكها و موسسات اعتباري","7370902509286095",4.36],["58","ساير واسطه گريهاي مالي","11403770140000603",12.03],["60","حمل ونقل، انبارداري و ارتباطات","52768171542745872",19.68],["61","حمل و نقل آبي","28253678449273505",8.87],["64","مخابرات","68635710163497089",8.26],["66","بيمه وصندوق بازنشستگي به جزتامين اجتماعي","13611044044646901",3.91],["67","فعاليتهاي كمكي به نهادهاي مالي واسط","44549439964296944",5.72],["70","انبوه سازي، املاك و مستغلات","17939384202383793",24.32],["72","رايانه و فعاليت‌هاي وابسته به آن","66315581735594751",4.35],["73","اطلاعات و ارتباطات","69847139870135237",11.74],["74","خدمات فني و مهندسي","40467386864240950",5.74],["84","سلامت انسان و مددكاري اجتماعي","60369091709615715",7.6]];
+const TSE_ASOF="1405/08/04";
 const INDUSTRIES=["سرمایه گذاری","تولید فلزات گرانبهای غیراهن","فراورده های نفتی","مواد شیمیایی-متنوع","بانکها و موسسات اعتباری","آهن و فولاد","کانی های فلزی","دارویی","تولید کود و ترکیبات نیتروژن","سیمان، اهک و گچ","بیمه","خودرو","سایر محصولات غذایی","خرده فروشی،باستثنای وسایل نقلیه موتوری","سرمایه گذاری استانی","فعالیت مهندسی","مخابرات","نرم افزار و خدمات","محصولات پاک کننده","محصولات کشاورزی","تامین سرمایه","فعالیتهای مرتبط با اوراق بهادار","سایر محصولات کانی غیرفلزی","خدمات رفاهی متنوع","شیرینیجات","خدمات رفاهی-برق","ماشین الات الکتریکی","انبوه سازی، املاک و مستغلات","قطعات خودرو","محصولات لبنی","لاستیک و پلاستیک","سخت افزار و تجهیزات","وسایل خانگی","بنادر و کشتیرانی","شکر","محصولات فلزی","کاشی و سرامیک","حمل و نقل از طریق خطوط راه اهن","ماشین الات","لیزینگ","محصولات کاغذی","نساجی","حمل و نقل بار زمینی","تجهیزات صنعتی","زغال سنگ","سایر مواد معدنی","حفاری","نوشیدنی","چوب","هتل و رستوران","چاپ و نشر","پیمانکاری صنعتی"];
 
 const SEED={"سرمایه گذاری":{"pe":8.9,"pb":4.3,"ps":9.5,"pfcff":24.4,"pfcfe":33.6,"evebit":9.7,"evs":0,"evebitda":0,"pd":14.0,"stocks":97,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"تولید فلزات گرانبهای غیراهن":{"pe":18.3,"pb":10.1,"ps":8.0,"pfcff":31.1,"pfcfe":32.3,"evebit":10.3,"evs":0,"evebitda":0,"pd":78.0,"stocks":17,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"فراورده های نفتی":{"pe":3.7,"pb":2.9,"ps":0.6,"pfcff":17.7,"pfcfe":16.9,"evebit":3.1,"evs":0,"evebitda":0,"pd":15.1,"stocks":11,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"مواد شیمیایی-متنوع":{"pe":9.9,"pb":6.3,"ps":2.1,"pfcff":14.3,"pfcfe":16.6,"evebit":7.4,"evs":0,"evebitda":0,"pd":17.4,"stocks":34,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"بانکها و موسسات اعتباری":{"pe":4.0,"pb":1.3,"ps":1.7,"pfcff":3.6,"pfcfe":5.0,"evebit":1.0,"evs":0,"evebitda":0,"pd":53.9,"stocks":12,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"آهن و فولاد":{"pe":7.3,"pb":2.4,"ps":1.2,"pfcff":16.5,"pfcfe":15.1,"evebit":5.7,"evs":0,"evebitda":0,"pd":44.4,"stocks":30,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"کانی های فلزی":{"pe":11.0,"pb":3.8,"ps":2.4,"pfcff":23.4,"pfcfe":26.1,"evebit":10.2,"evs":0,"evebitda":0,"pd":29.9,"stocks":10,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"دارویی":{"pe":10.9,"pb":6.8,"ps":2.5,"pfcff":0,"pfcfe":45.3,"evebit":6.7,"evs":0,"evebitda":0,"pd":39.6,"stocks":42,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"تولید کود و ترکیبات نیتروژن":{"pe":6.5,"pb":4.9,"ps":2.9,"pfcff":13.2,"pfcfe":11.7,"evebit":6.8,"evs":0,"evebitda":0,"pd":20.0,"stocks":5,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"سیمان، اهک و گچ":{"pe":8.2,"pb":5.6,"ps":4.0,"pfcff":14.6,"pfcfe":13.6,"evebit":6.8,"evs":0,"evebitda":0,"pd":12.1,"stocks":37,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"بیمه":{"pe":7.1,"pb":2.5,"ps":0.7,"pfcff":10.6,"pfcfe":10.6,"evebit":64.5,"evs":0,"evebitda":0,"pd":47.6,"stocks":23,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"خودرو":{"pe":0,"pb":1.5,"ps":0.4,"pfcff":0,"pfcfe":0,"evebit":207,"evs":0,"evebitda":0,"pd":114,"stocks":5,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"سایر محصولات غذایی":{"pe":7.0,"pb":4.7,"ps":1.1,"pfcff":14.2,"pfcfe":16.1,"evebit":6.8,"evs":0,"evebitda":0,"pd":22.2,"stocks":20,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"خرده فروشی،باستثنای وسایل نقلیه موتوری":{"pe":10.7,"pb":9.2,"ps":0.6,"pfcff":9.7,"pfcfe":8.5,"evebit":7.9,"evs":0,"evebitda":0,"pd":23.2,"stocks":3,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"سرمایه گذاری استانی":{"pe":6.6,"pb":0.6,"ps":6.6,"pfcff":0,"pfcfe":0,"evebit":4.1,"evs":0,"evebitda":0,"pd":74.0,"stocks":26,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"فعالیت مهندسی":{"pe":4.6,"pb":1.8,"ps":1.5,"pfcff":160,"pfcfe":45.9,"evebit":4.3,"evs":0,"evebitda":0,"pd":23.3,"stocks":4,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"مخابرات":{"pe":8.4,"pb":1.7,"ps":1.3,"pfcff":9.7,"pfcfe":11.0,"evebit":6.6,"evs":0,"evebitda":0,"pd":18.9,"stocks":5,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"نرم افزار و خدمات":{"pe":9.4,"pb":4.3,"ps":1.9,"pfcff":23.7,"pfcfe":24.7,"evebit":7.4,"evs":0,"evebitda":0,"pd":26.4,"stocks":16,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"محصولات پاک کننده":{"pe":11.3,"pb":5.8,"ps":2.4,"pfcff":47.7,"pfcfe":31.5,"evebit":8.2,"evs":0,"evebitda":0,"pd":23.7,"stocks":7,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"محصولات کشاورزی":{"pe":6.4,"pb":3.6,"ps":1.6,"pfcff":30.2,"pfcfe":19.9,"evebit":12.1,"evs":0,"evebitda":0,"pd":21.9,"stocks":20,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"تامین سرمایه":{"pe":4.8,"pb":2.1,"ps":2.6,"pfcff":11.6,"pfcfe":14.2,"evebit":2.7,"evs":0,"evebitda":0,"pd":13.1,"stocks":9,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"فعالیتهای مرتبط با اوراق بهادار":{"pe":11.7,"pb":6.0,"ps":11.2,"pfcff":0,"pfcfe":0,"evebit":9.3,"evs":0,"evebitda":0,"pd":64.5,"stocks":4,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"سایر محصولات کانی غیرفلزی":{"pe":12.3,"pb":4.4,"ps":4.0,"pfcff":32.6,"pfcfe":33.0,"evebit":13.3,"evs":0,"evebitda":0,"pd":37.4,"stocks":14,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"خدمات رفاهی متنوع":{"pe":4.9,"pb":5.0,"ps":0.8,"pfcff":4.7,"pfcfe":4.7,"evebit":7.5,"evs":0,"evebitda":0,"pd":6.4,"stocks":2,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"شیرینیجات":{"pe":6.7,"pb":2.3,"ps":2.0,"pfcff":73.0,"pfcfe":25.3,"evebit":5.5,"evs":0,"evebitda":0,"pd":28.9,"stocks":8,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"خدمات رفاهی-برق":{"pe":10.0,"pb":4.2,"ps":4.3,"pfcff":50.5,"pfcfe":48.7,"evebit":7.7,"evs":0,"evebitda":0,"pd":25.4,"stocks":10,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"ماشین الات الکتریکی":{"pe":6.7,"pb":2.0,"ps":2.2,"pfcff":29.5,"pfcfe":20.2,"evebit":4.7,"evs":0,"evebitda":0,"pd":25.9,"stocks":7,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"انبوه سازی، املاک و مستغلات":{"pe":8.0,"pb":2.1,"ps":4.8,"pfcff":68.3,"pfcfe":0,"evebit":8.0,"evs":0,"evebitda":0,"pd":22.3,"stocks":19,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"قطعات خودرو":{"pe":8.0,"pb":2.4,"ps":0.6,"pfcff":25.3,"pfcfe":19.8,"evebit":5.2,"evs":0,"evebitda":0,"pd":30.7,"stocks":24,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"محصولات لبنی":{"pe":10.2,"pb":3.4,"ps":1.0,"pfcff":28.7,"pfcfe":20.7,"evebit":9.8,"evs":0,"evebitda":0,"pd":26.1,"stocks":14,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"لاستیک و پلاستیک":{"pe":7.1,"pb":3.3,"ps":1.0,"pfcff":27.0,"pfcfe":15.9,"evebit":5.1,"evs":0,"evebitda":0,"pd":15.1,"stocks":11,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"سخت افزار و تجهیزات":{"pe":11.7,"pb":5.4,"ps":3.1,"pfcff":17.2,"pfcfe":10.3,"evebit":10.7,"evs":0,"evebitda":0,"pd":14.5,"stocks":5,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"وسایل خانگی":{"pe":7.3,"pb":2.0,"ps":0.9,"pfcff":0,"pfcfe":11.5,"evebit":6.0,"evs":0,"evebitda":0,"pd":18.4,"stocks":6,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"بنادر و کشتیرانی":{"pe":7.8,"pb":3.8,"ps":3.6,"pfcff":15.3,"pfcfe":17.2,"evebit":6.1,"evs":0,"evebitda":0,"pd":21.4,"stocks":3,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"شکر":{"pe":8.1,"pb":3.1,"ps":1.2,"pfcff":10.1,"pfcfe":10.0,"evebit":5.9,"evs":0,"evebitda":0,"pd":23.3,"stocks":13,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"محصولات فلزی":{"pe":7.8,"pb":2.1,"ps":1.7,"pfcff":30.6,"pfcfe":16.9,"evebit":6.1,"evs":0,"evebitda":0,"pd":28.5,"stocks":9,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"کاشی و سرامیک":{"pe":7.0,"pb":3.1,"ps":1.8,"pfcff":43.8,"pfcfe":24.8,"evebit":6.0,"evs":0,"evebitda":0,"pd":22.2,"stocks":7,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"حمل و نقل از طریق خطوط راه اهن":{"pe":5.0,"pb":1.8,"ps":1.0,"pfcff":29.7,"pfcfe":44.7,"evebit":4.5,"evs":0,"evebitda":0,"pd":30.2,"stocks":8,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"ماشین الات":{"pe":4.2,"pb":2.0,"ps":0.6,"pfcff":2.2,"pfcfe":2.5,"evebit":2.9,"evs":0,"evebitda":0,"pd":22.0,"stocks":6,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"لیزینگ":{"pe":9.5,"pb":2.4,"ps":2.3,"pfcff":1800,"pfcfe":1800,"evebit":11.1,"evs":0,"evebitda":0,"pd":27.2,"stocks":11,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"محصولات کاغذی":{"pe":11.5,"pb":4.5,"ps":2.0,"pfcff":30.3,"pfcfe":25.9,"evebit":8.9,"evs":0,"evebitda":0,"pd":37.0,"stocks":6,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"نساجی":{"pe":8.2,"pb":4.2,"ps":2.6,"pfcff":48.6,"pfcfe":19.6,"evebit":7.0,"evs":0,"evebitda":0,"pd":103,"stocks":4,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"حمل و نقل بار زمینی":{"pe":39.4,"pb":6.9,"ps":3.5,"pfcff":132,"pfcfe":280,"evebit":32.3,"evs":0,"evebitda":0,"pd":180,"stocks":3,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"تجهیزات صنعتی":{"pe":10.7,"pb":1.1,"ps":1.1,"pfcff":13.0,"pfcfe":10.2,"evebit":5.9,"evs":0,"evebitda":0,"pd":27.4,"stocks":6,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"زغال سنگ":{"pe":14.0,"pb":5.2,"ps":2.1,"pfcff":25.4,"pfcfe":30.4,"evebit":7.1,"evs":0,"evebitda":0,"pd":29.8,"stocks":5,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"سایر مواد معدنی":{"pe":10.5,"pb":4.3,"ps":4.8,"pfcff":21.6,"pfcfe":16.2,"evebit":11.8,"evs":0,"evebitda":0,"pd":19.4,"stocks":3,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"حفاری":{"pe":1.8,"pb":0.9,"ps":0.6,"pfcff":0,"pfcfe":0,"evebit":1.4,"evs":0,"evebitda":0,"pd":23.0,"stocks":1,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"نوشیدنی":{"pe":8.7,"pb":3.2,"ps":0.6,"pfcff":0,"pfcfe":0,"evebit":8.5,"evs":0,"evebitda":0,"pd":14.4,"stocks":2,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"چوب":{"pe":10.7,"pb":5.3,"ps":2.9,"pfcff":27.1,"pfcfe":31.4,"evebit":8.4,"evs":0,"evebitda":0,"pd":32.4,"stocks":2,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"هتل و رستوران":{"pe":19.7,"pb":2.0,"ps":2.6,"pfcff":64.9,"pfcfe":25.4,"evebit":14.2,"evs":0,"evebitda":0,"pd":48.4,"stocks":3,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"چاپ و نشر":{"pe":7.1,"pb":4.6,"ps":3.4,"pfcff":11.1,"pfcfe":7.8,"evebit":6.7,"evs":0,"evebitda":0,"pd":20.6,"stocks":1,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"},"پیمانکاری صنعتی":{"pe":26.7,"pb":10.2,"ps":1.0,"pfcff":0,"pfcfe":0,"evebit":10.3,"evs":0,"evebitda":0,"pd":689,"stocks":1,"asof":"1405/08/04","source":"بورس‌ویو — صفحهٔ صنایع"}};
@@ -230,7 +237,7 @@ const BASES={
   ebitda:{lab:'EBITDA (میلیون ریال)',            nm:'EV/EBITDA', key:'evebitda', ev:true,  note:'در بازار ایران به تفکیک صنعت منتشر نمی‌شود. یا خودتان وارد کنید یا از گروه همتا بسازید.'}
 };
 
-let base='pe', src='ref', mode='val', ref={}, curInd='سرمایه گذاری', market={};
+let base='pe', src='ref', refSrc='tse', mode='val', ref={}, curInd='سرمایه گذاری', market={};
 let peers=[{nm:'همتا ۱',v:0,m:0},{nm:'همتا ۲',v:0,m:0},{nm:'همتا ۳',v:0,m:0}];
 
 /* ===== persistence ===== */
@@ -334,8 +341,75 @@ function drawRef(){
     b.textContent='ذخیره شد ✓';setTimeout(()=>{b.textContent='ذخیره این صنعت';drawRef();calc();},900);});
 }
 
+/* ===== TSETMC live sector P/E =====
+   cdn.tsetmc.com serves these with CORS open, so the page reads them itself.
+   One request per sector: the biggest company in it carries eps.sectorPE.
+   A file:// page has a null origin and the request is refused — there the
+   figures baked in below are shown, with their date. */
+let tseSel=0, tseLive={}, tseState='';
+const LIVE_URL=i=>'https://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/'+i;
+function tseCache(){try{return JSON.parse(localStorage.getItem('tsepe')||'{}');}catch(e){return {};}}
+async function fetchSector(idx,force){
+  const row=TSE[idx]; if(!row)return;
+  const c=tseCache(), hit=c[row[2]];
+  if(!force&&hit&&Date.now()-hit.t<6*36e5){tseLive[row[2]]=hit;drawTse();return;}
+  tseState='در حال گرفتن…';drawTse();
+  try{
+    const j=await (await fetch(LIVE_URL(row[2]),{cache:'no-store'})).json();
+    const d=j.instrumentInfo||j;
+    const pe=d&&d.eps&&typeof d.eps.sectorPE==='number'?d.eps.sectorPE:null;
+    if(pe===null)throw new Error('no sectorPE');
+    const rec={pe,t:Date.now()};
+    tseLive[row[2]]=rec;c[row[2]]=rec;
+    try{localStorage.setItem('tsepe',JSON.stringify(c));}catch(e){}
+    tseState='';
+  }catch(e){ tseState='نشد'; }
+  drawTse();calc();
+}
+function tsePE(){
+  const row=TSE[tseSel]; if(!row)return {v:null};
+  const live=tseLive[row[2]];
+  return live?{v:live.pe,live:true,t:live.t}:{v:row[3],live:false};
+}
+function drawTse(){
+  const box=document.getElementById('tsebox');
+  const row=TSE[tseSel], p=tsePE();
+  let h='<label>صنعت — طبقه‌بندی بورس تهران</label><select id="tsesel">'+
+    TSE.map((r,i)=>'<option value="'+i+'"'+(i===tseSel?' selected':'')+'>'+r[1]+'</option>').join('')+'</select>';
+  h+='<table class="rt" style="margin-top:12px"><tbody>'+
+     '<tr class="on"><td>P/E صنعت</td><td class="mk" style="font-size:19px;color:var(--acc)">'+
+       (p.v===null?'—':fa(Number(p.v).toFixed(2)))+'</td></tr></tbody></table>';
+  if(p.v!==null&&p.v<0)
+    h+='<p class="note" style="color:var(--warn)">P/E این صنعت منفی است، یعنی صنعت در مجموع زیان‌ده است. ضریب منفی برای ارزش‌گذاری معنا ندارد — از P/B یا گروه همتا استفاده کنید.</p>';
+  h+='<p class="note">'+
+     (tseState==='در حال گرفتن…'?'<span class="badge">در حال گرفتن…</span>'
+      :tseState==='نشد'?'<span class="badge old">زنده نشد — عدد ذخیره‌شدهٔ '+TSE_ASOF+'</span>'
+      :p.live?'<span class="badge">زنده · '+new Date(p.t).toLocaleTimeString('fa-IR')+'</span>'
+             :'<span class="badge old">عدد ذخیره‌شدهٔ '+TSE_ASOF+'</span>')+
+     ' مستقیم از cdn.tsetmc.com خوانده می‌شود و نیازی به ورود ندارد. فقط P/E؛ بقیهٔ ضرایب در تب بورس‌ویو.</p>'+
+     '<button class="add" id="tserefresh">به‌روزرسانی از TSETMC</button>'+
+     '<div class="row2"><div><label>دامنه ±٪</label><input id="tseband" inputmode="decimal" value="15"></div><div></div></div>';
+  box.innerHTML=h;
+  document.getElementById('tsesel').addEventListener('change',e=>{tseSel=+e.target.value;tseState='';drawTse();fetchSector(tseSel,false);calc();});
+  document.getElementById('tserefresh').addEventListener('click',()=>fetchSector(tseSel,true));
+  document.getElementById('tseband').addEventListener('input',calc);
+}
+
 /* ===== the multiple in force ===== */
 function mult(){
+  if(src==='ref'&&refSrc==='tse'){
+    if(base!=='pe')
+      return {err:'منبع زندهٔ TSETMC فقط P/E صنعت را می‌دهد. برای '+BASES[base].nm+' به تب «بورس‌ویو» بروید یا از گروه همتا بسازید.'};
+    const p=tsePE();
+    if(p.v===null)return {err:'P/E این صنعت در دسترس نیست.'};
+    if(p.v<=0)return {err:'P/E این صنعت منفی است — صنعت زیان‌ده است و ضریب منفی معنا ندارد.'};
+    const band=(n('tseband')||15)/100;
+    return {lo:p.v*(1-band),mid:p.v,hi:p.v*(1+band),
+            tag:TSE[tseSel][1]+' · '+(p.live?'زنده':TSE_ASOF)};
+  }
+  return multBV();
+}
+function multBV(){
   if(src==='peer'){
     const xs=peerMults().map(o=>o.x);
     if(!xs.length)return {err:'هیچ همتایی با هر دو عدد کامل وارد نشده است.'};
@@ -437,12 +511,19 @@ document.querySelectorAll('#mode button').forEach(b=>b.addEventListener('click',
   b.setAttribute('aria-pressed','true');mode=b.dataset.m;
   document.getElementById('impbox').style.display=mode==='imp'?'':'none';
   calc();}));
+document.querySelectorAll('#segref button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#segref button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');refSrc=b.dataset.r;
+  document.getElementById('tsebox').style.display=refSrc==='tse'?'':'none';
+  document.getElementById('refbox').style.display=refSrc==='bv'?'':'none';
+  calc();}));
 document.getElementById('addpeer').addEventListener('click',()=>{
   peers.push({nm:'همتا '+fa(peers.length+1),v:0,m:0});drawPeers();stats();calc();});
 ['metric','debt','cash','minor','nonop','shares','mbase','mrange','target']
   .forEach(id=>document.getElementById(id).addEventListener('input',calc));
 
-restore();drawPeers();stats();drawRef();calc();
+restore();drawPeers();stats();drawRef();drawTse();calc();
+fetchSector(tseSel,false);
 
 /* offline */
 (function(){
