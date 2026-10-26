@@ -24,7 +24,7 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;
   direction:rtl;-webkit-text-size-adjust:100%;
   padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
-.wrap{max-width:640px;margin-inline:auto;padding-top:20px}
+.wrap{max-width:660px;margin-inline:auto;padding-top:20px}
 h1{font-size:21px;font-weight:800;margin:0 0 2px}
 .sub{color:var(--soft);font-size:12.5px;margin:0 0 6px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
@@ -46,15 +46,23 @@ input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border
 .big .k{font-size:13px;opacity:.85;font-weight:600}
 .big .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
 .big.sm .v{font-size:16px;font-weight:700}
-.flag{margin-top:11px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;
-  background:rgba(255,255,255,.14)}
+.flag{margin-top:11px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.14)}
 .flag.bad{background:var(--warn-wash);color:var(--warn)}
 table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
-th,td{padding:7px 4px;text-align:right;border-bottom:1px solid var(--line)}
+th,td{padding:6px 3px;text-align:right;border-bottom:1px solid var(--line)}
 th{font-size:11px;color:var(--soft);font-weight:700}
 td.n{text-align:left;direction:ltr;font-weight:600}
 tr:last-child td{border-bottom:0}
 tr.hi td{background:var(--wash);font-weight:700}
+/* the three-column ratio grid, laid out like the terminal it is copied from */
+.rt{width:100%;border-collapse:collapse;font-size:12.5px}
+.rt th{font-size:11px;color:var(--soft);font-weight:700;padding:4px 3px;text-align:center}
+.rt th:first-child{text-align:right}
+.rt td{padding:4px 3px;border-bottom:1px solid var(--line)}
+.rt td:first-child{font-weight:600;white-space:nowrap}
+.rt input{padding:7px 6px;font-size:14px;text-align:center;direction:ltr;border-radius:8px}
+.rt .mk{text-align:center;direction:ltr;font-weight:600;color:var(--soft);font-size:13px}
+.rt tr.on td{background:var(--wash)}
 .peer{border:1px solid var(--line);border-radius:11px;padding:10px;margin-bottom:8px;background:var(--field)}
 .peer .r1{display:flex;gap:8px;margin-bottom:8px}
 .peer .r1 input{flex:1;direction:rtl;font-size:14px;text-align:right}
@@ -63,6 +71,9 @@ tr.hi td{background:var(--wash);font-weight:700}
   color:var(--warn);font-size:19px;font-family:var(--f);cursor:pointer;padding:0}
 button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--line);background:transparent;
   color:var(--acc);font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
+button.solid{width:100%;padding:11px;border-radius:10px;border:0;background:var(--acc);color:var(--acc-ink);
+  font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
 .note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
 .badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;
   background:var(--wash);color:var(--acc)}
@@ -71,12 +82,13 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
 .seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);
   font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+.seg.sm button{font-size:11.5px;padding:8px 2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="wrap">
   <h1>ارزش‌گذاری به روش ضرایب</h1>
-  <p class="sub">مبالغ به میلیون ریال · پل ارزش بنگاه به حقوق صاحبان سهام</p>
+  <p class="sub">مبالغ به میلیون ریال · ضرایب از بورس‌ویو یا TSETMC</p>
   <p class="sub" id="offline" style="margin-bottom:16px"></p>
 
   <div class="res" id="res"></div>
@@ -96,8 +108,9 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
 
   <div class="card">
     <h2>۱ · مبنای ارزش‌گذاری</h2>
-    <div class="seg" id="seg" role="group">
+    <div class="seg sm" id="seg" role="group">
       <button data-b="pe" aria-pressed="true">P/E</button>
+      <button data-b="pb" aria-pressed="false">P/B</button>
       <button data-b="ps" aria-pressed="false">P/S</button>
       <button data-b="evs" aria-pressed="false">EV/S</button>
       <button data-b="ebit" aria-pressed="false">EV/EBIT</button>
@@ -147,27 +160,52 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
       <input id="shares" inputmode="numeric" value="0"></div>
   </div>
 
-  <p class="note">روش: ارزش = معیار × ضریب. در مبناهای EV ابتدا ارزش بنگاه به‌دست می‌آید و سپس با کسر بدهی خالص و سهم اقلیت و افزودن دارایی غیرعملیاتی به ارزش حقوق صاحبان سهام تبدیل می‌شود. در P/E و P/S نتیجه مستقیماً ارزش حقوق صاحبان سهام است و پل اعمال نمی‌شود — کسر دوبارهٔ بدهی در این دو، خطای رایجی است.</p>
+  <p class="note">ارزش = معیار × ضریب. در مبناهای EV ابتدا ارزش بنگاه به‌دست می‌آید و سپس با کسر بدهی خالص و سهم اقلیت و افزودن دارایی غیرعملیاتی به ارزش حقوق صاحبان سهام تبدیل می‌شود. در P/E و P/B و P/S نتیجه مستقیماً ارزش حقوق صاحبان سهام است و پل اعمال نمی‌شود — کسر دوبارهٔ بدهی در این‌ها خطای رایجی است.</p>
 </div>
 
 <script>
-/* ===== industry reference, baked in so the page works with no network.
-   The artifact build overrides these rows from its shared database when it
-   can reach one; the offline build always uses what is written here. ===== */
-const SEED={
-  metals:{"id":"metals","name":"فلزات اساسی","pe":13.3,"pe_weighted":11.01,"pe_q1":6.6,"pe_q3":15.05,
-    "pe_ex_outlier":10.25,"pe_mean":17.33,"ps":0,"evs":0,"ebit":0,"ebitda":0,"n":7,"asof":"1405/08/03",
-    "source":"بورس سنج، به نقل از تابلوی بورس تهران (TSETMC)",
-    "method":"میانه P/E اعضای صنعت؛ وزنی = جمع ارزش بازار تقسیم بر جمع سود",
-    "note":"P/E تابلو، مبتنی بر سود دوازده‌ماهه گذشته. اعضای بدون سود یا زیان‌ده کنار گذاشته شده‌اند.",
-    "constituents":[
-      {"sym":"فایرا","mcap":112.5,"pe":4.4},{"sym":"فولاد","mcap":805,"pe":6},
-      {"sym":"ارفع","mcap":63.8,"pe":7.2},{"sym":"فملی","mcap":3983,"pe":13.3},
-      {"sym":"فخوز","mcap":77.7,"pe":14.3},{"sym":"فجهان","mcap":68.3,"pe":15.8},
-      {"sym":"میدکو","mcap":183.6,"pe":60.3}]}
-};
+/* ============================================================
+   Industry multiples are the published sector figures, entered
+   as the terminal shows them: نماد / صنعت / بورس ایران.
+   Whatever is typed here is kept on this device.
+   ============================================================ */
+const RATIOS=[
+  ['pe','P/E','قیمت به سود محقق شده'],
+  ['pb','P/B','قیمت به ارزش دفتری'],
+  ['ps','P/S','قیمت به فروش'],
+  ['pfcff','P/FCFF','قیمت به جریان نقد آزاد شرکت'],
+  ['pfcfe','P/FCFE','قیمت به جریان نقد آزاد سهامداران'],
+  ['evebit','EV/EBIT','ارزش بنگاه به سود قبل از بهره و مالیات'],
+  ['evs','EV/S','ارزش بنگاه به فروش'],
+  ['evebitda','EV/EBITDA','ارزش بنگاه به سود عملیاتی پیش از استهلاک']
+];
 
-/* ===== Jalali, only to date-stamp the reference table ===== */
+const INDUSTRIES=[
+  'استخراج زغال سنگ','استخراج نفت، گاز و خدمات جنبی','استخراج کانه‌های فلزی','استخراج سایر معادن',
+  'منسوجات','دباغی، پرداخت چرم و ساخت انواع پاپوش','محصولات چوبی','محصولات کاغذی','انتشار، چاپ و تکثیر',
+  'فرآورده‌های نفتی، کک و سوخت هسته‌ای','لاستیک و پلاستیک','فلزات اساسی','ساخت محصولات فلزی',
+  'ماشین‌آلات و تجهیزات','دستگاه‌های برقی','ساخت دستگاه‌ها و وسایل ارتباطی',
+  'وسایل اندازه‌گیری، پزشکی و اپتیکی','خودرو و ساخت قطعات','سایر وسایل حمل و نقل',
+  'مبلمان و مصنوعات دیگر','قند و شکر','چند رشته‌ای صنعتی','مواد و محصولات دارویی','محصولات شیمیایی',
+  'پیمانکاری صنعتی','عرضه برق، گاز، بخار و آب گرم','محصولات غذایی و آشامیدنی','سیمان، آهک و گچ',
+  'کاشی و سرامیک','سایر محصولات کانی غیرفلزی','انبوه‌سازی، املاک و مستغلات',
+  'حمل و نقل، انبارداری و ارتباطات','رایانه و فعالیت‌های وابسته','اطلاعات و ارتباطات',
+  'فنی و مهندسی','بانک‌ها و مؤسسات اعتباری','سرمایه‌گذاری‌ها','سایر واسطه‌گری‌های مالی',
+  'بیمه و صندوق بازنشستگی','فعالیت‌های کمکی به نهادهای مالی واسط',
+  'کشاورزی، دامپروری و خدمات وابسته','زراعت و خدمات وابسته','شیلات و آبزیان','هتل و رستوران',
+  'خدمات آموزشی','مراقبت‌های دارویی','تجارت عمده‌فروشی','صندوق سرمایه‌گذاری قابل معامله'
+];
+
+/* Seeded from a Bourseview sector panel. Read off the terminal, so check
+   against your own screen before leaning on it. */
+const SEED={
+  'سرمایه‌گذاری‌ها':{pe:8.92,pb:4.34,ps:9.55,pfcff:24.39,pfcfe:33.57,evebit:9.75,evs:0,evebitda:0,
+    asof:'1405/08/04',source:'بورس‌ویو'}
+};
+const MARKET={pe:7.38,pb:3.53,ps:1.86,pfcff:16.08,pfcfe:18.05,evebit:7.58,evs:0,evebitda:0,
+  asof:'1405/08/04',source:'بورس‌ویو — ستون بورس ایران'};
+
+/* ===== Jalali, only to date-stamp the table ===== */
 const _d=(a,b)=>~~(a/b), _m=(a,b)=>a-~~(a/b)*b;
 const _BR=[-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
 function _jc(jy){let bl=_BR.length,gy=jy+621,lJ=-14,jp=_BR[0],jm,jump=0,leap,n,i;
@@ -198,21 +236,34 @@ const fa=s=>String(s).replace(/\d/g,d=>FA[d]);
 const n=id=>{const e=document.getElementById(id);if(!e)return 0;
   const v=parseFloat(String(e.value).replace(/[^\d.\-]/g,''));return isFinite(v)?v:0;};
 const money=x=>fa(Math.round(x).toLocaleString('en-US'));
-const hemat=x=>fa((x/1e7).toFixed(2));          /* 1 همت = 10,000,000 میلیون ریال */
+const hemat=x=>fa((x/1e7).toFixed(2));            /* 1 همت = 10,000,000 میلیون ریال */
 const BIGR=(k,v)=>'<div class="big"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';
 const SM=(k,v)=>'<div class="big sm"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';
+const esc=s=>String(s).replace(/"/g,'&quot;');
 
 const BASES={
-  pe:    {lab:'سود خالص (میلیون ریال)', nm:'P/E',        ev:false, note:'ضریب روی سود خالص پس از کسر سهم اقلیت اعمال می‌شود. نتیجه مستقیماً ارزش حقوق صاحبان سهام است.'},
-  ps:    {lab:'فروش (میلیون ریال)',     nm:'P/S',        ev:false, note:'P/S ارزش حقوق صاحبان سهام می‌دهد. برای شرکت‌های با اهرم متفاوت، EV/S قابل دفاع‌تر است.'},
-  evs:   {lab:'فروش (میلیون ریال)',     nm:'EV/S',       ev:true,  note:'EV/S ساختار سرمایه را خنثی می‌کند؛ برای مقایسهٔ شرکت‌های با اهرم متفاوت مناسب‌تر از P/S است.'},
-  ebit:  {lab:'EBIT (میلیون ریال)',     nm:'EV/EBIT',    ev:true,  note:'EBIT تفاوت سیاست استهلاک را در خود نگه می‌دارد؛ در صنایع سرمایه‌بر با عمر دارایی متفاوت محتاط باشید.'},
-  ebitda:{lab:'EBITDA (میلیون ریال)',   nm:'EV/EBITDA',  ev:true,  note:'رایج‌ترین مبنا در معاملات. مخارج سرمایه‌ای را نادیده می‌گیرد، پس در صنایع سرمایه‌بر ارزش را بیش‌برآورد می‌کند.'}
+  pe:    {lab:'سود خالص (میلیون ریال)',          nm:'P/E',       key:'pe',       ev:false, note:'ضریب روی سود خالص پس از کسر سهم اقلیت اعمال می‌شود. نتیجه مستقیماً ارزش حقوق صاحبان سهام است.'},
+  pb:    {lab:'حقوق صاحبان سهام (میلیون ریال)',  nm:'P/B',       key:'pb',       ev:false, note:'برای بانک، بیمه و شرکت سرمایه‌گذاری معمولاً قابل دفاع‌تر از P/E است، چون سود این‌ها نوسان زیادی دارد.'},
+  ps:    {lab:'فروش (میلیون ریال)',              nm:'P/S',       key:'ps',       ev:false, note:'P/S ارزش حقوق صاحبان سهام می‌دهد. برای شرکت‌های با اهرم متفاوت، EV/S قابل دفاع‌تر است.'},
+  evs:   {lab:'فروش (میلیون ریال)',              nm:'EV/S',      key:'evs',      ev:true,  note:'EV/S ساختار سرمایه را خنثی می‌کند؛ برای مقایسهٔ شرکت‌های با اهرم متفاوت مناسب‌تر از P/S است.'},
+  ebit:  {lab:'EBIT (میلیون ریال)',              nm:'EV/EBIT',   key:'evebit',   ev:true,  note:'بورس‌ویو این را در ستون صنعت منتشر می‌کند، پس معمولاً در دسترس‌ترین مبنای EV است.'},
+  ebitda:{lab:'EBITDA (میلیون ریال)',            nm:'EV/EBITDA', key:'evebitda', ev:true,  note:'در بازار ایران به تفکیک صنعت منتشر نمی‌شود. یا خودتان وارد کنید یا از گروه همتا بسازید.'}
 };
-const AGG=[['pe','میانه'],['pe_ex_outlier','میانه بدون پرت'],['pe_weighted','وزنی به ارزش بازار'],['pe_mean','میانگین ساده']];
 
-let base='pe', src='ref', mode='val', ref=null;
+let base='pe', src='ref', mode='val', ref={}, curInd='سرمایه‌گذاری‌ها', market={};
 let peers=[{nm:'همتا ۱',v:0,m:0},{nm:'همتا ۲',v:0,m:0},{nm:'همتا ۳',v:0,m:0}];
+
+/* ===== persistence ===== */
+function store(){try{localStorage.setItem('valref',JSON.stringify({ref,market,curInd}));}catch(e){}}
+function restore(){
+  ref=JSON.parse(JSON.stringify(SEED));
+  market=JSON.parse(JSON.stringify(MARKET));
+  try{
+    const s=JSON.parse(localStorage.getItem('valref')||'null');
+    if(s){ ref={...ref,...(s.ref||{})}; market={...market,...(s.market||{})};
+           if(s.curInd)curInd=s.curInd; }
+  }catch(e){}
+}
 
 /* ===== peers ===== */
 function drawPeers(){
@@ -220,7 +271,7 @@ function drawPeers(){
   const evMode=BASES[base].ev;
   peers.forEach((p,i)=>{
     const el=document.createElement('div');el.className='peer';
-    el.innerHTML='<div class="r1"><input value="'+p.nm.replace(/"/g,'&quot;')+'" data-k="nm" aria-label="نام">'+
+    el.innerHTML='<div class="r1"><input value="'+esc(p.nm)+'" data-k="nm" aria-label="نام">'+
       '<button class="x" data-del="'+i+'" aria-label="حذف">×</button></div>'+
       '<div class="r2"><div><label>'+(evMode?'ارزش بنگاه':'ارزش بازار')+'</label>'+
       '<input inputmode="numeric" value="'+p.v+'" data-k="v"></div>'+
@@ -242,21 +293,68 @@ function quartile(a,q){
 }
 function stats(){
   const m=peerMults(), box=document.getElementById('peerstats');
-  if(!m.length){box.innerHTML='<p class="note">برای هر همتا هم ارزش و هم معیار را وارد کنید تا ضریبش ساخته شود. ردیفی که یکی از دو عدد را نداشته باشد کنار گذاشته می‌شود.</p>';return;}
+  if(!m.length){box.innerHTML='<p class="note">برای هر همتا هم ارزش و هم معیار را وارد کنید. ردیفی که یکی از دو عدد را نداشته باشد کنار گذاشته می‌شود.</p>';return;}
   const xs=m.map(o=>o.x);
-  const med=quartile(xs,.5), q1=quartile(xs,.25), q3=quartile(xs,.75);
   let h='<table><thead><tr><th>همتا</th><th style="text-align:left">ضریب</th></tr></thead><tbody>';
   m.forEach(o=>h+='<tr><td>'+o.nm+'</td><td class="n">'+fa(o.x.toFixed(2))+'×</td></tr>');
-  h+='<tr><td>چارک اول</td><td class="n">'+fa(q1.toFixed(2))+'×</td></tr>'+
-     '<tr class="hi"><td>میانه</td><td class="n">'+fa(med.toFixed(2))+'×</td></tr>'+
-     '<tr><td>چارک سوم</td><td class="n">'+fa(q3.toFixed(2))+'×</td></tr></tbody></table>';
+  h+='<tr><td>چارک اول</td><td class="n">'+fa(quartile(xs,.25).toFixed(2))+'×</td></tr>'+
+     '<tr class="hi"><td>میانه</td><td class="n">'+fa(quartile(xs,.5).toFixed(2))+'×</td></tr>'+
+     '<tr><td>چارک سوم</td><td class="n">'+fa(quartile(xs,.75).toFixed(2))+'×</td></tr></tbody></table>';
   if(m.length<3)h+='<p class="note" style="color:var(--warn)">با '+fa(m.length)+' همتا میانه قابل دفاع نیست. دست‌کم سه تا پنج شرکت وارد کنید.</p>';
   if(xs.length>1&&xs[xs.length-1]/xs[0]>3)
     h+='<p class="note" style="color:var(--warn)">پراکندگی ضرایب بیش از سه برابر است. گروه همتا احتمالاً همگن نیست.</p>';
   box.innerHTML=h;
 }
 
-/* ===== the multiple in force, with a reason when there is none ===== */
+/* ===== the industry table ===== */
+function drawRef(){
+  const box=document.getElementById('refbox');
+  const filled=k=>RATIOS.some(([rk])=>Number((ref[k]||{})[rk])>0);
+  let h='<label>صنعت</label><select id="refsel">'+
+    INDUSTRIES.map(nm=>'<option value="'+esc(nm)+'"'+(nm===curInd?' selected':'')+'>'+
+      nm+(filled(nm)?' ✓':'')+'</option>').join('')+'</select>';
+
+  const r=ref[curInd]||{};
+  const bk=BASES[base].key;
+  h+='<table class="rt" style="margin-top:12px"><thead><tr>'+
+     '<th>ضریب</th><th>صنعت</th><th>بورس ایران</th></tr></thead><tbody>';
+  RATIOS.forEach(([k,nm])=>{
+    const on = k===bk;
+    h+='<tr'+(on?' class="on"':'')+'><td>'+nm+'</td>'+
+       '<td><input inputmode="decimal" data-ind="'+k+'" value="'+(r[k]||'')+'" placeholder="—"></td>'+
+       '<td class="mk">'+(Number(market[k])>0?fa(Number(market[k]).toFixed(2)):'—')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+
+  h+='<div class="row2">'+
+     '<div><label>تاریخ داده (شمسی)</label><input id="refdate" value="'+esc(r.asof||'')+'" placeholder="1405/08/04" style="direction:ltr;text-align:left;font-size:14px"></div>'+
+     '<div><label>منبع</label><input id="refsrc" value="'+esc(r.source||'بورس‌ویو')+'" style="direction:rtl;text-align:right;font-size:14px"></div></div>';
+  h+='<div class="row2"><div><label>دامنه ±٪</label><input id="refband" inputmode="decimal" value="15"></div>'+
+     '<div style="display:flex;align-items:flex-end"><button class="solid" id="refsave">ذخیره این صنعت</button></div></div>';
+
+  const days=daysSince(r.asof), old=!isFinite(days)||days>45;
+  h+='<p class="note">'+
+     (r.asof?'<span class="badge'+(old?' old':'')+'">'+r.asof+(isFinite(days)?' — '+(days===0?'امروز':fa(days)+' روز پیش'):'')+(old?' · کهنه':'')+'</span> ':'')+
+     'اعداد ستون صنعت را همان‌طور که در بورس‌ویو یا TSETMC می‌بینید وارد کنید. روی همین دستگاه ذخیره می‌شود و دفعهٔ بعد سر جایش است. صنایعی که ✓ دارند پر شده‌اند.</p>';
+  box.innerHTML=h;
+
+  document.getElementById('refsel').addEventListener('change',e=>{
+    curInd=e.target.value;store();drawRef();calc();});
+  box.querySelectorAll('[data-ind]').forEach(inp=>inp.addEventListener('input',()=>{
+    if(!ref[curInd])ref[curInd]={};
+    ref[curInd][inp.dataset.ind]=parseFloat(inp.value)||0;
+    calc();}));
+  document.getElementById('refdate').addEventListener('input',e=>{
+    if(!ref[curInd])ref[curInd]={};ref[curInd].asof=e.target.value;});
+  document.getElementById('refsrc').addEventListener('input',e=>{
+    if(!ref[curInd])ref[curInd]={};ref[curInd].source=e.target.value;});
+  document.getElementById('refband').addEventListener('input',calc);
+  document.getElementById('refsave').addEventListener('click',()=>{
+    store();const b=document.getElementById('refsave');
+    b.textContent='ذخیره شد ✓';setTimeout(()=>{b.textContent='ذخیره این صنعت';drawRef();calc();},900);});
+}
+
+/* ===== the multiple in force ===== */
 function mult(){
   if(src==='peer'){
     const xs=peerMults().map(o=>o.x);
@@ -268,69 +366,12 @@ function mult(){
     if(!(b>0))return {err:'ضریب پایه را وارد کنید.'};
     return {lo:b*(1-r),mid:b,hi:b*(1+r),tag:'ورودی دستی'};
   }
-  const sel=document.getElementById('refsel');
-  if(!ref||!sel||!ref[sel.value])return {err:'جدول صنعت خالی است.'};
-  const row=ref[sel.value];
-  if(base!=='pe')
-    return {err:'برای «'+row.name+'» فقط P/E گردآوری شده و '+BASES[base].nm+' در دسترس نیست. از «گروه همتا» یا «ورود دستی» استفاده کنید.'};
-  const aggEl=document.getElementById('refagg');
-  const v=Number(row[aggEl?aggEl.value:'pe']);
-  if(!(v>0))return {err:'این روش تجمیع برای این صنعت عددی ندارد.'};
-  const q1=Number(row.pe_q1), q3=Number(row.pe_q3);
-  return {lo:q1>0?Math.min(q1,v):v*0.85, mid:v, hi:q3>0?Math.max(q3,v):v*1.15,
-          tag:row.name+' · '+(row.asof||'')};
-}
-
-/* ===== reference table ===== */
-function drawRef(){
-  const box=document.getElementById('refbox');
-  const keys=ref?Object.keys(ref):[];
-  if(!keys.length){
-    box.innerHTML='<p class="note">جدول صنعت خالی است. از «گروه همتا» یا «ورود دستی» استفاده کنید.</p>';
-    return;
-  }
-  const keep=document.getElementById('refsel');
-  const cur=keep?keep.value:keys[0];
-  let h='<label>صنعت</label><select id="refsel">'+
-    keys.map(k=>'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+(ref[k].name||k)+'</option>').join('')+
-    '</select><div id="refmeta" style="margin-top:10px"></div>';
-  box.innerHTML=h;
-  document.getElementById('refsel').addEventListener('change',()=>{refMeta();calc();});
-  refMeta();
-}
-function refMeta(){
-  const sel=document.getElementById('refsel');if(!sel||!ref)return;
-  const r=ref[sel.value];if(!r)return;
-  const keep=document.getElementById('refagg');
-  const cur=keep?keep.value:'pe';
-  let h='';
-  if(base!=='pe')
-    h+='<p class="note" style="color:var(--warn)">برای این صنعت فقط P/E گردآوری شده است. '+
-       BASES[base].nm+' را از «گروه همتا» بسازید یا دستی وارد کنید.</p>';
-  h+='<label>روش تجمیع</label><select id="refagg">'+
-     AGG.filter(([k])=>Number(r[k])>0)
-        .map(([k,l])=>'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+l+' — '+fa(Number(r[k]).toFixed(2))+'×</option>').join('')+
-     '</select>';
-  if(Number(r.pe_q1)>0)
-    h+='<p class="note">دامنه از چارک اول '+fa(Number(r.pe_q1).toFixed(2))+'× تا چارک سوم '+
-       fa(Number(r.pe_q3).toFixed(2))+'× گرفته می‌شود.</p>';
-  const cs=(r.constituents||[]).slice().sort((a,b)=>a.pe-b.pe);
-  if(cs.length){
-    h+='<table style="margin-top:10px"><thead><tr><th>نماد</th>'+
-       '<th style="text-align:left">ارزش بازار (همت)</th><th style="text-align:left">P/E</th></tr></thead><tbody>';
-    cs.forEach(c=>h+='<tr><td>'+c.sym+'</td><td class="n">'+fa(Number(c.mcap).toLocaleString('en-US'))+
-      '</td><td class="n">'+fa(Number(c.pe).toFixed(1))+'</td></tr>');
-    h+='</tbody></table>';
-  }
-  const days=daysSince(r.asof), old=!isFinite(days)||days>45;
-  h+='<p class="note"><span class="badge'+(old?' old':'')+'">تاریخ داده: '+(r.asof||'نامشخص')+
-     (isFinite(days)?' — '+(days===0?'امروز':fa(days)+' روز پیش'):'')+(old?' · کهنه':'')+'</span>'+
-     (r.n?' <span class="badge">'+fa(r.n)+' شرکت</span>':'')+
-     '<br>منبع: '+(r.source||'نامشخص')+
-     (r.method?'<br>روش: '+r.method:'')+(r.note?'<br>'+r.note:'')+'</p>';
-  document.getElementById('refmeta').innerHTML=h;
-  const ns=document.getElementById('refagg');
-  if(ns)ns.addEventListener('change',calc);
+  const r=ref[curInd]||{}, k=BASES[base].key, v=Number(r[k]);
+  if(!(v>0))
+    return {err:BASES[base].nm+' برای «'+curInd+'» وارد نشده است. آن را از بورس‌ویو در همین جدول بنویسید، یا از «گروه همتا» استفاده کنید.'+
+      (k==='evebitda'?' توجه: EV/EBITDA به تفکیک صنعت در بازار ایران منتشر نمی‌شود.':'')};
+  const band=(n('refband')||15)/100;
+  return {lo:v*(1-band),mid:v,hi:v*(1+band),tag:curInd+(r.asof?' · '+r.asof:''),mk:Number(market[k])||0};
 }
 
 /* ===== main ===== */
@@ -347,60 +388,53 @@ function calc(){
 
   const box=document.getElementById('res');
   const M=mult(), met=n('metric');
-  const netDebt=n('debt')-n('cash');
-  const toEq=v=> B.ev ? v-netDebt-n('minor')+n('nonop') : v;
-  const fromEq=e=> B.ev ? e+netDebt+n('minor')-n('nonop') : e;
+  const nd=n('debt')-n('cash');
+  const toEq=v=> B.ev ? v-nd-n('minor')+n('nonop') : v;
+  const fromEq=e=> B.ev ? e+nd+n('minor')-n('nonop') : e;
 
   if(met===0){
     box.innerHTML='<h2>ارزش برآوردی</h2><div class="flag bad">'+B.lab.split(' (')[0]+
-      ' را وارد کنید — بدون آن چیزی برای ضرب کردن نیست.</div>';return;
-  }
+      ' را وارد کنید — بدون آن چیزی برای ضرب کردن نیست.</div>';return;}
   if(met<0){
     box.innerHTML='<h2>ارزش برآوردی</h2><div class="flag bad">معیار منفی است. ضریب روی عدد منفی معنای اقتصادی ندارد؛ '+
-      (base==='pe'?'برای شرکت زیان‌ده از P/S یا EV/S استفاده کنید.':'مبنای دیگری انتخاب کنید.')+'</div>';return;
-  }
+      (base==='pe'?'برای شرکت زیان‌ده از P/B یا P/S استفاده کنید.':'مبنای دیگری انتخاب کنید.')+'</div>';return;}
 
-  /* --- mode 2: what multiple would you have to believe? --- */
   if(mode==='imp'){
     const T=n('target');
     if(T===0){box.innerHTML='<h2>ضریب لازم</h2><div class="flag bad">ارزش مدنظر را وارد کنید.</div>';return;}
     const implied=fromEq(T)/met;
     let h='<h2>ضریب لازم برای رسیدن به این ارزش</h2>'+
       BIGR(B.nm+' لازم',fa(implied.toFixed(2))+'×')+
-      SM('ارزش هدف',money(T)+' م.ر')+
-      SM('معادل به همت',hemat(T));
+      SM('ارزش هدف',money(T))+SM('معادل به همت',hemat(T));
     if(B.ev)h+=SM('ارزش بنگاه متناظر',money(fromEq(T)));
     if(M.err){
-      h+='<div class="flag">برای مقایسه با دامنهٔ صنعت، ابتدا منبع ضریب را تنظیم کنید: '+M.err+'</div>';
+      h+='<div class="flag">برای مقایسه با صنعت، اول ضریب مرجع را تنظیم کنید: '+M.err+'</div>';
     }else{
-      const inRange = implied>=M.lo && implied<=M.hi;
-      const where = implied<M.lo ? 'پایین‌تر از چارک اول' : implied>M.hi ? 'بالاتر از چارک سوم' : 'داخل دامنه';
-      h+=SM('دامنهٔ مرجع · '+M.tag, fa(M.lo.toFixed(2))+'× تا '+fa(M.hi.toFixed(2))+'×');
-      h+='<div class="flag'+(inRange?'':' bad')+'">این ضریب '+where+' است'+
-         (inRange?'. با مبنای فعلی قابل دفاع است.'
-                 :' — یعنی برای رسیدن به این ارزش باید باور کنید این شرکت '+
-                   (implied>M.hi?'به‌طور معناداری بهتر از همتایانش است.':'به‌طور معناداری ضعیف‌تر از همتایانش است.'))+
-         '</div>';
-      if(!inRange){
-        const bound = implied>M.hi?M.hi:M.lo;
-        h+='<p class="note" style="color:var(--acc-ink);opacity:.8">در سقف دامنه، ارزش می‌شود '+
-           money(toEq(met*(implied>M.hi?M.hi:M.lo)))+' م.ر — اختلاف '+
-           money(Math.abs(T-toEq(met*bound)))+' م.ر با عدد مدنظر.</p>';
+      h+=SM('صنعت · '+M.tag,fa(M.mid.toFixed(2))+'×');
+      if(M.mk)h+=SM('بورس ایران',fa(M.mk.toFixed(2))+'×');
+      const inR=implied>=M.lo&&implied<=M.hi;
+      h+='<div class="flag'+(inR?'':' bad')+'">'+
+        (inR?'این ضریب داخل دامنهٔ صنعت است و با مبنای فعلی قابل دفاع است.'
+            :'این ضریب '+fa(Math.abs((implied/M.mid-1)*100).toFixed(0))+'٪ '+
+              (implied>M.mid?'بالاتر':'پایین‌تر')+' از صنعت است — برای رسیدن به این ارزش باید باور کنید این شرکت به‌طور معناداری '+
+              (implied>M.mid?'بهتر':'ضعیف‌تر')+' از صنعتش است.')+'</div>';
+      if(!inR){
+        const bnd=implied>M.hi?M.hi:M.lo;
+        h+='<p class="note" style="color:var(--acc-ink);opacity:.8">در لبهٔ دامنه ارزش می‌شد '+
+           money(toEq(met*bnd))+' — اختلاف '+money(Math.abs(T-toEq(met*bnd)))+' با عدد مدنظر.</p>';
       }
     }
     box.innerHTML=h;return;
   }
 
-  /* --- mode 1: value from a multiple --- */
-  if(M.err){
-    box.innerHTML='<h2>ارزش برآوردی</h2><div class="flag bad">'+M.err+'</div>';return;
-  }
+  if(M.err){box.innerHTML='<h2>ارزش برآوردی</h2><div class="flag bad">'+M.err+'</div>';return;}
   const lo=toEq(met*M.lo), mid=toEq(met*M.mid), hi=toEq(met*M.hi), sh=n('shares');
   let h='<h2>ارزش حقوق صاحبان سهام · '+M.tag+'</h2>'+
-    BIGR('پایه — ضریب '+fa(M.mid.toFixed(2))+'×',money(mid))+
+    BIGR('ضریب '+fa(M.mid.toFixed(2))+'×',money(mid))+
     SM('محدوده',money(lo)+' تا '+money(hi))+
-    SM('پایه به همت',hemat(mid));
-  if(B.ev)h+=SM('ارزش بنگاه (پایه)',money(met*M.mid));
+    SM('به همت',hemat(mid));
+  if(M.mk)h+=SM('با ضریب بورس ایران '+fa(M.mk.toFixed(2))+'×',money(toEq(met*M.mk)));
+  if(B.ev)h+=SM('ارزش بنگاه',money(met*M.mid));
   if(sh>0)h+=SM('هر سهم (ریال)',money(mid/sh));
   if(mid<0)h+='<div class="flag bad">ارزش حقوق صاحبان سهام منفی شد — بدهی خالص از ارزش بنگاه بیشتر است.</div>';
   box.innerHTML=h;
@@ -410,7 +444,7 @@ function calc(){
 document.querySelectorAll('#seg button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#seg button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');base=b.dataset.b;
-  drawPeers();stats();if(src==='ref')refMeta();calc();}));
+  drawPeers();stats();if(src==='ref')drawRef();calc();}));
 document.querySelectorAll('#segsrc button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#segsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');src=b.dataset.s;
@@ -428,24 +462,7 @@ document.getElementById('addpeer').addEventListener('click',()=>{
 ['metric','debt','cash','minor','nonop','shares','mbase','mrange','target']
   .forEach(id=>document.getElementById(id).addEventListener('input',calc));
 
-/* seed first so the page is useful immediately, then let a live table win */
-ref=JSON.parse(JSON.stringify(SEED));
-drawPeers();stats();drawRef();calc();
-
-(async function(){
-  let db=null;
-  try{ db = (typeof claude!=='undefined'&&claude.use) ? await claude.use('db') : null; }catch(e){}
-  if(!db)return;
-  try{
-    db.collection('multiples').onSnapshot(snap=>{
-      if(!snap.docs.length)return;              /* keep the seed rather than blanking */
-      const live={};
-      snap.docs.forEach(d=>{const b=d.data()||{};live[d.id]={...b,id:d.id};});
-      ref={...ref,...live};
-      drawRef();calc();
-    },()=>{});
-  }catch(e){}
-})();
+restore();drawPeers();stats();drawRef();calc();
 
 /* offline */
 (function(){
