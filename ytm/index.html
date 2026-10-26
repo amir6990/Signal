@@ -1,0 +1,675 @@
+<title>محاسبه‌گر نرخ مؤثر</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="نرخ مؤثر">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1F5E57">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="app.webmanifest">
+<style>
+:root{
+  --bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
+  --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;
+  --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
+  --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;
+  --acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;color-scheme:dark;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;
+  direction:rtl;-webkit-text-size-adjust:100%;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:640px;margin-inline:auto;padding-top:20px}
+h1{font-size:21px;font-weight:800;margin:0 0 2px}
+.sub{color:var(--soft);font-size:12.5px;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card>h2{font-size:13px;font-weight:700;margin:0 0 12px;color:var(--acc)}
+label{display:block;font-size:12.5px;font-weight:600;color:var(--soft);margin-bottom:5px}
+input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);
+  background:var(--field);border:1px solid var(--line);border-radius:10px;padding:11px 12px;
+  appearance:none;direction:ltr;text-align:right}
+select{direction:rtl;padding-left:30px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
+  background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:var(--acc)}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--acc);margin:0;padding:0;border-radius:6px}
+input[readonly]{opacity:.55}
+.grid{display:grid;gap:11px}.g2{grid-template-columns:1fr 1fr}
+.dates{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.seg{display:flex;gap:6px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
+.seg button{flex:1;padding:10px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);
+  font-family:var(--f);font-size:13px;font-weight:700;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+.fee{border:1px solid var(--line);border-radius:11px;padding:11px;margin-bottom:9px;background:var(--field)}
+.fee .top{display:flex;gap:8px;align-items:center;margin-bottom:9px}
+.fee .top input{flex:1;font-size:14.5px;direction:rtl;text-align:right}
+.fee .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:9px}
+.fee .bot{display:flex;align-items:center;gap:9px}
+.fee .bot label{margin:0;font-size:12.5px;font-weight:500;flex:1}
+.x{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:transparent;
+  color:var(--warn);font-size:19px;font-family:var(--f);cursor:pointer;padding:0}
+button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--line);background:transparent;
+  color:var(--acc);font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
+.res{background:var(--acc);color:var(--acc-ink);border-radius:14px;padding:16px;margin-bottom:12px}
+.res h2{color:var(--acc-ink);opacity:.72;font-size:12px;margin:0 0 10px;font-weight:700}
+.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;
+  border-bottom:1px solid rgba(255,255,255,.16)}
+.big:last-of-type{border-bottom:0}
+.big .k{font-size:13px;opacity:.85;font-weight:600}
+.big .v{font-size:25px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
+.big.sm .v{font-size:17px;font-weight:700}
+.flag{margin-top:11px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.14)}
+.flag.bad{background:var(--warn-wash);color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;margin-top:4px}
+th,td{padding:7px 4px;text-align:right;border-bottom:1px solid var(--line)}
+th{font-size:11px;color:var(--soft);font-weight:700}
+td.n{text-align:left;direction:ltr;font-weight:600}
+td.sh{color:var(--warn);font-weight:700}
+tr:last-child td{border-bottom:0}
+.note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
+.badge{display:inline-block;background:var(--wash);color:var(--acc);border-radius:20px;padding:2px 9px;
+  font-size:11px;font-weight:700}
+.badge.warn{background:var(--warn-wash);color:var(--warn)}
+.presets{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.presets button{flex:1;min-width:82px;padding:9px;border-radius:9px;border:1px solid var(--line);
+  background:transparent;color:var(--ink);font-family:var(--f);font-size:12.5px;font-weight:600;cursor:pointer}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h1>محاسبه‌گر نرخ مؤثر اوراق</h1>
+  <p class="sub">تقویم شمسی · تعدیل روز کاری · مبالغ به میلیون ریال</p>
+  <p class="sub" id="offline" style="margin-top:-10px;margin-bottom:16px"></p>
+
+  <div class="res" id="res"></div>
+
+  <div class="card">
+    <h2>اوراق</h2>
+    <div class="grid g2">
+      <div><label>مبلغ انتشار (میلیون ریال)</label><input id="amt" inputmode="numeric" value="1000000"></div>
+      <div><label>نرخ کوپن سالانه ٪</label><input id="cpn" inputmode="decimal" value="23"></div>
+      <div><label>مدت (سال)</label><input id="yrs" inputmode="numeric" value="4"></div>
+      <div><label>تعداد کوپن در سال</label>
+        <select id="per"><option value="4" selected>۴ — سه‌ماهه</option>
+        <option value="2">۲ — شش‌ماهه</option><option value="12">۱۲ — ماهانه</option>
+        <option value="1">۱ — سالانه</option></select></div>
+    </div>
+    <div style="margin-top:11px">
+      <label>تاریخ پذیره‌نویسی (شمسی)</label>
+      <div class="dates">
+        <input id="jy" inputmode="numeric" value="1405" aria-label="سال">
+        <input id="jm" inputmode="numeric" value="5" aria-label="ماه">
+        <input id="jd" inputmode="numeric" value="20" aria-label="روز">
+      </div>
+      <div style="margin-top:11px"><label>روز پرداخت در ماه</label>
+        <select id="pday"><option value="auto" selected>خودکار — همان روز پذیره‌نویسی</option></select></div>
+      <p class="note" id="greg"></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>روز کاری و تعطیلات</h2>
+    <div class="grid g2">
+      <div><label>تعدیل تاریخ پرداخت</label>
+        <select id="conv">
+          <option value="follow" selected>روز کاری بعد</option>
+          <option value="modfollow">روز کاری بعد — مقید به ماه</option>
+          <option value="prev">روز کاری قبل</option>
+          <option value="none">بدون تعدیل</option>
+        </select></div>
+      <div><label>آخر هفته</label>
+        <select id="wk">
+          <option value="2" selected>پنجشنبه و جمعه</option>
+          <option value="1">فقط جمعه</option>
+        </select></div>
+    </div>
+    <div style="margin-top:11px">
+      <label>تعطیلات اضافه یا اصلاحی (شمسی، با ویرگول)</label>
+      <input id="xhol" placeholder="1406/02/14, 1406/09/03" value="" style="direction:ltr;text-align:left;font-size:14px">
+    </div>
+    <div class="bot" style="display:flex;align-items:center;gap:9px;margin-top:11px">
+      <input type="checkbox" id="lun" checked>
+      <label for="lun" style="margin:0;font-weight:500">تعطیلات قمری هم اعمال شود</label>
+    </div>
+    <p class="note" id="holnote"></p>
+  </div>
+
+  <div class="card">
+    <h2>کارمزد ارکان</h2>
+    <div id="fees"></div>
+    <button class="add" id="addfee">+ افزودن ردیف</button>
+    <div class="presets">
+      <button data-p="save">ذخیره</button>
+      <button data-p="load">بازیابی</button>
+      <button data-p="reset">بازنشانی</button>
+    </div>
+    <p class="note">«در نرخ سازمان» یعنی این قلم در نرخی که به سازمان ارائه می‌شود لحاظ شود — الحاقیه را تیک نزنید. گزینه‌های «زمان» بسته به مبنا عوض می‌شوند: ردیف یک‌بار فقط روز پذیره‌نویسی یا سررسید دارد؛ ردیف سالانه ابتدا، میانه یا پایان هر سال، و گزینه «کل دوره یک‌جا» که جمع همهٔ سال‌ها را در روز پذیره‌نویسی می‌پردازد. «تأخیر» همان فاصلهٔ چندروزهٔ واقعی تا واریز است و پیش از تعدیل روز کاری اعمال می‌شود.</p>
+  </div>
+
+  <div class="card">
+    <h2>حالت کار</h2>
+    <div class="seg" id="mode" role="group">
+      <button data-m="rate" aria-pressed="true">۱ · نرخ را بده</button>
+      <button data-m="fee" aria-pressed="false">۲ · مجهول را بده</button>
+    </div>
+
+    <div id="m1" style="margin-top:12px">
+      <div class="grid g2">
+        <div><label>نرخ مورد تأیید سازمان ٪</label><input id="cap" inputmode="decimal" value="44.5"></div>
+        <div><label>اهرم</label>
+          <select id="lever"><option value="cpn" selected>نرخ کوپن</option>
+          <option value="fee">کارمزدهای داخل نرخ</option></select></div>
+      </div>
+    </div>
+
+    <div id="m2" style="margin-top:12px;display:none">
+      <div class="grid g2">
+        <div><label>YTM هدف ٪</label><input id="tgt" inputmode="decimal" value="44.5"></div>
+        <div><label>هدف بر مبنای</label>
+          <select id="tbase"><option value="reg" selected>نرخ سازمان — بدون الحاقیه</option>
+          <option value="all">هزینه واقعی بانی — با الحاقیه</option></select></div>
+      </div>
+      <div style="margin-top:11px"><label>کدام متغیر حل شود</label><select id="unk"></select></div>
+      <p class="note">هر چیزی جز متغیر مجهول را خودتان تثبیت می‌کنید — نرخ کوپن، مبلغ انتشار، متعهد پذیره‌نویسی و نرخ الحاقیه.</p>
+    </div>
+
+    <div id="solve" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>صورت پرداخت</h2>
+    <div id="sched"></div>
+  </div>
+
+  <div class="card">
+    <h2>تاریخ‌های جابه‌جاشده</h2>
+    <div id="shifts"></div>
+  </div>
+
+  <p class="note">نرخ بازده داخلی روی تاریخ‌های واقعی میلادی با مبنای ۳۶۵ روز؛ حل عددی دوبخشی. تبدیل تقویم با الگوریتم برکوفسکی. مبلغ هر کوپن با جابه‌جایی تاریخ تغییر نمی‌کند — فقط دیرتر یا زودتر پرداخت می‌شود، که همان چیزی است که نرخ را جابه‌جا می‌کند.</p>
+</div>
+
+<script>
+/* ===== Jalali (Borkowski) ===== */
+const div=(a,b)=>~~(a/b), mod=(a,b)=>a-~~(a/b)*b;
+const BR=[-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
+function jalCal(jy){
+  let bl=BR.length,gy=jy+621,leapJ=-14,jp=BR[0],jm,jump=0,leap,n,i;
+  if(jy<jp||jy>=BR[bl-1])throw new Error('range');
+  for(i=1;i<bl;i++){jm=BR[i];jump=jm-jp;if(jy<jm)break;
+    leapJ=leapJ+div(jump,33)*8+div(mod(jump,33),4);jp=jm;}
+  n=jy-jp;leapJ=leapJ+div(n,33)*8+div(mod(n,33)+3,4);
+  if(mod(jump,33)===4&&jump-n===4)leapJ++;
+  const leapG=div(gy,4)-div((div(gy,100)+1)*3,4)-150;
+  const march=20+leapJ-leapG;
+  if(jump-n<6)n=n-jump+div(jump+4,33)*33;
+  leap=mod(mod(n+1,33)-1,4); if(leap===-1)leap=4;
+  return {leap,gy,march};
+}
+function g2d(gy,gm,gd){
+  let d=div((gy+div(gm-8,6)+100100)*1461,4)+div(153*mod(gm+9,12)+2,5)+gd-34840408;
+  return d-div(div(gy+100100+div(gm-8,6),100)*3,4)+752;
+}
+function d2g(j){
+  let jj=4*j+139361631;
+  jj=jj+div(div(4*j+183187720,146097)*3,4)*4-3908;
+  const i=div(mod(jj,1461),4)*5+308;
+  const gd=div(mod(i,153),5)+1, gm=mod(div(i,153),12)+1;
+  return {gy:div(jj,1461)-100100+div(8-gm,6),gm,gd};
+}
+function j2d(jy,jm,jd){const r=jalCal(jy);return g2d(r.gy,3,r.march)+(jm-1)*31-div(jm,7)*(jm-7)+jd-1;}
+function jLen(jy,jm){if(jm<=6)return 31;if(jm<=11)return 30;return jalCal(jy).leap===0?30:29;}
+function d2j(jdn){
+  const g=d2g(jdn);
+  let jy=g.gy-621;
+  let r=jalCal(jy), start=g2d(r.gy,3,r.march);
+  let k=jdn-start;
+  if(k<0){jy--;r=jalCal(jy);start=g2d(r.gy,3,r.march);k=jdn-start;}
+  if(k>=366){const nx=jalCal(jy+1), ns=g2d(nx.gy,3,nx.march); if(jdn>=ns){jy++;k=jdn-ns;}}
+  let jm,jd;
+  if(k<186){jm=1+div(k,31);jd=mod(k,31)+1;}
+  else{const kk=k-186;jm=7+div(kk,30);jd=mod(kk,30)+1;}
+  return {jy,jm,jd};
+}
+function jAdd(jy,jm,jd,months){
+  const t=(jy*12+(jm-1))+months, ny=div(t,12), nm=mod(t,12)+1;
+  return [ny,nm,Math.min(jd,jLen(ny,nm))];
+}
+/* 0=شنبه … 5=پنجشنبه 6=جمعه ; calibrated on 1405/05/20 = 2026-08-11 = سه‌شنبه */
+const dow=jdn=>((jdn%7)+2)%7;
+const DOWN=['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
+
+/* ===== tabular Islamic, for the lunar holidays (approximate) ===== */
+function i2d(y,m,d){return d+Math.ceil(29.5*(m-1))+(y-1)*354+div(3+11*y,30)+1948439;}
+function d2i(jdn){
+  const y=div(30*(jdn-1948439)+10646,10631);
+  const m=Math.min(12,Math.ceil((jdn-(29+i2d(y,1,1)))/29.5)+1);
+  return {y,m:Math.max(1,m)};
+}
+
+/* ===== holidays ===== */
+const FIXED=[[1,1,'نوروز'],[1,2,'نوروز'],[1,3,'نوروز'],[1,4,'نوروز'],
+  [1,12,'روز جمهوری اسلامی'],[1,13,'روز طبیعت'],
+  [3,14,'رحلت امام خمینی'],[3,15,'قیام ۱۵ خرداد'],
+  [11,22,'پیروزی انقلاب'],[12,29,'ملی شدن صنعت نفت']];
+const LUNAR=[[1,9,'تاسوعا'],[1,10,'عاشورا'],[2,20,'اربعین'],[2,28,'رحلت پیامبر'],
+  [2,30,'شهادت امام رضا'],[3,8,'شهادت امام حسن عسکری'],[3,17,'میلاد پیامبر'],
+  [6,3,'شهادت حضرت فاطمه'],[7,13,'ولادت امام علی'],[7,27,'مبعث'],
+  [8,15,'ولادت امام زمان'],[9,21,'شهادت امام علی'],[10,1,'عید فطر'],[10,2,'عید فطر'],
+  [10,25,'شهادت امام صادق'],[12,10,'عید قربان'],[12,18,'عید غدیر']];
+let HOL=new Map();
+function buildHolidays(jdnFrom,jdnTo,useLunar,extra){
+  HOL=new Map();
+  const a=d2j(jdnFrom-40), b=d2j(jdnTo+40);
+  for(let y=a.jy;y<=b.jy;y++)
+    for(const [m,d,n] of FIXED){ try{HOL.set(j2d(y,m,d),n);}catch(e){} }
+  if(useLunar){
+    const h1=d2i(jdnFrom-40).y, h2=d2i(jdnTo+40).y;
+    for(let y=h1;y<=h2;y++)
+      for(const [m,d,n] of LUNAR){ const k=i2d(y,m,d); if(!HOL.has(k))HOL.set(k,n+' ◦'); }
+  }
+  for(const s of extra){
+    const m=/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s.trim());
+    if(m){ try{HOL.set(j2d(+m[1],+m[2],+m[3]),'دستی');}catch(e){} }
+  }
+}
+function isOff(jdn,wk){
+  const w=dow(jdn);
+  if(w===6)return 'جمعه';
+  if(wk>=2&&w===5)return 'پنجشنبه';
+  return HOL.get(jdn)||null;
+}
+function adjust(jdn,conv,wk){
+  if(conv==='none')return {d:jdn,why:null};
+  const why=isOff(jdn,wk);
+  if(!why)return {d:jdn,why:null};
+  const step=conv==='prev'?-1:1;
+  let k=jdn;
+  for(let i=0;i<30;i++){ k+=step; if(!isOff(k,wk))break; }
+  if(conv==='modfollow'){
+    const a=d2j(jdn), b=d2j(k);
+    if(b.jm!==a.jm){ let p=jdn; for(let i=0;i<30;i++){p--; if(!isOff(p,wk))break;} return {d:p,why,back:true}; }
+  }
+  return {d:k,why};
+}
+
+/* ===== helpers ===== */
+const FA='۰۱۲۳۴۵۶۷۸۹';
+const fa=s=>String(s).replace(/\d/g,d=>FA[d]);
+const num=id=>{const e=document.getElementById(id);if(!e)return 0;
+  const v=parseFloat(String(e.value).replace(/[^\d.\-]/g,''));return isFinite(v)?v:0;};
+const money=x=>fa(Math.round(x).toLocaleString('en-US'));
+const pct=x=>isFinite(x)?fa((x*100).toFixed(2))+'٪':'—';
+const gstr=j=>{const g=d2g(j);return g.gy+'-'+String(g.gm).padStart(2,'0')+'-'+String(g.gd).padStart(2,'0');};
+const jstr=j=>{const a=d2j(j);return fa(a.jy)+'/'+fa(String(a.jm).padStart(2,'0'))+'/'+fa(String(a.jd).padStart(2,'0'));};
+function xnpv(r,cf){const d0=cf[0].d;let s=0;for(const c of cf)s+=c.v/Math.pow(1+r,(c.d-d0)/365);return s;}
+function xirr(cf){let lo=-0.9999,hi=20;
+  if(xnpv(lo,cf)*xnpv(hi,cf)>0)return NaN;
+  for(let i=0;i<200;i++){const m=(lo+hi)/2;(xnpv(lo,cf)*xnpv(m,cf)<=0)?hi=m:lo=m;}
+  return (lo+hi)/2;}
+
+/* ===== fees ===== */
+const DEF=[
+  {n:'بازارگردان',p:11.67,u:'%',b:'y',t:'s',dly:0,r:true},
+  {n:'ضامن',p:1,u:'%',b:'y',t:'s',dly:0,r:true},
+  {n:'متعهد پذیره‌نویسی',p:2,u:'%',b:'o',t:'0',dly:3,r:true},
+  {n:'مشاور عرضه و سایر',p:1.5,u:'%',b:'o',t:'0',dly:3,r:true},
+  {n:'مازاد الحاقیه',p:6.6,u:'%',b:'o',t:'0',dly:3,r:false},
+];
+let fees=[], mode='rate', lastShifts=[];
+const UNIT={'%':'درصد','A':'مبلغ ثابت'};
+const BAS={o:'یک‌بار',y:'سالانه'};
+/* timing options depend on the basis — a one-off fee has no "start of each year" */
+const TIM_O={'0':'روز پذیره‌نویسی','M':'سررسید'};
+const TIM_Y={'s':'ابتدای هر سال','m':'میانه هر سال','e':'پایان هر سال',
+             '0':'کل دوره یک‌جا، روز پذیره‌نویسی'};
+const TIMS=b=>b==='y'?TIM_Y:TIM_O;
+const opts=(o,cur)=>Object.entries(o).map(([k,v])=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+v+'</option>').join('');
+
+function drawFees(){
+  const box=document.getElementById('fees');box.innerHTML='';
+  fees.forEach((f,i)=>{
+    const el=document.createElement('div');el.className='fee';
+    el.innerHTML=
+      '<div class="top"><input value="'+f.n.replace(/"/g,'&quot;')+'" data-k="n" aria-label="نام رکن">'+
+      '<button class="x" data-del="'+i+'" aria-label="حذف">×</button></div>'+
+      '<div class="row"><div><label>'+(f.u==='A'?'مبلغ (میلیون ریال)':'درصد ٪')+'</label>'+
+      '<input inputmode="decimal" value="'+f.p+'" data-k="p"></div>'+
+      '<div><label>واحد</label><select data-k="u">'+opts(UNIT,f.u||'%')+'</select></div></div>'+
+      '<div class="row"><div><label>مبنا</label><select data-k="b">'+opts(BAS,f.b)+'</select></div>'+
+      '<div><label>زمان</label><select data-k="t">'+opts(TIMS(f.b),f.t)+'</select></div></div>'+
+      '<div class="row"><div><label>تأخیر (روز)</label>'+
+      '<input inputmode="numeric" value="'+(f.dly||0)+'" data-k="dly"></div>'+
+      '<div class="bot" style="padding-top:22px"><input type="checkbox" data-k="r" id="r'+i+'"'+(f.r?' checked':'')+'>'+
+      '<label for="r'+i+'">در نرخ سازمان</label></div></div>';
+    el.querySelectorAll('[data-k]').forEach(inp=>inp.addEventListener('input',()=>{
+      const k=inp.dataset.k;
+      fees[i][k]= k==='r'?inp.checked
+                : (k==='p'||k==='dly')?(parseFloat(inp.value)||0)
+                : inp.value;
+      if(k==='b'&&!TIMS(fees[i].b)[fees[i].t]) fees[i].t = fees[i].b==='y'?'s':'0';
+      if(k==='u'||k==='b'){drawFees();}
+      calc();
+    }));
+    el.querySelector('[data-del]').addEventListener('click',()=>{fees.splice(i,1);drawFees();calc();});
+    box.appendChild(el);
+  });
+  fillUnk();
+}
+function fillUnk(){
+  const s=document.getElementById('unk');if(!s)return;
+  const cur=s.value;
+  s.innerHTML='<option value="cpn">نرخ کوپن</option><option value="amt">مبلغ انتشار</option>'+
+    fees.map((f,i)=>'<option value="f'+i+'">'+f.n+'</option>').join('');
+  const ok=Array.from(s.options).some(o=>o.value===cur);
+  if(ok&&cur)s.value=cur;
+  else{const i=fees.findIndex(f=>f.n.indexOf('بازارگردان')>=0);s.value=i>=0?'f'+i:'cpn';}
+}
+
+/* ===== cash flows ===== */
+function build(cpnRate,amtOverride,includeAll,collect){
+  const A=amtOverride!=null?amtOverride:num('amt');
+  const Y=Math.max(1,Math.round(num('yrs')));
+  const P=parseInt(document.getElementById('per').value,10);
+  const jy=Math.round(num('jy')),jm=Math.round(num('jm')),jd=Math.round(num('jd'));
+  const conv=document.getElementById('conv').value;
+  const wk=parseInt(document.getElementById('wk').value,10);
+  const d0raw=j2d(jy,jm,jd);
+  const step=12/P, cf=[], sh=[];
+
+  const fix=(raw,label)=>{
+    if(raw===d0raw)return d0raw;            // the settlement date itself is taken as given
+    const a=adjust(raw,conv,wk);
+    if(collect&&a.d!==raw)sh.push({label,raw,adj:a.d,why:a.why,back:!!a.back});
+    return a.d;
+  };
+  /* every scheduled date lands on the chosen day of its Shamsi month; the
+     subscription date itself is never moved. 31 clamps to the month's length. */
+  const pd=(document.getElementById('pday')||{}).value||'auto';
+  const at=off=>{
+    let [y,m,d]=jAdd(jy,jm,jd,off);
+    if(pd!=='auto')d=Math.min(parseInt(pd,10),jLen(y,m));
+    return j2d(y,m,d);
+  };
+
+  cf.push({d:d0raw,v:A,tag:'دریافت'});
+  for(let k=1;k<=Y*P;k++){
+    const d=fix(at(Math.round(step*k)),(k===Y*P?'اصل و کوپن ':'کوپن ')+fa(k));
+    let v=-A*cpnRate/P; if(k===Y*P)v-=A;
+    cf.push({d,v,tag:k===Y*P?'کوپن + اصل':'کوپن'});
+  }
+  for(const f of fees){
+    if(!includeAll&&!f.r)continue;
+    const per = f.u==='A' ? -f.p : -A*(f.p/100);
+    const dly = Math.round(f.dly||0);
+    if(f.b!=='y'){                                   // one-off
+      const raw=(f.t==='M'?at(Y*12):d0raw)+dly;
+      cf.push({d:fix(raw,f.n),v:per,tag:f.n});
+    }else if(f.t==='0'){                             // whole term prepaid at settlement
+      cf.push({d:fix(d0raw+dly,f.n),v:per*Y,tag:f.n});
+    }else{                                           // once per year
+      for(let y=0;y<Y;y++){
+        const off = f.t==='s'? y*12 : f.t==='m'? y*12+6 : (y+1)*12;
+        cf.push({d:fix(at(off)+dly,f.n+' '+fa(y+1)),v:per,tag:f.n});
+      }
+    }
+  }
+  cf.sort((a,b)=>a.d-b.d);
+  if(collect)lastShifts=sh;
+  return cf;
+}
+
+/* ===== main ===== */
+function calc(){
+  const cpn=num('cpn')/100;
+  const jy=Math.round(num('jy')),jm=Math.round(num('jm')),jd=Math.round(num('jd'));
+  let d0;
+  try{d0=j2d(jy,jm,jd);}catch(e){document.getElementById('res').innerHTML='<h2>تاریخ نامعتبر</h2>';return;}
+
+  const Y=Math.max(1,Math.round(num('yrs')));
+  const extra=String(document.getElementById('xhol').value||'').split(',').filter(Boolean);
+  buildHolidays(d0,j2d(...jAdd(jy,jm,jd,Y*12)),document.getElementById('lun').checked,extra);
+
+  document.getElementById('holnote').innerHTML=
+    'تعطیلات رسمی ثابت شمسی و آخر هفته قطعی‌اند. تعطیلات قمری با تقویم جدولی حساب می‌شود و با ◦ علامت خورده — ممکن است یک تا دو روز با اعلام رسمی فرق کند، پس برای قرارداد نهایی تاریخ را با تقویم رسمی چک کنید و اصلاحش را در کادر بالا وارد کنید.';
+
+  const A=num('amt');
+  const all=build(cpn,null,true,true);
+  const reg=build(cpn,null,false,false);
+
+  const wkv=parseInt(document.getElementById('wk').value,10);
+  const firstC=all.filter(c=>c.tag==='کوپن'||c.tag==='کوپن + اصل').sort((a,b)=>a.d-b.d)[0];
+  document.getElementById('greg').innerHTML=
+    'پذیره‌نویسی: '+jstr(d0)+' · '+gstr(d0)+' — '+DOWN[dow(d0)]+(isOff(d0,wkv)?' (تعطیل)':'')+
+    (firstC?'<br>اولین کوپن: '+jstr(firstC.d)+' · '+gstr(firstC.d)+' — '+DOWN[dow(firstC.d)]:'');
+  const bare=reg.filter(c=>c.tag==='دریافت'||c.tag==='کوپن'||c.tag==='کوپن + اصل');
+
+  const r1=xirr(bare), r3=xirr(reg), r4=xirr(all);
+  const cap=(mode==='fee'?num('tgt'):num('cap'))/100;
+
+  const up=all.filter(c=>c.d===d0&&c.v<0).reduce((s,c)=>s-c.v,0);
+
+  document.getElementById('res').innerHTML=
+    '<h2>نرخ سود مؤثر</h2>'+
+    '<div class="big"><span class="k">نرخ سازمان — بدون الحاقیه</span><span class="v">'+pct(r3)+'</span></div>'+
+    '<div class="big"><span class="k">هزینه واقعی بانی</span><span class="v">'+pct(r4)+'</span></div>'+
+    '<div class="big sm"><span class="k">فقط اصل و کوپن</span><span class="v">'+pct(r1)+'</span></div>'+
+    '<div class="big sm"><span class="k">خالص واریزی روز اول</span><span class="v">'+money(A-up)+'</span></div>'+
+    '<div class="flag'+(r3>cap?' bad':'')+'">'+
+      (r3>cap?'نرخ سازمان '+fa(((r3-cap)*100).toFixed(2))+' واحد بالاتر از سقف است.'
+             :'زیر سقف — فاصله '+fa(((cap-r3)*100).toFixed(2))+' واحد.')+'</div>';
+
+  solve();
+  schedule(all,d0,Y);
+  shifts(cpn);
+}
+
+/* ===== solver ===== */
+const BIG=(k,v)=>'<div class="big" style="color:var(--ink);border:0;padding:0">'+
+  '<span class="k" style="color:var(--soft)">'+k+'</span>'+
+  '<span class="v" style="color:var(--acc)">'+v+'</span></div>';
+
+function solve(){
+  const box=document.getElementById('solve');
+  if(mode==='rate')solveRate(box); else solveUnknown(box);
+}
+function solveRate(box){
+  const cap=num('cap')/100;
+  const lev=document.getElementById('lever').value;
+  let lo=0,hi= lev==='cpn'?2:3;
+  const f=x=> lev==='cpn' ? xirr(build(x,null,false,false))
+                          : xirrScaled(x);
+  if(!isFinite(f(lo))){box.innerHTML='<p class="note">محاسبه ممکن نشد.</p>';return;}
+  if(f(lo)>cap){box.innerHTML='<div class="flag bad">حتی با صفر کردن این اهرم هم به سقف نمی‌رسید.</div>';return;}
+  for(let i=0;i<120;i++){const m=(lo+hi)/2;(f(m)<=cap)?lo=m:hi=m;}
+  const got=f(lo);
+  box.innerHTML= lev==='cpn'
+    ? BIG('حداکثر نرخ کوپن',pct(lo))+'<p class="note">نرخ سازمان حاصل '+pct(got)+'.</p>'
+    : BIG('ضریب مجاز کارمزدها',fa(lo.toFixed(3))+'×')+
+      '<p class="note">کارمزدهای داخل نرخ در '+fa((lo*100).toFixed(1))+'٪ مقدار فعلی. نرخ حاصل '+pct(got)+'.</p>';
+}
+function xirrScaled(x){
+  const keep=fees.map(f=>f.p);
+  fees.forEach(f=>{f.p=f.p*x;});
+  const r=xirr(build(num('cpn')/100,null,false,false));
+  fees.forEach((f,i)=>{f.p=keep[i];});
+  return r;
+}
+
+function solveUnknown(box){
+  const sel=document.getElementById('unk');
+  const key=sel?sel.value:'cpn';
+  const tgt=num('tgt')/100;
+  const all=document.getElementById('tbase').value==='all';
+  const cpn=num('cpn')/100;
+
+  /* --- coupon --- */
+  if(key==='cpn'){
+    const f=x=>xirr(build(x,null,all,false));
+    return report(box,f,0,3,tgt,all,'نرخ کوپن',v=>pct(v),null);
+  }
+
+  /* --- issuance amount --- */
+  if(key==='amt'){
+    const anyFixed=fees.some(f=>f.u==='A'&&(all||f.r));
+    if(!anyFixed){
+      box.innerHTML='<div class="flag bad">وقتی همهٔ کارمزدها درصدی‌اند، نرخ مؤثر به مبلغ انتشار بستگی ندارد — دو برابر کردن مبلغ، همهٔ جریان‌ها را دو برابر می‌کند و نرخ عوض نمی‌شود. برای اینکه مبلغ معنا پیدا کند، دست‌کم یک رکن را روی «مبلغ ثابت» بگذارید.</div>';
+      return;
+    }
+    const f=x=>xirr(build(cpn,x,all,false));
+    const A0=num('amt');
+    return report(box,f,Math.max(1,A0/50),A0*50,tgt,all,'مبلغ انتشار',v=>money(v)+' م.ر',
+      v=>{document.getElementById('amt').value=Math.round(v);calc();},true);
+  }
+
+  /* --- one fee row --- */
+  const i=parseInt(key.slice(1),10);
+  if(!(i>=0)||!fees[i]){box.innerHTML='<p class="note">متغیر مجهول را انتخاب کنید.</p>';return;}
+  if(!all&&!fees[i].r){
+    box.innerHTML='<div class="flag bad">«'+fees[i].n+'» در نرخ سازمان لحاظ نمی‌شود، پس تغییرش آن نرخ را تکان نمی‌دهد. یا مبنای هدف را روی هزینه واقعی بگذارید، یا تیک «در نرخ سازمان» این ردیف را بزنید.</div>';
+    return;
+  }
+  const orig=fees[i].p;
+  const f=x=>{fees[i].p=x;const r=xirr(build(cpn,null,all,false));fees[i].p=orig;return r;};
+  const hiB=fees[i].u==='A'?num('amt')*5:400;
+  const fmt=v=>fees[i].u==='A'?money(v)+' م.ر':fa(v.toFixed(4))+'٪';
+  return report(box,f,0,hiB,tgt,all,'«'+fees[i].n+'»',fmt,
+    v=>{fees[i].p=parseFloat(v.toFixed(4));drawFees();calc();},false,i);
+}
+
+/* shared bisection + reporting; `desc` descending means higher x -> lower rate */
+function report(box,f,lo,hi,tgt,all,label,fmt,apply,desc,feeIdx){
+  const a=f(lo), b=f(hi);
+  if(!isFinite(a)||!isFinite(b)){box.innerHTML='<p class="note">محاسبه ممکن نشد.</p>';return;}
+  const up=b>a;                           // does raising x raise the rate?
+  const reach=up?(a<=tgt&&tgt<=b):(b<=tgt&&tgt<=a);
+  if(!reach){
+    box.innerHTML='<div class="flag bad">با تغییر '+label+' به‌تنهایی به '+pct(tgt)+
+      ' نمی‌رسید. دامنهٔ ممکن از '+pct(Math.min(a,b))+' تا '+pct(Math.max(a,b))+' است.</div>';
+    return;
+  }
+  let L=lo,H=hi;
+  for(let k=0;k<160;k++){const m=(L+H)/2; if((f(m)<=tgt)===up)L=m; else H=m;}
+  const x=up?L:H;
+
+  const keepF=feeIdx!=null?fees[feeIdx].p:null;
+  if(feeIdx!=null)fees[feeIdx].p=x;
+  const amtO=(label==='مبلغ انتشار')?x:null;
+  const cpnO=(label==='نرخ کوپن')?x:num('cpn')/100;
+  const r3=xirr(build(cpnO,amtO,false,false)), r4=xirr(build(cpnO,amtO,true,false));
+  if(feeIdx!=null)fees[feeIdx].p=keepF;
+
+  box.innerHTML=BIG(label,fmt(x))+
+    '<table style="margin-top:10px"><tbody>'+
+      '<tr><td>نرخ سازمان حاصل</td><td class="n">'+pct(r3)+'</td></tr>'+
+      '<tr><td>هزینه واقعی بانی</td><td class="n">'+pct(r4)+'</td></tr>'+
+    '</tbody></table>'+
+    (apply?'<button class="add" id="apply" style="margin-top:10px">اعمال روی '+label+'</button>':'')+
+    '<p class="note">تا وقتی اعمال نکنید، کارت نتیجهٔ بالا هنوز سناریوی فعلی را نشان می‌دهد نه این یکی.</p>';
+  const btn=document.getElementById('apply');
+  if(btn&&apply)btn.addEventListener('click',()=>apply(x));
+}
+
+/* ===== tables ===== */
+function schedule(cf,d0,Y){
+  const rows=cf.filter(c=>c.v<0);
+  const feeNames=new Set(fees.map(f=>f.n));
+  const by={};
+  for(const c of rows){const y=Math.floor((c.d-d0)/365.2425);by[y]=(by[y]||0)-c.v;}
+  let h='<table><thead><tr><th>سال</th><th style="text-align:left">کل پرداخت</th><th style="text-align:left">سهم کارمزد</th></tr></thead><tbody>';
+  Object.keys(by).sort((a,b)=>a-b).forEach(y=>{
+    const fs=rows.filter(c=>Math.floor((c.d-d0)/365.2425)==y&&feeNames.has(c.tag)).reduce((s,c)=>s-c.v,0);
+    h+='<tr><td>سال '+fa(+y+1)+'</td><td class="n">'+money(by[y])+'</td><td class="n">'+money(fs)+'</td></tr>';
+  });
+  h+='<tr><td style="font-weight:700">جمع</td><td class="n" style="font-weight:800">'+
+     money(rows.reduce((s,c)=>s-c.v,0))+'</td><td class="n"></td></tr></tbody></table>'+
+     '<p class="note">مبالغ به میلیون ریال. سال‌ها از تاریخ پذیره‌نویسی شمرده می‌شود، نه سال مالی.</p>';
+  document.getElementById('sched').innerHTML=h;
+}
+
+function shifts(cpn){
+  const box=document.getElementById('shifts');
+  const conv=document.getElementById('conv').value;
+  if(conv==='none'){box.innerHTML='<p class="note">تعدیل خاموش است. تاریخ‌ها همان‌طور که هستند استفاده می‌شوند، حتی اگر تعطیل باشند.</p>';return;}
+  if(!lastShifts.length){box.innerHTML='<p class="note">هیچ تاریخ پرداختی روی تعطیلی نیفتاده است.</p>';return;}
+  let h='<table><thead><tr><th>پرداخت</th><th>از</th><th>به</th><th>دلیل</th></tr></thead><tbody>';
+  lastShifts.slice(0,24).forEach(s=>{
+    h+='<tr><td>'+s.label+'</td><td class="n">'+jstr(s.raw)+'</td><td class="n sh">'+jstr(s.adj)+
+       '</td><td style="font-size:11.5px">'+s.why+(s.back?' — عقب':'')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  /* rate impact of the adjustment */
+  const sv=document.getElementById('conv').value;
+  document.getElementById('conv').value='none';
+  const r3n=xirr(build(cpn,null,false,false)), r4n=xirr(build(cpn,null,true,false));
+  document.getElementById('conv').value=sv;
+  const r3a=xirr(build(cpn,null,false,false)), r4a=xirr(build(cpn,null,true,false));
+  h+='<table style="margin-top:10px"><thead><tr><th></th><th style="text-align:left">بدون تعدیل</th>'+
+     '<th style="text-align:left">با تعدیل</th><th style="text-align:left">اثر</th></tr></thead><tbody>'+
+     '<tr><td>نرخ سازمان</td><td class="n">'+pct(r3n)+'</td><td class="n">'+pct(r3a)+
+     '</td><td class="n">'+fa(((r3a-r3n)*100).toFixed(3))+'</td></tr>'+
+     '<tr><td>هزینه بانی</td><td class="n">'+pct(r4n)+'</td><td class="n">'+pct(r4a)+
+     '</td><td class="n">'+fa(((r4a-r4n)*100).toFixed(3))+'</td></tr></tbody></table>'+
+     '<p class="note">'+fa(lastShifts.length)+' تاریخ جابه‌جا شد. ◦ یعنی تعطیلی قمری تقریبی.</p>';
+  box.innerHTML=h;
+}
+
+/* ===== presets ===== */
+const KEYS=['amt','cpn','yrs','jy','jm','jd','cap','tgt','xhol','pday'];
+function save(){try{localStorage.setItem('ytm2',JSON.stringify({
+  f:fees,v:KEYS.reduce((o,k)=>(o[k]=document.getElementById(k).value,o),{}),
+  per:document.getElementById('per').value,conv:document.getElementById('conv').value,
+  wk:document.getElementById('wk').value,lun:document.getElementById('lun').checked}));}catch(e){}}
+function load(){try{
+  const s=JSON.parse(localStorage.getItem('ytm2')||'null');if(!s)return false;
+  fees=(s.f||DEF).map(x=>({u:'%',dly:0,...x}));
+  Object.entries(s.v||{}).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;});
+  if(s.per)document.getElementById('per').value=s.per;
+  if(s.conv)document.getElementById('conv').value=s.conv;
+  if(s.wk)document.getElementById('wk').value=s.wk;
+  if(typeof s.lun==='boolean')document.getElementById('lun').checked=s.lun;
+  return true;}catch(e){return false;}}
+
+/* ===== wiring ===== */
+document.getElementById('addfee').addEventListener('click',()=>{
+  fees.push({n:'رکن جدید',p:0,u:'%',b:'o',t:'0',r:true});drawFees();calc();});
+document.querySelectorAll('.presets button').forEach(b=>b.addEventListener('click',()=>{
+  const p=b.dataset.p;
+  if(p==='save'){save();const t=b.textContent;b.textContent='ذخیره شد ✓';setTimeout(()=>b.textContent=t,1400);}
+  if(p==='load'){if(load()){drawFees();calc();}}
+  if(p==='reset'){fees=DEF.map(x=>({...x}));drawFees();calc();}}));
+(function(){const s=document.getElementById('pday');
+  for(let d=1;d<=31;d++){const o=document.createElement('option');
+    o.value=String(d);o.textContent=fa(d)+(d===31?' — یا آخرین روز ماه':'');s.appendChild(o);}})();
+
+['amt','cpn','yrs','jy','jm','jd','cap','per','lever','tgt','tbase','unk','conv','wk','xhol','lun','pday']
+  .forEach(id=>{const el=document.getElementById(id);if(!el)return;
+    el.addEventListener('input',calc);el.addEventListener('change',calc);});
+document.querySelectorAll('#mode button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#mode button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');mode=b.dataset.m;
+  document.getElementById('m1').style.display=mode==='rate'?'':'none';
+  document.getElementById('m2').style.display=mode==='fee'?'':'none';
+  calc();}));
+
+if(!load())fees=DEF.map(x=>({...x}));
+drawFees();calc();
+
+/* Offline: register a service worker when the page is served over http(s).
+   Opened as a local file, or if registration is refused, the page still works —
+   it has no network dependencies at all. */
+(function(){
+  const el=document.getElementById('offline');
+  const say=(t,warn)=>{if(el)el.innerHTML='<span class="badge'+(warn?' warn':'')+'">'+t+'</span>';};
+  if(location.protocol==='file:'){say('فایل محلی — همیشه آفلاین');return;}
+  if(!('serviceWorker' in navigator)){say('این مرورگر حالت آفلاین را پشتیبانی نمی‌کند',1);return;}
+  navigator.serviceWorker.register('sw.js')
+    .then(()=>say('آفلاین آماده است'))
+    .catch(()=>say('حالت آفلاین فعال نشد — صفحه با اینترنت کار می‌کند',1));
+})();
+</script>
