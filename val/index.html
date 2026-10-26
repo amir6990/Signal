@@ -387,6 +387,7 @@ function drawTse(){
       :p.live?'<span class="badge">زنده · '+new Date(p.t).toLocaleTimeString('fa-IR')+'</span>'
              :'<span class="badge old">عدد ذخیره‌شدهٔ '+TSE_ASOF+'</span>')+
      ' مستقیم از cdn.tsetmc.com خوانده می‌شود و نیازی به ورود ندارد. فقط P/E؛ بقیهٔ ضرایب در تب بورس‌ویو.</p>'+
+     (tseState==='نشد'?'<p class="note" style="color:var(--warn)">خواندن زنده فقط از یک آدرس اینترنتی عادی کار می‌کند. روی فایل محلی و روی claude.ai سیاست امنیتی مرورگر جلویش را می‌گیرد و همین عدد ذخیره‌شده به کار می‌رود.</p>':'')+
      '<button class="add" id="tserefresh">به‌روزرسانی از TSETMC</button>'+
      '<div class="row2"><div><label>دامنه ±٪</label><input id="tseband" inputmode="decimal" value="15"></div><div></div></div>';
   box.innerHTML=h;
