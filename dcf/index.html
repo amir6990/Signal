@@ -246,8 +246,14 @@ function pickDefault(){
 }
 function applyRf(){
   if(rfSrc!=='live'||curveSel<0)return;
+  /* اخزا yields are nominal. On a real basis they must be deflated before
+     they are used as the risk-free rate, or the whole model is discounted
+     at a rate its cash flows were never built on. */
+  const inf=n('infl')/100;
+  const y=curve[curveSel].y;
+  const use=basis==='real'?toReal(y,inf):y;
   const el=document.getElementById('rf');
-  el.value=(curve[curveSel].y*100).toFixed(2);
+  el.value=(use*100).toFixed(2);
   el.readOnly=true;
   calc();
 }
@@ -265,7 +271,7 @@ function drawCurve(){
   const lo=curve[0], hi=curve[curve.length-1];
   h+='<p class="note"><span class="badge">'+fa(curve.length)+' ورقه · زنده</span> '+
      'کوتاه‌ترین '+fa(lo.d)+' روز '+fa((lo.y*100).toFixed(2))+'٪ · بلندترین '+fa(hi.d)+' روز '+fa((hi.y*100).toFixed(2))+'٪. '+
-     'برای افق چندساله، بلندترین سررسید مبنای درست‌تری است.</p>'+
+     'برای افق چندساله، بلندترین سررسید مبنای درست‌تری است.'+(basis==='real'?' <b>نرخ اخزا اسمی است و برای مبنای حقیقی با تورم مفروض تعدیل شده.</b>':'')+'</p>'+
      '<button class="add" id="curref" style="margin-top:6px">به‌روزرسانی منحنی</button>';
   box.innerHTML=h;
   document.getElementById('cursel').addEventListener('change',e=>{curveSel=+e.target.value;applyRf();});
@@ -424,7 +430,7 @@ function calc(){
 })();
 document.querySelectorAll('#basis button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#basis button').forEach(x=>x.setAttribute('aria-pressed','false'));
-  b.setAttribute('aria-pressed','true');basis=b.dataset.x;calc();}));
+  b.setAttribute('aria-pressed','true');basis=b.dataset.x;applyRf();calc();}));
 document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#tvm button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');tvMode=b.dataset.t;
@@ -433,7 +439,9 @@ document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',(
   calc();}));
 ['infl','yrs','rf','erp','beta','alpha','kd','tax','debt','eqmv','s0','taxop','g1','gN','m1','mN',
  'da','capex','nwc','mid','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares']
- .forEach(id=>{const e=document.getElementById(id);if(e){e.addEventListener('input',calc);e.addEventListener('change',calc);}});
+ .forEach(id=>{const e=document.getElementById(id);if(!e)return;
+ const h=()=>{ if(id==='infl')applyRf(); calc(); };
+ e.addEventListener('input',h);e.addEventListener('change',h);});
 
 document.querySelectorAll('#rfsrc button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#rfsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
