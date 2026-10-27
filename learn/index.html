@@ -1,0 +1,332 @@
+<title>مرور اوراق</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="مرور اوراق">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1F5E57">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="app.webmanifest">
+<style>
+
+:root{--bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
+ --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;--bar:#7FB3A6;
+ --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;
+ --soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;
+ --line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
+ --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;direction:rtl;
+ -webkit-text-size-adjust:100%;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:720px;margin-inline:auto;padding-top:20px}
+h1{font-size:21px;font-weight:800;margin:0 0 2px}
+.sub{color:var(--soft);font-size:12.5px;margin:0 0 6px}
+a{color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card>h2{font-size:13px;font-weight:700;margin:0 0 12px;color:var(--acc)}
+label{display:block;font-size:12px;font-weight:600;color:var(--soft);margin-bottom:4px}
+input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);background:var(--field);
+ border:1px solid var(--line);border-radius:10px;padding:10px 11px;appearance:none;direction:ltr;text-align:right}
+select{direction:rtl;padding-left:30px;background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
+ background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:var(--acc)}
+input[readonly]{opacity:.62}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.g2+.g2,.g3+.g2,.g2+.g3,.g3+.g3{margin-top:10px}
+.res{background:var(--acc);color:var(--acc-ink);border-radius:14px;padding:16px;margin-bottom:12px}
+.res h2{color:var(--acc-ink);opacity:.72;font-size:12px;margin:0 0 10px;font-weight:700}
+.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.16)}
+.big:last-of-type{border-bottom:0}
+.big .k{font-size:13px;opacity:.85;font-weight:600}
+.big .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
+.big.sm .v{font-size:16px;font-weight:700}
+.flag{margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.14)}
+.flag.bad{background:var(--warn-wash);color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 3px;border-bottom:1px solid var(--line);text-align:center}
+th:first-child,td:first-child{text-align:right;white-space:nowrap;font-weight:600}
+th{font-size:10.5px;color:var(--soft);font-weight:700}
+td{direction:ltr} td:first-child{direction:rtl}
+tr:last-child td{border-bottom:0}
+tr.hi td{background:var(--wash);font-weight:700}
+.tw{overflow-x:auto;margin-top:4px}
+.note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
+.badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;background:var(--wash);color:var(--acc)}
+.badge.old{background:var(--warn-wash);color:var(--warn)}
+
+.seg{display:flex;gap:6px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
+.seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);
+ font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+.seg.sm button{font-size:11.5px;padding:8px 2px}
+.btn{display:block;width:100%;border:0;border-radius:11px;padding:13px;font-family:var(--f);
+ font-size:14px;font-weight:700;background:var(--acc);color:var(--acc-ink);cursor:pointer;margin-top:9px}
+.btn.g{background:var(--wash);color:var(--acc)}
+.btn.w{background:var(--warn-wash);color:var(--warn)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px}
+.row2 .btn{margin-top:0}
+/* ordering drill */
+.slot{display:flex;align-items:center;gap:9px;background:var(--field);border:1px solid var(--line);
+ border-radius:11px;padding:11px;margin-bottom:8px;text-align:right;width:100%;font-family:var(--f);
+ font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer}
+.slot .num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--wash);color:var(--acc);
+ display:grid;place-items:center;font-size:12px;font-weight:800}
+.slot.ok{border-color:var(--acc);background:var(--wash)}
+.slot.no{border-color:var(--warn);background:var(--warn-wash);color:var(--warn)}
+.slot.ok .num{background:var(--acc);color:var(--acc-ink)}
+.slot.no .num{background:var(--warn);color:#fff}
+.slot:disabled{opacity:.45;cursor:default}
+.pick{background:var(--card);border:1px dashed var(--line)}
+.det{font-size:12px;font-weight:500;color:var(--soft);line-height:1.6;margin:-2px 0 10px 35px;padding-right:0}
+/* flashcard */
+.fc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 15px;min-height:150px;
+ display:flex;flex-direction:column;justify-content:center}
+.fc .q{font-size:16.5px;font-weight:700;line-height:1.6}
+.fc .a{font-size:14.5px;line-height:1.75;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+.fc .a b{color:var(--acc)}
+.tag{display:inline-block;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700;
+ background:var(--wash);color:var(--acc);margin-bottom:9px}
+.prog{height:5px;border-radius:5px;background:var(--line);overflow:hidden;margin:11px 0 0}
+.prog i{display:block;height:100%;background:var(--acc);transition:width .25s}
+.boxes{display:flex;gap:5px;margin-top:10px}
+.boxes div{flex:1;text-align:center;font-size:10px;font-weight:700;color:var(--soft);
+ background:var(--field);border:1px solid var(--line);border-radius:8px;padding:5px 2px}
+.boxes div b{display:block;font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+/* quiz */
+.opt{display:block;width:100%;text-align:right;background:var(--field);border:1px solid var(--line);
+ border-radius:11px;padding:12px;margin-top:8px;font-family:var(--f);font-size:13.5px;font-weight:600;
+ color:var(--ink);cursor:pointer;line-height:1.5}
+.opt.ok{border-color:var(--acc);background:var(--wash);color:var(--acc);font-weight:800}
+.opt.no{border-color:var(--warn);background:var(--warn-wash);color:var(--warn)}
+.opt:disabled{cursor:default}
+.ref h3{font-size:13.5px;margin:16px 0 6px;color:var(--acc)}
+.ref p{margin:0 0 9px;font-size:13.5px;line-height:1.7}
+.ref p b{color:var(--acc)}
+.ref .qq{font-weight:700;margin-bottom:2px}
+</style>
+
+<div class="wrap">
+  <h1>مرور اوراق</h1>
+  <p class="sub">مرابحه و سلف موازی استاندارد · برای حفظ کردن</p>
+  <p class="sub"><a href="../ytm/">نرخ مؤثر</a> · <a href="../val/">ضرایب</a> · <a href="../dcf/">DCF</a></p>
+  <p class="sub" id="offline" style="margin-bottom:14px"></p>
+
+  <div class="seg" id="nav" role="group">
+    <button data-v="seq" aria-pressed="true">ترتیب مراحل</button>
+    <button data-v="fc" aria-pressed="false">فلش‌کارت</button>
+    <button data-v="qz" aria-pressed="false">آزمون</button>
+    <button data-v="ref" aria-pressed="false">متن</button>
+  </div>
+
+  <div id="view"></div>
+</div>
+
+<script src="content.js"></script>
+<script>
+const FA='۰۱۲۳۴۵۶۷۸۹', fa=s=>String(s).replace(/\d/g,d=>FA[d]);
+const el=id=>document.getElementById(id);
+const V=()=>el('view');
+let view='seq';
+
+/* ---------- storage: Leitner boxes, due dates ---------- */
+const KEY='learn_sukuk_v1';
+const DAY=864e5;
+let ST={box:{},due:{},quiz:{best:0,runs:0},seq:{}};
+try{const r=JSON.parse(localStorage.getItem(KEY)||'null'); if(r)ST=Object.assign(ST,r);}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ST));}catch(e){}};
+const IVL=[0,1,3,7,21];                 /* days per box */
+const boxOf=i=>ST.box[i]||0;
+const dueNow=i=>(ST.due[i]||0)<=Date.now();
+const grade=(i,ok)=>{
+  const b=ok?Math.min(4,boxOf(i)+1):0;
+  ST.box[i]=b; ST.due[i]=Date.now()+IVL[b]*DAY; save();
+};
+const dueList=g=>CARDS.map((c,i)=>i).filter(i=>(g==='all'||CARDS[i][0]===g)&&dueNow(i));
+
+/* ---------- 1. ordering drill ---------- */
+let seqId='mo', placed=[], pool=[], checked=false;
+function seqInit(keep){
+  const d=SEQ.find(x=>x.id===seqId);
+  placed=[]; checked=false;
+  pool=d.steps.map((s,i)=>i);
+  for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+  drawSeq();
+}
+function drawSeq(){
+  const d=SEQ.find(x=>x.id===seqId);
+  let h='<div class="card"><h2>ترتیب مراحل انتشار</h2>'+
+    '<div class="seg sm" id="sq" role="group">'+
+      SEQ.map(x=>'<button data-s="'+x.id+'" aria-pressed="'+(x.id===seqId)+'">'+x.name+'</button>').join('')+
+    '</div><p class="note">به ترتیب بزنید. رنگ‌ها بعد از تمام شدن مشخص می‌شوند.'+
+    ((ST.seq[seqId]||0)?' بهترین رکورد شما: <b>'+fa(ST.seq[seqId])+' از '+fa(d.steps.length)+'</b>.':'')+
+    '</p></div>';
+
+  h+='<div class="card"><h2>ترتیب شما</h2>';
+  if(!placed.length)h+='<p class="note" style="margin:0">هنوز چیزی انتخاب نکرده‌اید.</p>';
+  placed.forEach((si,k)=>{
+    const ok=si===k;
+    h+='<button class="slot'+(checked?(ok?' ok':' no'):'')+'" disabled><span class="num">'+fa(k+1)+'</span>'+
+       d.steps[si][0]+(checked&&!ok?' — جای درستش '+fa(si+1):'')+'</button>';
+    if(checked)h+='<div class="det">'+d.steps[si][1]+'</div>';
+  });
+  h+='</div>';
+
+  if(pool.length){
+    h+='<div class="card"><h2>مرحلهٔ '+fa(placed.length+1)+' کدام است؟</h2>';
+    pool.forEach(si=>h+='<button class="slot pick" data-p="'+si+'"><span class="num">؟</span>'+d.steps[si][0]+'</button>');
+    h+='</div>';
+  }else{
+    const right=placed.filter((si,k)=>si===k).length;
+    h+='<div class="res"><h2>نتیجه</h2><div class="big"><span class="k">درست</span>'+
+      '<span class="v">'+fa(right)+' از '+fa(d.steps.length)+'</span></div>'+
+      (right===d.steps.length?'<div class="flag">کامل درست. همین ترتیب را در پرونده دنبال می‌کنید.</div>'
+        :'<div class="flag bad">جاهای قرمز را ببینید؛ توضیح هر مرحله زیرش آمده.</div>')+'</div>';
+    h+='<button class="btn" id="again">دوباره</button>';
+  }
+  V().innerHTML=h;
+  V().querySelectorAll('#sq button').forEach(b=>b.onclick=()=>{seqId=b.dataset.s;seqInit();});
+  V().querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
+    const si=+b.dataset.p;
+    placed.push(si); pool=pool.filter(x=>x!==si);
+    if(!pool.length)checked=true;
+    const best=ST.seq[seqId]||0, now=placed.filter((s,k)=>s===k).length;
+    if(!pool.length&&now>best){ST.seq[seqId]=now;save();}
+    drawSeq();
+  });
+  const ag=el('again'); if(ag)ag.onclick=()=>seqInit();
+}
+
+/* ---------- 2. flashcards ---------- */
+let fcGroup='all', fcQueue=[], fcAt=0, fcShown=false;
+function fcInit(){
+  fcQueue=dueList(fcGroup);
+  for(let i=fcQueue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[fcQueue[i],fcQueue[j]]=[fcQueue[j],fcQueue[i]];}
+  fcAt=0; fcShown=false; drawFc();
+}
+function drawFc(){
+  const counts=[0,0,0,0,0]; CARDS.forEach((c,i)=>counts[boxOf(i)]++);
+  let h='<div class="card"><h2>موضوع</h2><select id="fg">'+
+    '<option value="all">همه — '+fa(CARDS.length)+' کارت</option>'+
+    Object.keys(GROUPS).map(k=>{const t=CARDS.filter(c=>c[0]===k).length;
+      return '<option value="'+k+'"'+(k===fcGroup?' selected':'')+'>'+GROUPS[k]+' — '+fa(t)+'</option>';}).join('')+
+    '</select>'+
+    '<div class="boxes">'+['تازه','۱ روز','۳ روز','۷ روز','۲۱ روز']
+      .map((n,i)=>'<div>'+n+'<b>'+fa(counts[i])+'</b></div>').join('')+'</div>'+
+    '<p class="note">هر کارت که بدانید یک پله بالا می‌رود و دیرتر برمی‌گردد. ندانستید، برمی‌گردد سر خط.</p></div>';
+
+  if(!fcQueue.length){
+    const nxt=Math.min(...CARDS.map((c,i)=>ST.due[i]||0).filter(t=>t>Date.now()));
+    h+='<div class="res"><h2>فعلاً تمام</h2><div class="big"><span class="k">کارت باقی‌مانده</span><span class="v">۰</span></div>'+
+      '<div class="flag">'+(isFinite(nxt)?'کارت بعدی '+fa(new Date(nxt).toLocaleDateString('fa-IR'))+' برمی‌گردد.':'همه را دیده‌اید.')+'</div></div>'+
+      '<button class="btn g" id="reset">صفر کردن پیشرفت این موضوع</button>';
+    V().innerHTML=h; bindFg(); const r=el('reset');
+    if(r)r.onclick=()=>{(fcGroup==='all'?CARDS.map((c,i)=>i):dueAll(fcGroup)).forEach(i=>{delete ST.box[i];delete ST.due[i];});save();fcInit();};
+    return;
+  }
+  const i=fcQueue[fcAt], c=CARDS[i];
+  h+='<div class="fc"><span class="tag">'+GROUPS[c[0]]+' · جعبهٔ '+fa(boxOf(i))+'</span>'+
+     '<div class="q">'+c[1]+'</div>'+(fcShown?'<div class="a">'+c[2]+'</div>':'')+'</div>'+
+     '<div class="prog"><i style="width:'+((fcAt/fcQueue.length)*100).toFixed(1)+'%"></i></div>'+
+     '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQueue.length)+'</p>';
+  h+= fcShown
+    ? '<div class="row2"><button class="btn w" id="bad">نمی‌دانستم</button><button class="btn" id="good">می‌دانستم</button></div>'
+    : '<button class="btn" id="show">جواب</button>';
+  V().innerHTML=h; bindFg();
+  const s=el('show'); if(s)s.onclick=()=>{fcShown=true;drawFc();};
+  const nx=ok=>{grade(i,ok); fcAt++; fcShown=false;
+    if(fcAt>=fcQueue.length){fcInit();}else drawFc();};
+  const g=el('good'), b=el('bad');
+  if(g)g.onclick=()=>nx(true); if(b)b.onclick=()=>nx(false);
+}
+const dueAll=g=>CARDS.map((c,i)=>i).filter(i=>CARDS[i][0]===g);
+function bindFg(){const f=el('fg'); if(f)f.onchange=()=>{fcGroup=f.value;fcInit();};}
+
+/* ---------- 3. quiz ---------- */
+let qOrder=[], qAt=0, qScore=0, qPicked=-1, qOpts=[];
+function qzInit(){
+  qOrder=QUIZ.map((q,i)=>i);
+  for(let i=qOrder.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[qOrder[i],qOrder[j]]=[qOrder[j],qOrder[i]];}
+  qOrder=qOrder.slice(0,10); qAt=0; qScore=0; qPicked=-1; shuffleOpts(); drawQz();
+}
+function shuffleOpts(){
+  const q=QUIZ[qOrder[qAt]]; if(!q){qOpts=[];return;}
+  qOpts=q[1].map((t,i)=>({t,ok:i===q[2]}));
+  for(let i=qOpts.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[qOpts[i],qOpts[j]]=[qOpts[j],qOpts[i]];}
+}
+function drawQz(){
+  if(qAt>=qOrder.length){
+    const pc=Math.round(qScore/qOrder.length*100);
+    if(pc>(ST.quiz.best||0)){ST.quiz.best=pc;}
+    ST.quiz.runs=(ST.quiz.runs||0)+1; save();
+    V().innerHTML='<div class="res"><h2>نتیجهٔ آزمون</h2>'+
+      '<div class="big"><span class="k">درست</span><span class="v">'+fa(qScore)+' از '+fa(qOrder.length)+'</span></div>'+
+      '<div class="big sm"><span class="k">درصد</span><span class="v">'+fa(pc)+'٪</span></div>'+
+      '<div class="big sm"><span class="k">بهترین رکورد</span><span class="v">'+fa(ST.quiz.best)+'٪</span></div>'+
+      '<div class="flag'+(pc<70?' bad':'')+'">'+(pc===100?'بی‌نقص.'
+        :pc>=70?'قابل قبول. غلط‌ها را در فلش‌کارت مرور کنید.'
+        :'زیر هفتاد درصد. بخش فلش‌کارت را یک دور کامل بزنید.')+'</div></div>'+
+      '<button class="btn" id="qagain">آزمون تازه</button>';
+    el('qagain').onclick=qzInit; return;
+  }
+  const q=QUIZ[qOrder[qAt]];
+  let h='<div class="card"><h2>سؤال '+fa(qAt+1)+' از '+fa(qOrder.length)+'</h2>'+
+    '<div style="font-size:15.5px;font-weight:700;line-height:1.6">'+q[0]+'</div>';
+  qOpts.forEach((o,k)=>{
+    let cls='opt';
+    if(qPicked>=0){ if(o.ok)cls+=' ok'; else if(k===qPicked)cls+=' no'; }
+    h+='<button class="'+cls+'" data-o="'+k+'"'+(qPicked>=0?' disabled':'')+'>'+o.t+'</button>';
+  });
+  if(qPicked>=0)h+='<div class="flag'+(qOpts[qPicked].ok?'':' bad')+'" style="margin-top:12px">'+q[3]+'</div>';
+  h+='</div><div class="prog"><i style="width:'+((qAt/qOrder.length)*100).toFixed(1)+'%"></i></div>';
+  if(qPicked>=0)h+='<button class="btn" id="qnext">'+(qAt+1>=qOrder.length?'نتیجه':'سؤال بعد')+'</button>';
+  V().innerHTML=h;
+  V().querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{
+    qPicked=+b.dataset.o; if(qOpts[qPicked].ok)qScore++; drawQz();});
+  const nx=el('qnext'); if(nx)nx.onclick=()=>{qAt++;qPicked=-1;shuffleOpts();drawQz();};
+}
+
+/* ---------- 4. reference ---------- */
+function drawRef(){
+  let h='<div class="card ref"><h2>مراحل انتشار</h2>';
+  SEQ.forEach(d=>{
+    h+='<h3>'+d.name+'</h3>';
+    d.steps.forEach((s,i)=>h+='<p><b>'+fa(i+1)+'. '+s[0]+'</b> — '+s[1]+'</p>');
+  });
+  h+='</div>';
+  Object.keys(GROUPS).forEach(g=>{
+    h+='<div class="card ref"><h2>'+GROUPS[g]+'</h2>';
+    CARDS.forEach(c=>{if(c[0]===g)h+='<p class="qq">'+c[1]+'</p><p>'+c[2]+'</p>';});
+    h+='</div>';
+  });
+  h+='<div class="card"><p class="note" style="margin:0">اعداد فصل نرخ از مدل جریان نقدی پروندهٔ آرین پارس موتور '+
+     'استخراج و با محاسبهٔ مستقل بازبینی شده است. ساختار و مراحل اجرایی از پروپوزال‌های مشاورهٔ تأمین مالی '+
+     'گروه مالی فیروزه (شهریور و مهر ۱۴۰۵) برداشته شده است. مبانی عقد، حسابداری و ریسک، سازوکار متعارف بازار است. '+
+     '<span style="color:var(--warn)">مواد قانونی مالیاتی تأیید نشده‌اند؛ پیش از استناد با مشاور مالیاتی بررسی شود.</span></p></div>';
+  V().innerHTML=h;
+}
+
+/* ---------- nav ---------- */
+function render(){
+  if(view==='seq')seqInit();
+  else if(view==='fc')fcInit();
+  else if(view==='qz')qzInit();
+  else drawRef();
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true'); view=b.dataset.v; render();});
+render();
+
+(function(){const o=el('offline');
+  const say=(t,w)=>{if(o)o.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
+  if(location.protocol==='file:'){say('فایل محلی — همیشه آفلاین');return;}
+  if(!('serviceWorker' in navigator)){say('بدون پشتیبانی آفلاین',1);return;}
+  navigator.serviceWorker.register('sw.js').then(()=>say('آفلاین آماده است')).catch(()=>say('حالت آفلاین فعال نشد',1));})();
+</script>
