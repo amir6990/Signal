@@ -139,13 +139,36 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
       <div><label>نرخ مالیات عملیاتی ٪</label><input id="taxop" inputmode="decimal" value="25"></div>
       <div><label>سرمایهٔ به‌کارگرفتهٔ ابتدای دوره <span class="u"></span></label><input id="ic0" inputmode="numeric" value="0"></div>
       <div><label>تنزیل</label><select id="mid"><option value="0" selected>پایان سال</option><option value="1">میانهٔ سال</option></select></div>
-      <div><label>تورم بلندمدت ایران ٪</label><input id="infl" inputmode="decimal" value="39.5"></div>
     </div>
-    <p class="note">تورم پیش‌فرض میانگین هفت‌سالهٔ بانک جهانی برای ۲۰۱۹ تا ۲۰۲۵ است (۳۹.۵٪).</p>
+    <p class="note">تورم و رشد اقتصادی به کارت «متغیرهای کلان» منتقل شدند.</p>
+  </div>
+
+  <div class="card">
+    <h2>متغیرهای کلان</h2>
+    <div><label>تورم ریالی ٪</label>
+      <select id="infsrc"></select></div>
+    <div style="margin-top:10px"><label>تورم دلاری (آمریکا) ٪</label>
+      <select id="ussrc"></select></div>
+    <div style="margin-top:10px"><label>رشد حقیقی اقتصاد ایران ٪</label>
+      <select id="grsrc"></select></div>
+    <div class="g2" style="margin-top:11px">
+      <div><label>تورم ریالی به‌کاررفته ٪</label><input id="infl" inputmode="decimal" value="39.41"></div>
+      <div><label>رشد حقیقی به‌کاررفته ٪</label><input id="greal" inputmode="decimal" value="2.41"></div>
+    </div>
+    <input type="hidden" id="usinf" value="2.85">
+    <p class="note" id="macronote"></p>
   </div>
 
   <div class="card">
     <h2>۴ · هزینهٔ سرمایه</h2>
+    <div class="seg" id="wmode" role="group" style="margin-bottom:11px">
+      <button data-w="calc" aria-pressed="true">از اجزا محاسبه شود</button>
+      <button data-w="man" aria-pressed="false">WACC را خودم می‌گذارم</button>
+    </div>
+    <div id="wmanbox" style="display:none;margin-bottom:11px">
+      <label>WACC دستی ٪</label><input id="wman" inputmode="decimal" value="49">
+      <p class="note" id="wmannote"></p>
+    </div>
     <div class="seg" id="basis" role="group"><button data-x="nom" aria-pressed="true">اسمی</button><button data-x="real" aria-pressed="false">حقیقی</button></div>
     <div class="seg sm" id="erpsrc" role="group" style="margin-top:8px">
       <button data-e="loc" aria-pressed="true">محلی — اخزا</button>
@@ -241,7 +264,18 @@ const IND_ASOF = "1405/08/04";
 /* published inputs, with their vintage — check these before leaning on them */
 const DAM={asof:'۵ ژانویه ۲۰۲۶',rating:'NR — رتبه‌بندی نشده',spread:6.37,crp:9.71,erp:13.94,mature:4.23,tax:13.95};
 const UST={v:5.00,asof:'۲۰۲۶/۱۰/۲۳',src:'FRED — DGS10'};
-const INF={ir:39.51,us:2.5,span:'۲۰۱۹ تا ۲۰۲۵'};
+/* World Bank WDI, retrieved 2026-10-27. Geometric means — these compound. */
+const MACRO={
+  src:'بانک جهانی — WDI',  asof:'۱۴۰۵/۰۸/۰۵',
+  ir:[['g7',39.41,'میانگین ۷ ساله ۲۰۱۹–۲۰۲۵'],['g5',41.14,'میانگین ۵ ساله ۲۰۲۱–۲۰۲۵'],
+      ['g3',39.64,'میانگین ۳ ساله ۲۰۲۳–۲۰۲۵'],['g10',30.20,'میانگین ۱۰ ساله ۲۰۱۶–۲۰۲۵'],
+      ['last',42.17,'آخرین سال ۲۰۲۵']],
+  us:[['g10',2.85,'میانگین ۱۰ ساله ۲۰۱۵–۲۰۲۴'],['last',2.95,'آخرین منتشرشده ۲۰۲۴'],
+      ['g5',4.18,'میانگین ۵ ساله ۲۰۲۰–۲۰۲۴'],['fed',2.00,'هدف اعلامی فدرال‌رزرو']],
+  gr:[['g10',2.41,'میانگین ۱۰ ساله ۲۰۱۶–۲۰۲۵'],['g5',2.89,'میانگین ۵ ساله ۲۰۲۱–۲۰۲۵'],
+      ['last',-2.83,'آخرین سال ۲۰۲۵']]
+};
+const INF={ir:39.41,us:2.85,span:'۲۰۱۹ تا ۲۰۲۵'};
 const MKT_PE=7.38;
 
 const UNITS={mr:{n:'میلیون ریال',m:1},br:{n:'میلیارد ریال',m:1000},
@@ -263,7 +297,7 @@ const HROWS=[['s','فروش',1],['e','EBITDA',1],['d','استهلاک',1],['ni',
 const HDEF={s:[520000,700000,1000000],e:[120000,165000,240000],d:[22000,29000,40000],
             ni:[70000,100000,150000],cx:[33000,43000,60000],nw:[110000,150000,215000]};
 
-let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='', curveAge=null;
+let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='', curveAge=null, wMode='calc';
 const toReal=(nm,i)=>(1+nm)/(1+i)-1, toNom=(r,i)=>(1+r)*(1+i)-1;
 
 /* ===== historical grid ===== */
@@ -327,7 +361,44 @@ function wacc(){
   const kd=n('kd')/100,t=n('tax')/100,D=n('debt'),E=n('eqmv');
   const ke=rf+b*erp+al, kdAt=kd*(1-t), V=D+E;
   const wd=V>0?D/V:0, we=V>0?E/V:1;
-  return {ke,kdAt,wd,v:we*ke+wd*kdAt};
+  const calc=we*ke+wd*kdAt;
+  /* a manual WACC replaces the result, never the components — both stay visible */
+  return {ke,kdAt,wd,calc,v:wMode==='man'?n('wman')/100:calc,manual:wMode==='man'};
+}
+
+/* ===== macro: pick a source, see what it does to the ceiling on growth ===== */
+function fillMacro(){
+  const mk=(id,arr,unitPc)=>{
+    const el=document.getElementById(id); if(!el||el.dataset.done)return;
+    el.innerHTML=arr.map(([k,v,lbl])=>'<option value="'+k+'">'+lbl+' — '+fa(v.toFixed(2))+'٪</option>').join('')
+      +'<option value="man">دستی</option>';
+    el.dataset.done='1';
+  };
+  mk('infsrc',MACRO.ir); mk('ussrc',MACRO.us); mk('grsrc',MACRO.gr);
+}
+function applyMacro(){
+  const put=(selId,arr,fieldId)=>{
+    const sel=document.getElementById(selId), f=document.getElementById(fieldId);
+    if(!sel||!f)return;
+    if(sel.value==='man'){f.readOnly=false;return;}
+    const row=arr.find(r=>r[0]===sel.value);
+    if(row)f.value=row[1].toFixed(2);
+    f.readOnly=true;
+  };
+  put('infsrc',MACRO.ir,'infl');
+  put('ussrc',MACRO.us,'usinf');
+  put('grsrc',MACRO.gr,'greal');
+  INF.ir=n('infl'); INF.us=n('usinf');
+}
+function macroLine(w,gt){
+  const el=document.getElementById('macronote'); if(!el)return;
+  const inf=n('infl')/100, gr=n('greal')/100, us=n('usinf')/100;
+  const gdpNom=(1+gr)*(1+inf)-1;
+  let h='تورم ریالی '+pc(inf)+' · رشد حقیقی '+pc(gr)+' · <b>رشد اسمی اقتصاد '+pc(gdpNom)+'</b>'+
+        ' · تورم آمریکا '+pc(us)+'<br>منبع '+MACRO.src+' — همگی میانگین هندسی، چون نرخ‌ها مرکب می‌شوند.';
+  if(gt>gdpNom)h+='<div class="flag bad">رشد دائمی '+pc(gt)+' از رشد اسمی اقتصاد '+pc(gdpNom)+
+    ' بیشتر است. در بی‌نهایت این یعنی شرکت بزرگ‌تر از کل اقتصاد می‌شود — سقف رشد دائمی همین عدد است.</div>';
+  el.innerHTML=h;
 }
 function applyErp(){
   if(erpSrc==='man'){document.getElementById('erp').readOnly=false;document.getElementById('rf').readOnly=(curveSel>=0);return;}
@@ -719,7 +790,7 @@ function calc(){
     'رشد ۱۴۰۳ '+pc(HS.g1)+' · رشد ۱۴۰۴ '+pc(HS.g2)+' · <b>CAGR دوساله '+pc(HS.cagr)+'</b> · '+
     'سرمایه در گردش '+pc(HS.dnwc)+' از هر ریال رشد فروش';
 
-  applyErp();
+  applyMacro(); applyErp();
   const R=keRoutes(), W=wacc(), w=W.v, inf=n('infl')/100;
   const gt=n('gterm')/100, xm=n('xmult'), sT=n('sT'), mT=n('mT')/100, s0=H('s',2);
 
@@ -730,8 +801,18 @@ function calc(){
     '<tr'+(erpSrc==='usd'?' class="hi"':'')+'><td>دلاری — داموداران</td><td>'+fa(UST.v.toFixed(2))+'٪ دلاری</td><td>'+fa(DAM.erp)+'٪</td><td>'+pc(R.usd)+' ریالی</td></tr>'+
     '<tr><td>ضمنی بازار تهران</td><td>'+pc(R.rfL)+'</td><td style="color:var(--warn)">'+pc(R.impErp)+'</td><td>'+pc(R.ep)+' (E/P)</td></tr>'+
     '</tbody>';
+  if(W.manual){
+    const gap=(w-W.calc)*100;
+    document.getElementById('wmannote').innerHTML=
+      'از اجزا درمی‌آمد <b>'+pc(W.calc)+'</b> · شما گذاشتید <b>'+pc(w)+'</b>'+
+      (Math.abs(gap)<0.5?' — عملاً یکی.'
+        :' — '+fa(Math.abs(gap).toFixed(2))+' واحد '+(gap>0?'بالاتر':'پایین‌تر')+
+         '.<br><span style="color:var(--warn)">اجزا (اخزا، بتا، صرف ریسک) دیگر روی ارزش اثر ندارند؛ '+
+         'فقط برای مقایسه نشان داده می‌شوند. اگر این اختلاف را عمداً گذاشته‌اید، در گزارش دلیلش را بنویسید.</span>');
+  }
   document.getElementById('waccnote').innerHTML=
-    'Ke '+pc(W.ke)+' · Kd پس از مالیات '+pc(W.kdAt)+' · وزن بدهی '+pc(W.wd)+' · <b>WACC '+pc(w)+'</b><br>'+
+    'Ke '+pc(W.ke)+' · Kd پس از مالیات '+pc(W.kdAt)+' · وزن بدهی '+pc(W.wd)+' · <b>WACC '+pc(w)+'</b>'+
+    (W.manual?' <span style="color:var(--warn)">(دستی — از اجزا '+pc(W.calc)+')</span>':'')+'<br>'+
     (basis==='nom'?'مبنا اسمی؛ معادل حقیقی WACC '+pc(toReal(w,inf)):'مبنا حقیقی؛ معادل اسمی WACC '+pc(toNom(w,inf)))+
     '<br><span style="color:var(--warn)">بازار تهران با P/E '+fa(MKT_PE)+' یعنی بازده سود '+pc(R.ep)+
     ' در برابر اخزا '+pc(R.rfL)+' — صرف ریسک ضمنی '+pc(R.impErp)+
@@ -796,23 +877,37 @@ function calc(){
   document.getElementById('sens').innerHTML=s+'</tbody></table><p class="note">ارزش حقوق صاحبان سهام به '+u.n+'.</p>';
 
   football(rows,w,gt,xm);
+  macroLine(w,gt); drawSrcs();
   consistency(rows,w,tg);
   applyDep(); usdBlock(rows,w,eq,D.ev,tg);
 }
 
 /* sources */
-document.getElementById('srcs').innerHTML=
- '<thead><tr><th>قلم</th><th>مقدار</th><th>منبع و تاریخ</th></tr></thead><tbody>'+
- '<tr><td>صرف ریسک کل ایران</td><td>'+fa(DAM.erp)+'٪</td><td>داموداران — '+DAM.asof+'</td></tr>'+
- '<tr><td>صرف ریسک کشوری ایران</td><td>'+fa(DAM.crp)+'٪</td><td>همان</td></tr>'+
- '<tr><td>صرف بازار بالغ</td><td>'+fa(DAM.mature)+'٪</td><td>همان — آلمان با CRP صفر</td></tr>'+
- '<tr><td>اسپرد نکول ایران</td><td>'+fa(DAM.spread)+'٪</td><td>همان — رتبه '+DAM.rating+'</td></tr>'+
- '<tr><td>اوراق ۱۰ سالهٔ آمریکا</td><td>'+fa(UST.v.toFixed(2))+'٪</td><td>'+UST.src+' — '+UST.asof+'</td></tr>'+
- '<tr><td>تورم ایران</td><td>'+fa(INF.ir)+'٪</td><td>بانک جهانی — میانگین '+INF.span+'</td></tr>'+
- '<tr><td>تورم آمریکا</td><td>'+fa(INF.us)+'٪</td><td>فرض بلندمدت</td></tr>'+
- '<tr><td>P/E بازار تهران</td><td>'+fa(MKT_PE)+'</td><td>بورس‌ویو — '+IND_ASOF+'</td></tr>'+
- '<tr><td>نرخ بدون ریسک ریالی</td><td>زنده</td><td>اخزا — cdn.tsetmc.com</td></tr>'+
- '</tbody>';
+/* redrawn on every calc so the macro row shows the choice actually in force */
+function drawSrcs(){
+  const lbl=(id,arr)=>{const sel=document.getElementById(id);
+    if(!sel)return '—';
+    if(sel.value==='man')return 'دستی — وارد شده توسط کاربر';
+    const r=arr.find(x=>x[0]===sel.value); return r?MACRO.src+' — '+r[2]:MACRO.src;};
+  const L=FX.live;
+  document.getElementById('srcs').innerHTML=
+   '<thead><tr><th>قلم</th><th>مقدار</th><th>منبع و تاریخ</th></tr></thead><tbody>'+
+   '<tr><td>صرف ریسک کل ایران</td><td>'+fa(DAM.erp)+'٪</td><td>داموداران — '+DAM.asof+'</td></tr>'+
+   '<tr><td>صرف ریسک کشوری ایران</td><td>'+fa(DAM.crp)+'٪</td><td>همان</td></tr>'+
+   '<tr><td>صرف بازار بالغ</td><td>'+fa(DAM.mature)+'٪</td><td>همان — آلمان با CRP صفر</td></tr>'+
+   '<tr><td>اسپرد نکول ایران</td><td>'+fa(DAM.spread)+'٪</td><td>همان — رتبه '+DAM.rating+'</td></tr>'+
+   '<tr><td>اوراق ۱۰ سالهٔ آمریکا</td><td>'+fa(UST.v.toFixed(2))+'٪</td><td>'+UST.src+' — '+UST.asof+'</td></tr>'+
+   '<tr><td>تورم ریالی</td><td>'+fa(n('infl').toFixed(2))+'٪</td><td>'+lbl('infsrc',MACRO.ir)+'</td></tr>'+
+   '<tr><td>تورم آمریکا</td><td>'+fa(n('usinf').toFixed(2))+'٪</td><td>'+lbl('ussrc',MACRO.us)+'</td></tr>'+
+   '<tr><td>رشد حقیقی اقتصاد ایران</td><td>'+fa(n('greal').toFixed(2))+'٪</td><td>'+lbl('grsrc',MACRO.gr)+'</td></tr>'+
+   '<tr><td>P/E بازار تهران</td><td>'+fa(MKT_PE)+'</td><td>بورس‌ویو — '+IND_ASOF+'</td></tr>'+
+   '<tr><td>نرخ بدون ریسک ریالی</td><td>'+(curve.length&&curveSel>=0?pc(curve[curveSel].y):'دستی')+
+     '</td><td>اخزا — cdn.tsetmc.com'+(curveAge?' (ذخیره‌شده)':'')+'</td></tr>'+
+   '<tr><td>نرخ دلار آزاد</td><td>'+money(n('fx'))+' ریال</td><td>'+
+     (L?FX.src+' — '+fa(L.j||L.g):'پیش‌فرض '+FX.asof)+'</td></tr>'+
+   '<tr><td>WACC</td><td>'+pc(wacc().v)+'</td><td>'+(wMode==='man'?'دستی — وارد شده توسط کاربر':'محاسبه از اجزا')+'</td></tr>'+
+   '</tbody>';
+}
 
 /* wiring */
 (function(){const sel=document.getElementById('ind');
@@ -829,6 +924,14 @@ document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',(
   b.setAttribute('aria-pressed','true');tvMode=b.dataset.t;
   document.getElementById('tvg').style.display=tvMode==='g'?'':'none';
   document.getElementById('tvx').style.display=tvMode==='x'?'':'none';calc();}));
+document.querySelectorAll('#wmode button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#wmode button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');wMode=b.dataset.w;
+  document.getElementById('wmanbox').style.display=wMode==='man'?'':'none';
+  if(wMode==='man'){const W=wacc();document.getElementById('wman').value=(W.calc*100).toFixed(2);}
+  calc();}));
+['infsrc','ussrc','grsrc'].forEach(id=>{const e=document.getElementById(id);
+  if(e)e.addEventListener('change',()=>{applyMacro();applyErp();calc();});});
 document.querySelectorAll('#fxsrc button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#fxsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');fxSrc=b.dataset.f;loadFx(false);}));
@@ -846,11 +949,11 @@ document.getElementById('fillhist').addEventListener('click',()=>{
   calc();});
 ['unit','sT','mT','path','k','da','capex','nwc','taxop','mid','infl','rf','erp','beta','alpha','kd','tax',
  'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares','fx','dep',
- 'cxT','nwT','niT','ic0']
+ 'cxT','nwT','niT','ic0','wman','greal','usinf']
  .forEach(id=>{const e=document.getElementById(id);if(!e)return;
    e.addEventListener('input',calc);e.addEventListener('change',calc);});
 
-drawHist();applyDep();calc();loadCurve(false);loadFx(false);
+fillMacro();applyMacro();drawHist();applyDep();calc();loadCurve(false);loadFx(false);
 
 (function(){const el=document.getElementById('offline');
   const say=(t,w)=>{if(el)el.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
