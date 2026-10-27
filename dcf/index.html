@@ -62,6 +62,8 @@ tr.hi td{background:var(--wash);font-weight:700}
 .seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
 .seg.sm button{font-size:11.5px;padding:8px 2px}
+details summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--acc);padding:6px 0}
+details[open] summary{margin-bottom:2px}
 .mini{border:1px solid var(--line);background:var(--field);color:var(--ink);font-family:var(--f);
  font-size:11px;font-weight:700;border-radius:7px;padding:4px 9px;cursor:pointer}
 button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--acc);font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
@@ -105,17 +107,30 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
   </div>
 
   <div class="card">
-    <h2>۲ · تارگت سال پنجم</h2>
-    <div class="g2">
+    <h2>۲ · برنامهٔ سال پنجم</h2>
+    <p class="note" style="margin:0 0 11px">مدیرعامل برنامه‌اش را چطور می‌گوید؟ همان را وارد کنید؛ بقیه را مدل حساب می‌کند.</p>
+    <select id="tmode">
+      <option value="n" selected>فروش و سود خالص (مبلغ)</option>
+      <option value="nm">فروش و حاشیهٔ سود خالص ٪</option>
+      <option value="e">فروش و EBITDA (مبلغ)</option>
+      <option value="m">فروش و حاشیهٔ EBITDA ٪</option>
+    </select>
+    <div class="g2" style="margin-top:11px">
       <div><label>فروش سال ۵ <span class="u"></span></label><input id="sT" inputmode="numeric" value="4000000"></div>
-      <div><label>حاشیه EBITDA سال ۵ ٪</label><input id="mT" inputmode="decimal" value="21"></div>
-      <div><label>مخارج سرمایه‌ای سال ۵ ٪ از فروش</label><input id="cxT" inputmode="decimal" value="6"></div>
-      <div><label>سرمایه در گردش سال ۵ ٪ از رشد فروش</label><input id="nwT" inputmode="decimal" value="20"></div>
+      <div id="f_n"><label>سود خالص سال ۵ <span class="u"></span></label><input id="niT" inputmode="numeric" value="500000"></div>
+      <div id="f_nm" style="display:none"><label>حاشیهٔ سود خالص سال ۵ ٪</label><input id="nmT" inputmode="decimal" value="12.5"></div>
+      <div id="f_e" style="display:none"><label>EBITDA سال ۵ <span class="u"></span></label><input id="eT" inputmode="numeric" value="840000"></div>
+      <div id="f_m" style="display:none"><label>حاشیهٔ EBITDA سال ۵ ٪</label><input id="mT" inputmode="decimal" value="21"></div>
     </div>
-    <div style="margin-top:11px">
-      <label>سود خالص سال ۵ <span class="u"></span> — اختیاری، فقط برای آزمون</label>
-      <input id="niT" inputmode="numeric" value="" placeholder="خالی بگذارید تا مدل خودش بگوید">
-    </div>
+    <div id="derived"></div>
+    <details style="margin-top:12px">
+      <summary>سرمایه‌گذاری سال ۵ — اگر مدیرعامل گفته است</summary>
+      <div class="g2" style="margin-top:10px">
+        <div><label>مخارج سرمایه‌ای ٪ از فروش</label><input id="cxT" inputmode="decimal" value="6"></div>
+        <div><label>سرمایه در گردش ٪ از رشد فروش</label><input id="nwT" inputmode="decimal" value="20"></div>
+      </div>
+      <p class="note">اگر نمی‌دانید، دست نزنید — از نقطهٔ شروع در کارت ۳ ثابت می‌ماند.</p>
+    </details>
     <div style="margin-top:11px"><label>تابع رسیدن به تارگت</label>
       <select id="path">
         <option value="geo" selected>هندسی — رشد مرکب یکنواخت</option>
@@ -297,7 +312,7 @@ const HROWS=[['s','فروش',1],['e','EBITDA',1],['d','استهلاک',1],['ni',
 const HDEF={s:[520000,700000,1000000],e:[120000,165000,240000],d:[22000,29000,40000],
             ni:[70000,100000,150000],cx:[33000,43000,60000],nw:[110000,150000,215000]};
 
-let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='', curveAge=null, wMode='calc';
+let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='', curveAge=null, wMode='calc', tMode='n';
 const toReal=(nm,i)=>(1+nm)/(1+i)-1, toNom=(r,i)=>(1+r)*(1+i)-1;
 
 /* ===== historical grid ===== */
@@ -418,6 +433,41 @@ function applyErp(){
     erpEl.value=(((basis==='real'?toReal(keR,R.inf):keR)-rfR*(basis==='real'?1:1))*100/Math.max(0.0001,n('beta'))).toFixed(2);
   }
   rfEl.readOnly=true; erpEl.readOnly=true;
+}
+
+/* ===== whatever the CEO stated -> the EBITDA margin the model needs =====
+   Sales and one profit figure are enough. Net income is not a cash-flow driver,
+   but it does pin the margin down, so it can be inverted rather than ignored:
+     NI = (EBIT - interest)(1-t)  ->  EBITDA = NI/(1-t) + interest + depreciation */
+function planMargin(sT){
+  const da=n('da')/100, t=n('taxop')/100, intr=n('debt')*n('kd')/100;
+  if(tMode==='m')return n('mT')/100;
+  if(tMode==='e')return sT>0?n('eT')/sT:0;
+  const ni=tMode==='nm'?sT*n('nmT')/100:n('niT');
+  if(t>=1)return 0;
+  const ebit=ni/(1-t)+intr;
+  return sT>0?(ebit+sT*da)/sT:0;
+}
+function planLine(sT,mT,HS){
+  const el=document.getElementById('derived'); if(!el)return;
+  const da=n('da')/100, t=n('taxop')/100, intr=n('debt')*n('kd')/100, u=unit();
+  const ebitda=sT*mT, dep=sT*da, ebit=ebitda-dep, ni=(ebit-intr)*(1-t);
+  let h='<div class="flag">سال ۵ طبق برنامهٔ شما: EBITDA <b>'+money(ebitda)+'</b> ('+pc(mT)+' فروش)'+
+    ' · EBIT <b>'+money(ebit)+'</b> · سود خالص <b>'+money(ni)+'</b>'+
+    (sT>0?' (حاشیهٔ '+pc(ni/sT)+')':'')+' — به '+u.n+'.</div>';
+  const fl=[];
+  if(mT<=0)fl.push('حاشیهٔ EBITDA لازم صفر یا منفی درآمد. با این فروش و این سود، عددها جور نمی‌شوند.');
+  else if(mT>0.6)fl.push('برای رسیدن به این سود، حاشیهٔ EBITDA باید '+pc(mT)+
+    ' شود. این برای تولید خیلی بالاست — یا فروش تارگت کم است یا سود تارگت خوش‌بین.');
+  if(isFinite(HS.m)&&HS.m>0&&mT>0){
+    const d=(mT-HS.m)*100;
+    if(Math.abs(d)>8)fl.push('حاشیهٔ لازم '+pc(mT)+' در برابر '+pc(HS.m)+' تاریخی — '+
+      fa(Math.abs(d).toFixed(1))+' واحد '+(d>0?'بالاتر':'پایین‌تر')+
+      '. باید بگویید چه چیزی در عملیات عوض می‌شود که این اتفاق بیفتد.');
+  }
+  if(intr>0&&ebit>0&&intr/ebit>0.5)fl.push('بهره '+money(intr)+' بیش از نصف EBIT را می‌برد.');
+  fl.forEach(x=>h+='<div class="flag bad">'+x+'</div>');
+  el.innerHTML=h;
 }
 
 /* ===== projection ===== */
@@ -546,42 +596,43 @@ function consistency(rows,w,tg){
   const gSupported=(isFinite(avgRoic)&&isFinite(avgRir))?avgRir*avgRoic:NaN;
   const niModel=last.ni, niMargin=last.sales>0?niModel/last.sales:NaN;
 
-  let h='<h2 style="margin:0 0 9px">رشد پرداخت شده است؟</h2>';
-  h+=BIGR('ROIIC دورهٔ پیش‌بینی',isFinite(roiic)?pc(roiic):'سرمایهٔ به‌کارگرفته لازم است');
-  if(isFinite(gSupported))h+=SM('رشدی که سرمایه‌گذاری مجدد پشتیبانی می‌کند',pc(gSupported)+' در برابر تارگت '+pc(tg));
+  let h='<h2 style="margin:0 0 6px">این رشد از کجا می‌آید؟</h2>'+
+    '<p class="note" style="margin:0 0 11px">فروش خودش بالا نمی‌رود. برای فروش بیشتر باید دستگاه و انبار '+
+    'و موجودی خرید. سؤال این است: خرجی که در مدل گذاشته‌اید، این مقدار رشد را می‌سازد؟</p>';
+  h+=BIGR('بازده هر ریال خرج تازه',isFinite(roiic)?pc(roiic):'سرمایهٔ به‌کارگرفته لازم است');
+  if(isFinite(gSupported))h+=SM('رشدی که این خرج می‌سازد',pc(gSupported)+' در برابر برنامهٔ شما '+pc(tg));
   if(ic0>0&&isFinite(rows[0].roic)&&isFinite(last.roic))
     h+=SM('مسیر ROIC',pc(rows[0].roic)+' → '+pc(last.roic));
-  h+=SM('سود خالص سال ۵ طبق مدل',money(niModel)+' '+u.n+(isFinite(niMargin)?' · حاشیه '+pc(niMargin):''));
+  h+=SM('سود خالص سال ۵',money(niModel)+' '+u.n+(isFinite(niMargin)?' · حاشیه '+pc(niMargin):''));
 
   const fl=[];
   if(!(ic0>0))fl.push({bad:false,t:'برای ROIC و ROIIC باید «سرمایهٔ به‌کارگرفتهٔ ابتدای دوره» را وارد کنید '+
     '(حقوق صاحبان سهام دفتری + بدهی بهره‌دار − نقد). بدون آن این آزمون کار نمی‌کند.'});
   if(isFinite(roiic)){
-    if(roiic>3*w)fl.push({bad:true,t:'ROIIC '+pc(roiic)+' بیش از سه برابر WACC است. یعنی هر ریال سرمایه‌گذاری مجدد '+
-      'بازدهی غیرمتعارف می‌سازد — یا capex تارگت خیلی کم است یا حاشیهٔ تارگت خیلی خوش‌بین.'});
-    else if(roiic<0)fl.push({bad:true,t:'ROIIC منفی است: دارید سرمایه می‌گذارید و NOPAT کم می‌شود. '+
-      'با این فرض‌ها رشد ارزش‌سوز است، نه ارزش‌ساز.'});
-    else if(roiic<w)fl.push({bad:true,t:'ROIIC '+pc(roiic)+' کمتر از WACC '+pc(w)+' است. '+
-      'رشد در این حالت ارزش را کم می‌کند؛ هر چه بیشتر رشد کنید بدتر.'});
+    if(roiic>3*w)fl.push({bad:true,t:'هر ریال خرج تازه '+pc(roiic)+' برمی‌گرداند — بیش از سه برابر هزینهٔ پول شما. '+
+      'این خیلی خوب است که باور کردنی باشد؛ یعنی خرج سرمایه‌ای را کم گذاشته‌اید یا سود تارگت را زیاد.'});
+    else if(roiic<0)fl.push({bad:true,t:'هر ریال خرج تازه سود را کم می‌کند. با این فرض‌ها، هرچه شرکت بزرگ‌تر شود بدتر می‌شود.'});
+    else if(roiic<w)fl.push({bad:true,t:'هر ریال خرج تازه '+pc(roiic)+' برمی‌گرداند، ولی پول برای شرکت '+pc(w)+
+      ' هزینه دارد. یعنی این رشد ارزش را کم می‌کند، نه زیاد. در این حالت تقسیم سود عاقلانه‌تر از توسعه است.'});
   }
   if(isFinite(gSupported)&&isFinite(tg)&&tg>gSupported*1.5&&gSupported>0){
     const up=isFinite(rows[0].roic)&&isFinite(last.roic)&&last.roic>rows[0].roic;
-    fl.push({bad:true,t:'تارگت فروش '+pc(tg)+' است ولی نرخ سرمایه‌گذاری مجدد × ROIC فقط '+pc(gSupported)+
-      ' را پشتیبانی می‌کند. '+(up
-        ? 'مابه‌التفاوت از بهبود کارایی سرمایه می‌آید — ROIC از '+pc(rows[0].roic)+' به '+pc(last.roic)+
-          ' می‌رسد. این فرض ممکن است درست باشد، ولی فرض است نه نتیجه: باید بگویید چرا همان دارایی '+
-          'قرار است این‌قدر بهتر کار کند.'
-        : 'یعنی رشد از جایی نمی‌آید — capex یا سرمایه در گردش را بالا ببرید یا تارگت را پایین.')});
+    fl.push({bad:true,t:'برنامهٔ شما فروش را '+pc(tg)+' در سال رشد می‌دهد، ولی خرجی که گذاشته‌اید فقط '+
+      pc(gSupported)+' رشد می‌سازد. '+(up
+        ? 'بقیه از این فرض می‌آید که همان دارایی‌ها بهتر کار می‌کنند — بازده سرمایه از '+pc(rows[0].roic)+
+          ' به '+pc(last.roic)+' می‌رسد. ممکن است درست باشد، ولی این یک فرض است و باید بتوانید بگویید چرا.'
+        : 'یعنی رشد از جایی نمی‌آید. یا خرج سرمایه‌ای را بالا ببرید، یا فروش تارگت را پایین بیاورید.')});
   }
-  if(niT>0&&isFinite(niModel)&&niModel!==0){
+  if(tMode!=='n'&&tMode!=='nm'&&niT>0&&isFinite(niModel)&&niModel!==0){
     const gap=(niT/niModel-1)*100;
     fl.push({bad:Math.abs(gap)>15,t:'سود خالص تارگت شما '+money(niT)+' در برابر '+money(niModel)+' طبق مدل — '+
       (Math.abs(gap)<1?'هم‌خوان.':fa(Math.abs(gap).toFixed(0))+'٪ '+(gap>0?'بالاتر':'پایین‌تر')+
       '. سود خالص ورودی مدل نیست؛ اگر عدد خودتان را باور دارید باید حاشیهٔ EBITDA، استهلاک، '+
       'بهره یا نرخ مالیات را عوض کنید تا مدل به آن برسد.')});
   }
-  if(last.capex<last.dep)fl.push({bad:true,t:'در سال ۵ مخارج سرمایه‌ای ('+money(last.capex)+
-    ') از استهلاک ('+money(last.dep)+') کمتر است. شرکتی که رشد می‌کند نمی‌تواند کمتر از فرسایش دارایی سرمایه‌گذاری کند.'});
+  if(last.capex<last.dep)fl.push({bad:true,t:'در سال ۵ خرج سرمایه‌ای ('+money(last.capex)+
+    ') از استهلاک ('+money(last.dep)+') کمتر است — یعنی دارایی‌ها سریع‌تر از جایگزینی‌شان فرسوده می‌شوند. '+
+    'شرکتی که رشد می‌کند نمی‌تواند این‌طور باشد.'});
   fl.forEach(o=>h+='<div class="flag'+(o.bad?' bad':'')+'">'+o.t+'</div>');
   box.innerHTML=h;
 
@@ -593,11 +644,14 @@ function consistency(rows,w,tg){
   tab.innerHTML=r+'</tbody>';
 
   document.getElementById('consnote').innerHTML=
-    'سرمایه‌گذاری مجدد = مخارج سرمایه‌ای − استهلاک + Δسرمایه در گردش. '+
-    'ROIIC = تغییر NOPAT نسبت به سال پایه ÷ جمع سرمایه‌گذاری مجدد پنج سال. '+
-    'اتحادی که باید برقرار باشد: رشد = نرخ سرمایه‌گذاری مجدد × ROIC. '+
+    '«خرج تازه» = خرج سرمایه‌ای − استهلاک + افزایش سرمایه در گردش؛ یعنی پولی که بیش از نگهداشت وضع موجود خرج می‌شود. '+
+    '«بازده هر ریال خرج تازه» = چقدر سود عملیاتی اضافه شد ÷ چقدر خرج تازه شد. '+
+    'قاعدهٔ پشت این کارت: رشد = چه کسری از سود را دوباره خرج می‌کنید × بازده آن خرج. '+
     'سود خالص = (EBIT − بهره) × (۱ − نرخ مالیات)، با بهرهٔ '+money(n('debt')*n('kd')/100)+' '+u.n+
-    ' روی بدهی اعلامی — ورودی ارزش‌گذاری نیست، خروجی آزمون است.';
+    ' روی بدهی اعلامی. '+((tMode==='n'||tMode==='nm')
+      ? 'شما سود خالص را گفته‌اید، پس مدل حاشیهٔ EBITDA لازم برای رسیدن به آن را معکوس حساب کرده؛ '+
+        'جریان نقد از EBIT می‌آید نه از سود خالص، ولی سود خالص حاشیه را تعیین می‌کند.'
+      : 'سود خالص در جریان نقد وارد نمی‌شود؛ اینجا فقط برای مقایسه حساب شده است.');
   return {roiic,gSupported,niModel};
 }
 
@@ -792,7 +846,7 @@ function calc(){
 
   applyMacro(); applyErp();
   const R=keRoutes(), W=wacc(), w=W.v, inf=n('infl')/100;
-  const gt=n('gterm')/100, xm=n('xmult'), sT=n('sT'), mT=n('mT')/100, s0=H('s',2);
+  const gt=n('gterm')/100, xm=n('xmult'), sT=n('sT'), mT=planMargin(sT), s0=H('s',2);
 
   /* the three routes, side by side, always */
   document.getElementById('ketab').innerHTML=
@@ -830,6 +884,7 @@ function calc(){
   if(basis==='nom'&&isFinite(tg)&&tg<inf)
     tn+='<br><span style="color:var(--warn)">مبنا اسمی است ولی CAGR تارگت از تورم کمتر است — یعنی فروش حقیقی کوچک می‌شود.</span>';
   document.getElementById('tgtnote').innerHTML=tn;
+  planLine(sT,mT,HS);
 
   const rows=project(mode,k,sT,mT), D=dcf(rows,w,gt,xm);
   const eq=toEq(D.ev), sh=n('shares'), u=unit();
@@ -924,6 +979,13 @@ document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',(
   b.setAttribute('aria-pressed','true');tvMode=b.dataset.t;
   document.getElementById('tvg').style.display=tvMode==='g'?'':'none';
   document.getElementById('tvx').style.display=tvMode==='x'?'':'none';calc();}));
+function applyTmode(){
+  tMode=(document.getElementById('tmode')||{}).value||'n';
+  ['n','nm','e','m'].forEach(k=>{const el=document.getElementById('f_'+k);
+    if(el)el.style.display=(k===tMode)?'':'none';});
+}
+(function(){const e=document.getElementById('tmode');
+  if(e)e.addEventListener('change',()=>{applyTmode();calc();});})();
 document.querySelectorAll('#wmode button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#wmode button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');wMode=b.dataset.w;
@@ -943,17 +1005,17 @@ document.getElementById('fillhist').addEventListener('click',()=>{
   if(isFinite(S.dpc))document.getElementById('da').value=(S.dpc*100).toFixed(2);
   if(isFinite(S.cxpc))document.getElementById('capex').value=(S.cxpc*100).toFixed(2);
   if(isFinite(S.dnwc))document.getElementById('nwc').value=(S.dnwc*100).toFixed(2);
-  if(isFinite(S.m))document.getElementById('mT').value=(S.m*100).toFixed(2);
+  if(isFinite(S.m)&&tMode==='m')document.getElementById('mT').value=(S.m*100).toFixed(2);
   if(isFinite(S.cxpc))document.getElementById('cxT').value=(S.cxpc*100).toFixed(2);
   if(isFinite(S.dnwc))document.getElementById('nwT').value=(S.dnwc*100).toFixed(2);
   calc();});
 ['unit','sT','mT','path','k','da','capex','nwc','taxop','mid','infl','rf','erp','beta','alpha','kd','tax',
  'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares','fx','dep',
- 'cxT','nwT','niT','ic0','wman','greal','usinf']
+ 'cxT','nwT','niT','ic0','wman','greal','usinf','nmT','eT']
  .forEach(id=>{const e=document.getElementById(id);if(!e)return;
    e.addEventListener('input',calc);e.addEventListener('change',calc);});
 
-fillMacro();applyMacro();drawHist();applyDep();calc();loadCurve(false);loadFx(false);
+fillMacro();applyMacro();applyTmode();drawHist();applyDep();calc();loadCurve(false);loadFx(false);
 
 (function(){const el=document.getElementById('offline');
   const say=(t,w)=>{if(el)el.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
