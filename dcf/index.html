@@ -10,42 +10,37 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="app.webmanifest">
 <style>
-:root{
-  --bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
-  --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;--bar:#7FB3A6;
-  --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
-  --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}}
-:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;
-  --acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}
+:root{--bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
+ --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;--bar:#7FB3A6;
+ --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;
+ --soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;
+ --line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
+ --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;
-  direction:rtl;-webkit-text-size-adjust:100%;
-  padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
-.wrap{max-width:700px;margin-inline:auto;padding-top:20px}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;direction:rtl;
+ -webkit-text-size-adjust:100%;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:720px;margin-inline:auto;padding-top:20px}
 h1{font-size:21px;font-weight:800;margin:0 0 2px}
 .sub{color:var(--soft);font-size:12.5px;margin:0 0 6px}
 a{color:var(--acc)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
 .card>h2{font-size:13px;font-weight:700;margin:0 0 12px;color:var(--acc)}
 label{display:block;font-size:12px;font-weight:600;color:var(--soft);margin-bottom:4px}
-input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);
-  background:var(--field);border:1px solid var(--line);border-radius:10px;padding:10px 11px;
-  appearance:none;direction:ltr;text-align:right}
-select{direction:rtl;padding-left:30px;
-  background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
-  background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
+input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);background:var(--field);
+ border:1px solid var(--line);border-radius:10px;padding:10px 11px;appearance:none;direction:ltr;text-align:right}
+select{direction:rtl;padding-left:30px;background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
+ background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
 input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:var(--acc)}
 input[readonly]{opacity:.62}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.g2+.g2,.g3+.g2,.g2+.g3{margin-top:10px}
+.g2+.g2,.g3+.g2,.g2+.g3,.g3+.g3{margin-top:10px}
 .res{background:var(--acc);color:var(--acc-ink);border-radius:14px;padding:16px;margin-bottom:12px}
 .res h2{color:var(--acc-ink);opacity:.72;font-size:12px;margin:0 0 10px;font-weight:700}
-.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;
-  border-bottom:1px solid rgba(255,255,255,.16)}
+.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.16)}
 .big:last-of-type{border-bottom:0}
 .big .k{font-size:13px;opacity:.85;font-weight:600}
 .big .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
@@ -61,27 +56,23 @@ tr:last-child td{border-bottom:0}
 tr.hi td{background:var(--wash);font-weight:700}
 .tw{overflow-x:auto;margin-top:4px}
 .note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
-.badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;
-  background:var(--wash);color:var(--acc)}
+.badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;background:var(--wash);color:var(--acc)}
 .badge.old{background:var(--warn-wash);color:var(--warn)}
 .seg{display:flex;gap:6px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
-.seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);
-  font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
+.seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
-button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--line);background:transparent;
-  color:var(--acc);font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
-/* football field */
+.seg.sm button{font-size:11.5px;padding:8px 2px}
+button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--acc);font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
 .ff{margin-top:6px}
 .ffrow{display:grid;grid-template-columns:118px 1fr;gap:9px;align-items:center;margin-bottom:9px}
 .ffname{font-size:12px;font-weight:700;text-align:right;line-height:1.35}
 .fftrack{position:relative;height:26px;background:var(--field);border:1px solid var(--line);border-radius:6px}
 .ffbar{position:absolute;top:3px;bottom:3px;background:var(--bar);border-radius:4px;opacity:.85}
 .ffdot{position:absolute;top:-1px;bottom:-1px;width:3px;background:var(--acc);border-radius:2px}
-.fflab{position:absolute;top:50%;transform:translateY(-50%);font-size:10.5px;font-weight:700;
-  color:var(--ink);direction:ltr;white-space:nowrap}
+.fflab{position:absolute;top:50%;transform:translateY(-50%);font-size:10.5px;font-weight:700;color:var(--ink);direction:ltr;white-space:nowrap}
 .ffaxis{display:grid;grid-template-columns:118px 1fr;gap:9px;margin-top:2px}
 .ffticks{display:flex;justify-content:space-between;font-size:10px;color:var(--soft);direction:ltr}
-@media (max-width:420px){.ffrow,.ffaxis{grid-template-columns:86px 1fr}.ffname{font-size:11px}}
+@media (max-width:420px){.ffrow,.ffaxis{grid-template-columns:86px 1fr}.ffname{font-size:11px}.g3{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -93,25 +84,28 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
   <div class="res" id="res"></div>
 
   <div class="card">
-    <h2>۱ · داده تاریخی</h2>
-    <div class="g3">
-      <div><label>فروش سال ۱۴۰۳</label><input id="h1" inputmode="numeric" value="520000"></div>
-      <div><label>فروش سال ۱۴۰۴</label><input id="h2" inputmode="numeric" value="700000"></div>
-      <div><label>فروش سال پایه</label><input id="h3" inputmode="numeric" value="1000000"></div>
-    </div>
-    <div class="g2" style="margin-top:10px">
-      <div><label>حاشیه EBITDA سال پایه ٪</label><input id="m0" inputmode="decimal" value="24"></div>
-      <div><label>سود خالص سال پایه</label><input id="ni0" inputmode="numeric" value="150000"></div>
-      <div><label>ارزش دفتری حقوق صاحبان سهام</label><input id="bv0" inputmode="numeric" value="600000"></div>
-      <div><label>صنعت</label><select id="ind"></select></div>
-    </div>
+    <h2>واحد پول</h2>
+    <select id="unit">
+      <option value="mr" selected>میلیون ریال</option>
+      <option value="br">میلیارد ریال</option>
+      <option value="mt">میلیون تومان</option>
+      <option value="bt">میلیارد تومان</option>
+      <option value="ht">همت — هزار میلیارد تومان</option>
+    </select>
+    <p class="note">همهٔ مبالغ ورودی و خروجی به همین واحدند. نرخ‌ها و درصدها بی‌واحدند.</p>
+  </div>
+
+  <div class="card">
+    <h2>۱ · صورت‌های مالی تاریخی</h2>
+    <div class="tw"><table id="hist"></table></div>
+    <button class="add" id="fillhist" style="margin-top:10px">پر کردن درایورها از میانگین تاریخی</button>
     <p class="note" id="histnote"></p>
   </div>
 
   <div class="card">
     <h2>۲ · تارگت سال پنجم</h2>
     <div class="g2">
-      <div><label>فروش سال ۵</label><input id="sT" inputmode="numeric" value="4000000"></div>
+      <div><label>فروش سال ۵ <span class="u"></span></label><input id="sT" inputmode="numeric" value="4000000"></div>
       <div><label>حاشیه EBITDA سال ۵ ٪</label><input id="mT" inputmode="decimal" value="21"></div>
     </div>
     <div style="margin-top:11px"><label>تابع رسیدن به تارگت</label>
@@ -123,8 +117,7 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
         <option value="back">دیربازده — آرام اول، شتاب بعد</option>
       </select></div>
     <div id="kbox" style="margin-top:10px;display:none">
-      <label>شدت انحنا <span id="klab"></span></label>
-      <input id="k" inputmode="decimal" value="1.5">
+      <label>شدت انحنا <span id="klab"></span></label><input id="k" inputmode="decimal" value="1.5">
     </div>
     <p class="note" id="tgtnote"></p>
   </div>
@@ -135,48 +128,43 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
       <div><label>استهلاک ٪ از فروش</label><input id="da" inputmode="decimal" value="4"></div>
       <div><label>مخارج سرمایه‌ای ٪ از فروش</label><input id="capex" inputmode="decimal" value="6"></div>
       <div><label>سرمایه در گردش ٪ از رشد فروش</label><input id="nwc" inputmode="decimal" value="20"></div>
-      <div><label>نرخ مالیات ٪</label><input id="taxop" inputmode="decimal" value="25"></div>
-      <div><label>تنزیل</label><select id="mid">
-        <option value="0" selected>پایان سال</option><option value="1">میانهٔ سال</option></select></div>
-      <div><label>تورم بلندمدت ٪</label><input id="infl" inputmode="decimal" value="35"></div>
+      <div><label>نرخ مالیات عملیاتی ٪</label><input id="taxop" inputmode="decimal" value="25"></div>
+      <div><label>تنزیل</label><select id="mid"><option value="0" selected>پایان سال</option><option value="1">میانهٔ سال</option></select></div>
+      <div><label>تورم بلندمدت ایران ٪</label><input id="infl" inputmode="decimal" value="39.5"></div>
     </div>
+    <p class="note">تورم پیش‌فرض میانگین هفت‌سالهٔ بانک جهانی برای ۲۰۱۹ تا ۲۰۲۵ است (۳۹.۵٪).</p>
   </div>
 
   <div class="card">
-    <h2>۴ · نرخ تنزیل</h2>
-    <div class="seg" id="basis" role="group">
-      <button data-x="nom" aria-pressed="true">اسمی</button>
-      <button data-x="real" aria-pressed="false">حقیقی</button>
-    </div>
-    <div class="seg" id="rfsrc" role="group" style="margin-top:8px">
-      <button data-r="live" aria-pressed="true">نرخ بدون ریسک از اخزا</button>
-      <button data-r="man" aria-pressed="false">دستی</button>
+    <h2>۴ · هزینهٔ سرمایه</h2>
+    <div class="seg" id="basis" role="group"><button data-x="nom" aria-pressed="true">اسمی</button><button data-x="real" aria-pressed="false">حقیقی</button></div>
+    <div class="seg sm" id="erpsrc" role="group" style="margin-top:8px">
+      <button data-e="loc" aria-pressed="true">محلی — اخزا</button>
+      <button data-e="usd" aria-pressed="false">دلاری — داموداران</button>
+      <button data-e="man" aria-pressed="false">دستی</button>
     </div>
     <div id="akhza" style="margin:11px 0"></div>
     <div class="g2">
-      <div><label>نرخ بدون ریسک ٪</label><input id="rf" inputmode="decimal" value="44.8"></div>
-      <div><label>صرف ریسک بازار ٪</label><input id="erp" inputmode="decimal" value="8"></div>
+      <div><label>نرخ بدون ریسک ٪</label><input id="rf" inputmode="decimal" value="44.77"></div>
+      <div><label>صرف ریسک بازار ٪</label><input id="erp" inputmode="decimal" value="4.23"></div>
       <div><label>بتا</label><input id="beta" inputmode="decimal" value="1.0"></div>
-      <div><label>صرف ریسک خاص ٪</label><input id="alpha" inputmode="decimal" value="0"></div>
+      <div><label>صرف ریسک خاص شرکت ٪</label><input id="alpha" inputmode="decimal" value="0"></div>
       <div><label>هزینه بدهی ٪</label><input id="kd" inputmode="decimal" value="28"></div>
       <div><label>نرخ مالیات ٪</label><input id="tax" inputmode="decimal" value="25"></div>
-      <div><label>بدهی مالی</label><input id="debt" inputmode="numeric" value="0"></div>
-      <div><label>ارزش بازار سهام</label><input id="eqmv" inputmode="numeric" value="0"></div>
+      <div><label>بدهی مالی <span class="u"></span></label><input id="debt" inputmode="numeric" value="0"></div>
+      <div><label>ارزش بازار سهام <span class="u"></span></label><input id="eqmv" inputmode="numeric" value="0"></div>
     </div>
+    <div class="tw" style="margin-top:12px"><table id="ketab"></table></div>
     <p class="note" id="waccnote"></p>
-    <p class="note" id="basisnote"></p>
   </div>
 
   <div class="card">
     <h2>۵ · ارزش نهایی</h2>
-    <div class="seg" id="tvm" role="group">
-      <button data-t="g" aria-pressed="true">رشد دائمی</button>
-      <button data-t="x" aria-pressed="false">ضریب خروج</button>
-    </div>
+    <div class="seg" id="tvm" role="group"><button data-t="g" aria-pressed="true">رشد دائمی</button><button data-t="x" aria-pressed="false">ضریب خروج</button></div>
     <div class="g2" style="margin-top:11px">
       <div id="tvg"><label>رشد دائمی ٪</label><input id="gterm" inputmode="decimal" value="30"></div>
       <div id="tvx" style="display:none"><label>EV/EBITDA خروج</label><input id="xmult" inputmode="decimal" value="5"></div>
-      <div></div>
+      <div><label>صنعت مرجع</label><select id="ind"></select></div>
     </div>
     <p class="note" id="tvnote"></p>
   </div>
@@ -184,53 +172,95 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
   <div class="card">
     <h2>۶ · پل به ارزش حقوق صاحبان سهام</h2>
     <div class="g2">
-      <div><label>بدهی مالی</label><input id="bdebt" inputmode="numeric" value="0"></div>
-      <div><label>وجه نقد</label><input id="bcash" inputmode="numeric" value="0"></div>
-      <div><label>سهم اقلیت</label><input id="bminor" inputmode="numeric" value="0"></div>
-      <div><label>دارایی غیرعملیاتی</label><input id="bnonop" inputmode="numeric" value="0"></div>
+      <div><label>بدهی مالی <span class="u"></span></label><input id="bdebt" inputmode="numeric" value="0"></div>
+      <div><label>وجه نقد <span class="u"></span></label><input id="bcash" inputmode="numeric" value="0"></div>
+      <div><label>سهم اقلیت <span class="u"></span></label><input id="bminor" inputmode="numeric" value="0"></div>
+      <div><label>دارایی غیرعملیاتی <span class="u"></span></label><input id="bnonop" inputmode="numeric" value="0"></div>
     </div>
-    <div style="margin-top:10px"><label>تعداد سهام (میلیون برگه) — اختیاری</label>
-      <input id="shares" inputmode="numeric" value="0"></div>
+    <div style="margin-top:10px"><label>تعداد سهام (میلیون برگه) — اختیاری</label><input id="shares" inputmode="numeric" value="0"></div>
   </div>
 
   <div class="card">
-    <h2>Football Field — دامنهٔ ارزش به روش‌های مختلف</h2>
+    <h2>Football Field</h2>
     <div class="ff" id="ff"></div>
     <p class="note" id="ffnote"></p>
   </div>
 
-  <div class="card">
-    <h2>پیش‌بینی و جریان نقد</h2>
-    <div class="tw" id="proj"></div>
-  </div>
+  <div class="card"><h2>پیش‌بینی و جریان نقد</h2><div class="tw" id="proj"></div></div>
+  <div class="card"><h2>حساسیت</h2><div class="tw" id="sens"></div></div>
 
   <div class="card">
-    <h2>حساسیت</h2>
-    <div class="tw" id="sens"></div>
+    <h2>منابع صرف ریسک</h2>
+    <div class="tw"><table id="srcs"></table></div>
   </div>
-
-  <p class="note">FCFF = EBIT×(۱−مالیات) + استهلاک − مخارج سرمایه‌ای − تغییر سرمایه در گردش. فروش و حاشیه از سال پایه تا تارگت سال پنجم با تابع انتخابی مسیر می‌پیمایند؛ بقیهٔ درایورها درصد ثابتی از فروش همان سال‌اند.</p>
 </div>
 
 <script>
 const IND = [{"name":"سرمایه گذاری","evebit":9.7,"pe":8.9,"pb":4.3,"ps":9.5},{"name":"تولید فلزات گرانبهای غیراهن","evebit":10.3,"pe":18.3,"pb":10.1,"ps":8.0},{"name":"فراورده های نفتی","evebit":3.1,"pe":3.7,"pb":2.9,"ps":0.6},{"name":"مواد شیمیایی-متنوع","evebit":7.4,"pe":9.9,"pb":6.3,"ps":2.1},{"name":"بانکها و موسسات اعتباری","evebit":1.0,"pe":4.0,"pb":1.3,"ps":1.7},{"name":"آهن و فولاد","evebit":5.7,"pe":7.3,"pb":2.4,"ps":1.2},{"name":"کانی های فلزی","evebit":10.2,"pe":11.0,"pb":3.8,"ps":2.4},{"name":"دارویی","evebit":6.7,"pe":10.9,"pb":6.8,"ps":2.5},{"name":"تولید کود و ترکیبات نیتروژن","evebit":6.8,"pe":6.5,"pb":4.9,"ps":2.9},{"name":"سیمان، اهک و گچ","evebit":6.8,"pe":8.2,"pb":5.6,"ps":4.0},{"name":"بیمه","evebit":64.5,"pe":7.1,"pb":2.5,"ps":0.7},{"name":"خودرو","evebit":207,"pe":0,"pb":1.5,"ps":0.4},{"name":"سایر محصولات غذایی","evebit":6.8,"pe":7.0,"pb":4.7,"ps":1.1},{"name":"خرده فروشی،باستثنای وسایل نقلیه موتوری","evebit":7.9,"pe":10.7,"pb":9.2,"ps":0.6},{"name":"سرمایه گذاری استانی","evebit":4.1,"pe":6.6,"pb":0.6,"ps":6.6},{"name":"فعالیت مهندسی","evebit":4.3,"pe":4.6,"pb":1.8,"ps":1.5},{"name":"مخابرات","evebit":6.6,"pe":8.4,"pb":1.7,"ps":1.3},{"name":"نرم افزار و خدمات","evebit":7.4,"pe":9.4,"pb":4.3,"ps":1.9},{"name":"محصولات پاک کننده","evebit":8.2,"pe":11.3,"pb":5.8,"ps":2.4},{"name":"محصولات کشاورزی","evebit":12.1,"pe":6.4,"pb":3.6,"ps":1.6},{"name":"تامین سرمایه","evebit":2.7,"pe":4.8,"pb":2.1,"ps":2.6},{"name":"فعالیتهای مرتبط با اوراق بهادار","evebit":9.3,"pe":11.7,"pb":6.0,"ps":11.2},{"name":"سایر محصولات کانی غیرفلزی","evebit":13.3,"pe":12.3,"pb":4.4,"ps":4.0},{"name":"خدمات رفاهی متنوع","evebit":7.5,"pe":4.9,"pb":5.0,"ps":0.8},{"name":"شیرینیجات","evebit":5.5,"pe":6.7,"pb":2.3,"ps":2.0},{"name":"خدمات رفاهی-برق","evebit":7.7,"pe":10.0,"pb":4.2,"ps":4.3},{"name":"ماشین الات الکتریکی","evebit":4.7,"pe":6.7,"pb":2.0,"ps":2.2},{"name":"انبوه سازی، املاک و مستغلات","evebit":8.0,"pe":8.0,"pb":2.1,"ps":4.8},{"name":"قطعات خودرو","evebit":5.2,"pe":8.0,"pb":2.4,"ps":0.6},{"name":"محصولات لبنی","evebit":9.8,"pe":10.2,"pb":3.4,"ps":1.0},{"name":"لاستیک و پلاستیک","evebit":5.1,"pe":7.1,"pb":3.3,"ps":1.0},{"name":"سخت افزار و تجهیزات","evebit":10.7,"pe":11.7,"pb":5.4,"ps":3.1},{"name":"وسایل خانگی","evebit":6.0,"pe":7.3,"pb":2.0,"ps":0.9},{"name":"بنادر و کشتیرانی","evebit":6.1,"pe":7.8,"pb":3.8,"ps":3.6},{"name":"شکر","evebit":5.9,"pe":8.1,"pb":3.1,"ps":1.2},{"name":"محصولات فلزی","evebit":6.1,"pe":7.8,"pb":2.1,"ps":1.7},{"name":"کاشی و سرامیک","evebit":6.0,"pe":7.0,"pb":3.1,"ps":1.8},{"name":"حمل و نقل از طریق خطوط راه اهن","evebit":4.5,"pe":5.0,"pb":1.8,"ps":1.0},{"name":"ماشین الات","evebit":2.9,"pe":4.2,"pb":2.0,"ps":0.6},{"name":"لیزینگ","evebit":11.1,"pe":9.5,"pb":2.4,"ps":2.3},{"name":"محصولات کاغذی","evebit":8.9,"pe":11.5,"pb":4.5,"ps":2.0},{"name":"نساجی","evebit":7.0,"pe":8.2,"pb":4.2,"ps":2.6},{"name":"حمل و نقل بار زمینی","evebit":32.3,"pe":39.4,"pb":6.9,"ps":3.5},{"name":"تجهیزات صنعتی","evebit":5.9,"pe":10.7,"pb":1.1,"ps":1.1},{"name":"زغال سنگ","evebit":7.1,"pe":14.0,"pb":5.2,"ps":2.1},{"name":"سایر مواد معدنی","evebit":11.8,"pe":10.5,"pb":4.3,"ps":4.8},{"name":"حفاری","evebit":1.4,"pe":1.8,"pb":0.9,"ps":0.6},{"name":"نوشیدنی","evebit":8.5,"pe":8.7,"pb":3.2,"ps":0.6},{"name":"چوب","evebit":8.4,"pe":10.7,"pb":5.3,"ps":2.9},{"name":"هتل و رستوران","evebit":14.2,"pe":19.7,"pb":2.0,"ps":2.6},{"name":"چاپ و نشر","evebit":6.7,"pe":7.1,"pb":4.6,"ps":3.4},{"name":"پیمانکاری صنعتی","evebit":10.3,"pe":26.7,"pb":10.2,"ps":1.0}];
 const IND_ASOF = "1405/08/04";
 
+/* published inputs, with their vintage — check these before leaning on them */
+const DAM={asof:'۵ ژانویه ۲۰۲۶',rating:'NR — رتبه‌بندی نشده',spread:6.37,crp:9.71,erp:13.94,mature:4.23,tax:13.95};
+const UST={v:5.00,asof:'۲۰۲۶/۱۰/۲۳',src:'FRED — DGS10'};
+const INF={ir:39.51,us:2.5,span:'۲۰۱۹ تا ۲۰۲۵'};
+const MKT_PE=7.38;
+
+const UNITS={mr:{n:'میلیون ریال',m:1},br:{n:'میلیارد ریال',m:1000},
+ mt:{n:'میلیون تومان',m:10},bt:{n:'میلیارد تومان',m:10000},ht:{n:'همت',m:1e7}};
+const unit=()=>UNITS[document.getElementById('unit').value]||UNITS.mr;
+
 const FA='۰۱۲۳۴۵۶۷۸۹';
 const fa=s=>String(s).replace(/\d/g,d=>FA[d]);
 const n=id=>{const e=document.getElementById(id);if(!e)return 0;
   const v=parseFloat(String(e.value).replace(/[^\d.\-]/g,''));return isFinite(v)?v:0;};
 const money=x=>fa(Math.round(x).toLocaleString('en-US'));
-const hemat=x=>fa((x/1e7).toFixed(2));
+const hemat=x=>fa((x*unit().m/1e7).toFixed(3));
 const pc=x=>isFinite(x)?fa((x*100).toFixed(2))+'٪':'—';
 const BIGR=(k,v)=>'<div class="big"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';
 const SM=(k,v)=>'<div class="big sm"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';
-const N=5;
+const N=5, HY=['۱۴۰۲','۱۴۰۳','۱۴۰۴'];
+const HROWS=[['s','فروش',1],['e','EBITDA',1],['d','استهلاک',1],['ni','سود خالص',1],
+             ['cx','مخارج سرمایه‌ای',1],['nw','سرمایه در گردش خالص',1]];
+const HDEF={s:[520000,700000,1000000],e:[120000,165000,240000],d:[22000,29000,40000],
+            ni:[70000,100000,150000],cx:[33000,43000,60000],nw:[110000,150000,215000]};
 
-let basis='nom', tvMode='g', rfSrc='live', curve=[], curveSel=-1, curveState='';
+let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='';
 const toReal=(nm,i)=>(1+nm)/(1+i)-1, toNom=(r,i)=>(1+r)*(1+i)-1;
 
-/* ===== paths from the base year to the year-5 target ===== */
+/* ===== historical grid ===== */
+function drawHist(){
+  const u=unit().n;
+  let h='<thead><tr><th>قلم</th>'+HY.map(y=>'<th>'+y+'</th>').join('')+'<th>نسبت</th></tr></thead><tbody>';
+  HROWS.forEach(([k,lab])=>{
+    h+='<tr><td>'+lab+'<br><span style="font-size:10px;color:var(--soft)">'+u+'</span></td>'+
+       [0,1,2].map(i=>'<td><input id="h_'+k+i+'" inputmode="numeric" value="'+
+         (document.getElementById('h_'+k+i)?document.getElementById('h_'+k+i).value:HDEF[k][i])+
+         '" style="font-size:13px;padding:7px 6px"></td>').join('')+
+       '<td id="r_'+k+'" style="font-size:11px;color:var(--soft)"></td></tr>';
+  });
+  h+='<tr><td>ارزش دفتری حقوق صاحبان سهام<br><span style="font-size:10px;color:var(--soft)">'+u+'</span></td>'+
+     '<td colspan="3"><input id="bv0" inputmode="numeric" value="'+
+       (document.getElementById('bv0')?document.getElementById('bv0').value:600000)+
+       '" style="font-size:13px;padding:7px 6px"></td><td id="r_roe" style="font-size:11px;color:var(--soft)"></td></tr>';
+  document.getElementById('hist').innerHTML=h+'</tbody>';
+  document.querySelectorAll('#hist input').forEach(e=>e.addEventListener('input',calc));
+}
+const H=(k,i)=>n('h_'+k+i);
+function histStats(){
+  const s=[H('s',0),H('s',1),H('s',2)], e=[H('e',0),H('e',1),H('e',2)];
+  const d=[H('d',0),H('d',1),H('d',2)], ni=[H('ni',0),H('ni',1),H('ni',2)];
+  const cx=[H('cx',0),H('cx',1),H('cx',2)], nw=[H('nw',0),H('nw',1),H('nw',2)];
+  const av=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  const r=(a,b)=>a.map((x,i)=>b[i]>0?x/b[i]:NaN).filter(isFinite);
+  return {s,e,d,ni,cx,nw,
+    m:av(r(e,s)), dpc:av(r(d,s)), nipc:av(r(ni,s)), cxpc:av(r(cx,s)), nwpc:av(r(nw,s)),
+    dnwc:(s[2]-s[0])>0?(nw[2]-nw[0])/(s[2]-s[0]):NaN,
+    roe:n('bv0')>0?ni[2]/n('bv0'):NaN,
+    g1:s[0]>0?s[1]/s[0]-1:NaN, g2:s[1]>0?s[2]/s[1]-1:NaN,
+    cagr:(s[0]>0&&s[2]>0)?Math.pow(s[2]/s[0],1/2)-1:NaN};
+}
+
+/* ===== paths ===== */
 function pathFactor(x,mode,k){
   if(mode==='lin')return x;
   if(mode==='front')return 1-Math.pow(1-x,k);
@@ -238,13 +268,21 @@ function pathFactor(x,mode,k){
   if(mode==='s'){const L=u=>1/(1+Math.exp(-k*(u-0.5)*6)),a=L(0),b=L(1);return (L(x)-a)/(b-a);}
   return x;
 }
-function pathVal(a,b,t,mode,k){
-  const x=t/N;
+function pathVal(a,b,t,mode,k){const x=t/N;
   if(mode==='geo'&&a>0&&b>0)return a*Math.pow(b/a,x);
-  return a+(b-a)*pathFactor(x,mode,k);
-}
+  return a+(b-a)*pathFactor(x,mode,k);}
 const cagr=(a,b,y)=>(a>0&&b>0&&y>0)?Math.pow(b/a,1/y)-1:NaN;
 
+/* ===== cost of capital, three published routes ===== */
+function keRoutes(){
+  const inf=n('infl')/100, b=n('beta'), al=n('alpha')/100;
+  const rfL=(curveSel>=0?curve[curveSel].y:n('rf')/100);
+  const loc=rfL+b*(DAM.mature/100)+al;                     /* country risk already sits in the rial rate */
+  const keU=UST.v/100+b*(DAM.erp/100)+al;
+  const usd=(1+keU)*((1+inf)/(1+INF.us/100))-1;            /* same risk, expressed in rial */
+  const ep=1/MKT_PE, impErp=ep-rfL;
+  return {rfL,loc,keU,usd,ep,impErp,gReq:loc-ep,inf};
+}
 function wacc(){
   const rf=n('rf')/100,erp=n('erp')/100,b=n('beta'),al=n('alpha')/100;
   const kd=n('kd')/100,t=n('tax')/100,D=n('debt'),E=n('eqmv');
@@ -252,37 +290,55 @@ function wacc(){
   const wd=V>0?D/V:0, we=V>0?E/V:1;
   return {ke,kdAt,wd,v:we*ke+wd*kdAt};
 }
+function applyErp(){
+  if(erpSrc==='man'){document.getElementById('erp').readOnly=false;document.getElementById('rf').readOnly=(curveSel>=0);return;}
+  const R=keRoutes();
+  const rfEl=document.getElementById('rf'), erpEl=document.getElementById('erp');
+  if(erpSrc==='loc'){
+    const y=curveSel>=0?curve[curveSel].y:n('rf')/100;
+    rfEl.value=((basis==='real'?toReal(y,R.inf):y)*100).toFixed(2);
+    erpEl.value=DAM.mature.toFixed(2);
+  }else{
+    /* Damodaran is a dollar premium on a dollar risk-free rate; move the whole
+       cost of equity into rial rather than bolting a dollar premium onto a rial rate */
+    const keU=UST.v/100+DAM.erp/100;
+    const keR=(1+keU)*((1+R.inf)/(1+INF.us/100))-1;
+    const rfR=basis==='real'?toReal(UST.v/100,INF.us/100):((1+UST.v/100)*((1+R.inf)/(1+INF.us/100))-1);
+    rfEl.value=(rfR*100).toFixed(2);
+    erpEl.value=(((basis==='real'?toReal(keR,R.inf):keR)-rfR*(basis==='real'?1:1))*100/Math.max(0.0001,n('beta'))).toFixed(2);
+  }
+  rfEl.readOnly=true; erpEl.readOnly=true;
+}
 
+/* ===== projection ===== */
 function project(mode,k,sT,mT){
-  const s0=n('h3'), m0=n('m0')/100;
+  const s0=H('s',2), m0=(H('s',2)>0?H('e',2)/H('s',2):0);
   const da=n('da')/100, cx=n('capex')/100, nw=n('nwc')/100, t=n('taxop')/100;
   const rows=[]; let prev=s0;
   for(let i=1;i<=N;i++){
     const sales=pathVal(s0,sT,i,mode,k), m=pathVal(m0,mT,i,mode,k);
     const ebitda=sales*m, dep=sales*da, ebit=ebitda-dep;
     const capex=sales*cx, dnwc=(sales-prev)*nw;
-    rows.push({t:i,sales,g:prev>0?sales/prev-1:0,m,ebitda,dep,ebit,
-               nopat:ebit*(1-t),capex,dnwc,fcff:ebit*(1-t)+dep-capex-dnwc});
+    rows.push({t:i,sales,g:prev>0?sales/prev-1:0,m,ebitda,dep,ebit,nopat:ebit*(1-t),
+               capex,dnwc,fcff:ebit*(1-t)+dep-capex-dnwc});
     prev=sales;
   }
   return rows;
 }
-
-function dcf(rows,w,gt,xm){
-  const mid=n('mid')===1?0.5:0;
+function dcf(rows,w,gt,xm,mode){
+  const mid=n('mid')===1?0.5:0, M=mode||tvMode;
   let pv=0; rows.forEach(r=>{pv+=r.fcff/Math.pow(1+w,r.t-mid);});
   const last=rows[N-1];
   let tv=null,err=null;
-  if(tvMode==='g'){ if(gt>=w)err='رشد دائمی از WACC بزرگ‌تر یا برابر است'; else tv=last.fcff*(1+gt)/(w-gt); }
+  if(M==='g'){ if(gt>=w)err='رشد دائمی از WACC بزرگ‌تر یا برابر است'; else tv=last.fcff*(1+gt)/(w-gt); }
   else tv=last.ebitda*xm;
-  const pvTV=tv===null?0:tv/Math.pow(1+w,N-mid);
-  const ev=pv+pvTV;
+  const pvTV=tv===null?0:tv/Math.pow(1+w,N-mid), ev=pv+pvTV;
   return {pv,tv,pvTV,ev,err,last,tvShare:ev!==0?pvTV/ev:0,
           impliedX:(tv!==null&&last.ebitda>0)?tv/last.ebitda:null};
 }
 const toEq=ev=>ev-(n('bdebt')-n('bcash'))-n('bminor')+n('bnonop');
 
-/* ===== اخزا live risk-free curve ===== */
+/* ===== اخزا curve ===== */
 const _d=(a,b)=>~~(a/b), _m=(a,b)=>a-~~(a/b)*b;
 const _BR=[-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
 function _jc(jy){let bl=_BR.length,gy=jy+621,lJ=-14,jp=_BR[0],jm,jump=0,leap,q,i;
@@ -296,10 +352,9 @@ function _g2d(gy,gm,gd){let x=_d((gy+_d(gm-8,6)+100100)*1461,4)+_d(153*_m(gm+9,1
   return x-_d(_d(gy+100100+_d(gm-8,6),100)*3,4)+752;}
 function _j2d(jy,jm,jd){const r=_jc(jy);return _g2d(r.gy,3,r.march)+(jm-1)*31-_d(jm,7)*(jm-7)+jd-1;}
 const todayJdn=()=>{const t=new Date();return _g2d(t.getFullYear(),t.getMonth()+1,t.getDate());};
-const FACE=1e6;
 async function loadCurve(force){
   try{const c=JSON.parse(localStorage.getItem('akhza')||'null');
-    if(!force&&c&&Date.now()-c.t<6*36e5){curve=c.rows;pick();drawCurve();applyRf();return;}}catch(e){}
+    if(!force&&c&&Date.now()-c.t<6*36e5){curve=c.rows;pick();drawCurve();applyErp();calc();return;}}catch(e){}
   curveState='busy';drawCurve();
   try{
     const j=await (await fetch('https://cdn.tsetmc.com/api/Instrument/GetInstrumentSearch/'+encodeURIComponent('اخزا'))).json();
@@ -313,8 +368,8 @@ async function loadCurve(force){
         try{
           const cp=await (await fetch('https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceInfo/'+x.insCode)).json();
           const p=(cp.closingPriceInfo||cp).pClosing;
-          if(!p||p<=0||p>=FACE*0.999)return;
-          const y=Math.pow(FACE/p,365/days)-1;
+          if(!p||p<=0||p>=999000)return;
+          const y=Math.pow(1e6/p,365/days)-1;
           if(y<0.10||y>0.80)return;
           rows.push({s:x.lVal18AFC,d:days,y});
         }catch(e){}
@@ -325,214 +380,212 @@ async function loadCurve(force){
     curve=rows;curveState='';
     try{localStorage.setItem('akhza',JSON.stringify({t:Date.now(),rows}));}catch(e){}
   }catch(e){curveState='fail';}
-  pick();drawCurve();applyRf();
+  pick();drawCurve();applyErp();calc();
 }
 function pick(){ if(!curve.length){curveSel=-1;return;} if(curveSel<0||curveSel>=curve.length)curveSel=curve.length-1; }
-function applyRf(){
-  if(rfSrc!=='live'||curveSel<0)return;
-  const inf=n('infl')/100, y=curve[curveSel].y;
-  const el=document.getElementById('rf');
-  el.value=((basis==='real'?toReal(y,inf):y)*100).toFixed(2);
-  el.readOnly=true; calc();
-}
 function drawCurve(){
   const box=document.getElementById('akhza');
-  if(rfSrc!=='live'){box.innerHTML='';document.getElementById('rf').readOnly=false;return;}
   if(curveState==='busy'){box.innerHTML='<p class="note"><span class="badge">در حال گرفتن منحنی اخزا…</span></p>';return;}
-  if(!curve.length){box.innerHTML='<p class="note"><span class="badge old">منحنی اخزا در دسترس نیست</span> فقط از آدرس اینترنتی عادی خوانده می‌شود. نرخ را دستی بگذارید.</p>';return;}
+  if(!curve.length){box.innerHTML='<p class="note"><span class="badge old">منحنی اخزا در دسترس نیست</span> فقط از آدرس اینترنتی عادی خوانده می‌شود.</p>';return;}
   const lo=curve[0], hi=curve[curve.length-1];
-  box.innerHTML='<label>سررسید مرجع</label><select id="cursel">'+
+  box.innerHTML='<label>سررسید مرجع اخزا</label><select id="cursel">'+
     curve.map((r,i)=>'<option value="'+i+'"'+(i===curveSel?' selected':'')+'>'+r.s+' — '+fa(r.d)+' روز — '+fa((r.y*100).toFixed(2))+'٪</option>').join('')+
     '</select><p class="note"><span class="badge">'+fa(curve.length)+' ورقه · زنده</span> '+
-    fa(lo.d)+' روز '+fa((lo.y*100).toFixed(2))+'٪ تا '+fa(hi.d)+' روز '+fa((hi.y*100).toFixed(2))+'٪.'+
-    (basis==='real'?' <b>نرخ اخزا اسمی است و برای مبنای حقیقی با تورم تعدیل شده.</b>':'')+'</p>'+
+    fa(lo.d)+' روز '+fa((lo.y*100).toFixed(2))+'٪ تا '+fa(hi.d)+' روز '+fa((hi.y*100).toFixed(2))+'٪.</p>'+
     '<button class="add" id="curref" style="margin-top:6px">به‌روزرسانی منحنی</button>';
-  document.getElementById('cursel').addEventListener('change',e=>{curveSel=+e.target.value;applyRf();});
+  document.getElementById('cursel').addEventListener('change',e=>{curveSel=+e.target.value;applyErp();calc();});
   document.getElementById('curref').addEventListener('click',()=>loadCurve(true));
 }
 
 /* ===== football field ===== */
 function football(rows,w,gt,xm){
   const ind=IND[document.getElementById('ind').value]||{};
-  const base=rows[0], last=rows[N-1];
-  const s0=n('h3'), m0=n('m0')/100, ebit0=s0*m0-s0*n('da')/100;
-  const ni0=n('ni0'), bv0=n('bv0');
+  const s0=H('s',2), ebit0=H('e',2)-H('d',2), ni0=H('ni',2), bv0=n('bv0');
   const out=[];
-  const push=(nm,lo,mid,hi,note)=>{ if([lo,mid,hi].every(v=>isFinite(v))&&mid!==0)
-    out.push({nm,lo:Math.min(lo,hi),mid,hi:Math.max(lo,hi),note}); };
-
-  /* DCF, with the discount rate flexed either way */
+  const push=(nm,lo,mid,hi)=>{ if([lo,mid,hi].every(isFinite)&&mid!==0)
+    out.push({nm,lo:Math.min(lo,hi),mid,hi:Math.max(lo,hi)}); };
   const d0=dcf(rows,w,gt,xm);
   if(!d0.err){
-    const dLo=dcf(rows,w+0.03,gt,xm), dHi=dcf(rows,Math.max(gt+0.005,w-0.03),gt,xm);
-    push('DCF',toEq(dLo.ev),toEq(d0.ev),toEq(dHi.ev),'WACC ±۳ واحد');
+    const a=dcf(rows,w+0.03,gt,xm), b=dcf(rows,Math.max(gt+0.005,w-0.03),gt,xm);
+    push('DCF',toEq(a.ev),toEq(d0.ev),toEq(b.ev));
   }
-  /* the same projection, exited on a multiple instead of a perpetuity */
-  if(last.ebitda>0){
-    const keep=tvMode; tvMode='x';
-    const x0=dcf(rows,w,gt,xm), xl=dcf(rows,w,gt,xm-1), xh=dcf(rows,w,gt,xm+1);
-    tvMode=keep;
-    push('DCF — ضریب خروج',toEq(xl.ev),toEq(x0.ev),toEq(xh.ev),'ضریب ±۱');
+  if(rows[N-1].ebitda>0){
+    const x0=dcf(rows,w,gt,xm,'x'), xl=dcf(rows,w,gt,xm-1,'x'), xh=dcf(rows,w,gt,xm+1,'x');
+    push('DCF — ضریب خروج',toEq(xl.ev),toEq(x0.ev),toEq(xh.ev));
   }
-  /* trading multiples of the sector, on base-year figures */
-  if(ni0>0&&ind.pe>0)   push('P/E صنعت',ni0*ind.pe*.85,ni0*ind.pe,ni0*ind.pe*1.15,'±۱۵٪');
-  if(bv0>0&&ind.pb>0)   push('P/B صنعت',bv0*ind.pb*.85,bv0*ind.pb,bv0*ind.pb*1.15,'±۱۵٪');
-  if(s0>0&&ind.ps>0)    push('P/S صنعت',s0*ind.ps*.85,s0*ind.ps,s0*ind.ps*1.15,'±۱۵٪');
-  if(ebit0>0&&ind.evebit>0)
-    push('EV/EBIT صنعت',toEq(ebit0*ind.evebit*.85),toEq(ebit0*ind.evebit),toEq(ebit0*ind.evebit*1.15),'±۱۵٪');
+  if(ni0>0&&ind.pe>0)push('P/E صنعت',ni0*ind.pe*.85,ni0*ind.pe,ni0*ind.pe*1.15);
+  if(bv0>0&&ind.pb>0)push('P/B صنعت',bv0*ind.pb*.85,bv0*ind.pb,bv0*ind.pb*1.15);
+  if(s0>0&&ind.ps>0)push('P/S صنعت',s0*ind.ps*.85,s0*ind.ps,s0*ind.ps*1.15);
+  if(ebit0>0&&ind.evebit>0)push('EV/EBIT صنعت',toEq(ebit0*ind.evebit*.85),toEq(ebit0*ind.evebit),toEq(ebit0*ind.evebit*1.15));
 
   const box=document.getElementById('ff');
-  if(out.length<1){box.innerHTML='<p class="note">برای رسم، دست‌کم یک روش باید عدد بدهد. سود خالص و ارزش دفتری سال پایه را وارد کنید.</p>';
-    document.getElementById('ffnote').textContent='';return;}
+  if(!out.length){box.innerHTML='<p class="note">هیچ روشی عدد نداد.</p>';document.getElementById('ffnote').textContent='';return;}
   let lo=Math.min(...out.map(o=>o.lo)), hi=Math.max(...out.map(o=>o.hi));
   const pad=(hi-lo)*0.08||Math.abs(hi)*0.1||1; lo-=pad; hi+=pad;
   const X=v=>((v-lo)/(hi-lo))*100;
   let h='';
   out.forEach(o=>{
-    const a=X(o.lo), b=X(o.hi), mid=X(o.mid);
-    const labRight = mid>55;
-    h+='<div class="ffrow"><div class="ffname">'+o.nm+'</div>'+
-       '<div class="fftrack"><div class="ffbar" style="right:'+a.toFixed(2)+'%;width:'+Math.max(0.6,b-a).toFixed(2)+'%"></div>'+
-       '<div class="ffdot" style="right:'+mid.toFixed(2)+'%"></div>'+
-       '<div class="fflab" style="'+(labRight?('right:'+Math.min(96,b+1).toFixed(2)+'%'):('left:'+Math.min(96,100-a+1).toFixed(2)+'%'))+'">'+money(o.mid)+'</div>'+
-       '</div></div>';
+    const a=X(o.lo),b=X(o.hi),m=X(o.mid),right=m>55;
+    h+='<div class="ffrow"><div class="ffname">'+o.nm+'</div><div class="fftrack">'+
+      '<div class="ffbar" style="right:'+a.toFixed(2)+'%;width:'+Math.max(0.6,b-a).toFixed(2)+'%"></div>'+
+      '<div class="ffdot" style="right:'+m.toFixed(2)+'%"></div>'+
+      '<div class="fflab" style="'+(right?('right:'+Math.min(96,b+1).toFixed(2)+'%'):('left:'+Math.min(96,100-a+1).toFixed(2)+'%'))+'">'+money(o.mid)+'</div>'+
+      '</div></div>';
   });
   h+='<div class="ffaxis"><div></div><div class="ffticks"><span>'+money(hi)+'</span><span>'+money((lo+hi)/2)+'</span><span>'+money(lo)+'</span></div></div>';
   box.innerHTML=h;
   const mids=out.map(o=>o.mid).sort((a,b)=>a-b);
   const med=mids.length%2?mids[(mids.length-1)/2]:(mids[mids.length/2-1]+mids[mids.length/2])/2;
-  const spread=mids[mids.length-1]/Math.max(1,mids[0]);
-  document.getElementById('ffnote').innerHTML=
-    'میانهٔ روش‌ها <b>'+money(med)+'</b> ('+hemat(med)+' همت) · کمینه '+money(mids[0])+' · بیشینه '+money(mids[mids.length-1])+
-    (spread>3?' — <span style="color:var(--warn)">پراکندگی بیش از سه برابر است؛ روش‌ها با هم حرف نمی‌زنند و باید بفهمید کدام فرض مقصر است.</span>':'')+
-    '<br>ضرایب صنعت از '+IND_ASOF+' و روی ارقام سال پایه اعمال شده‌اند.';
+  const spread=mids[mids.length-1]/Math.max(1e-9,mids[0]);
+  document.getElementById('ffnote').innerHTML='میانهٔ روش‌ها <b>'+money(med)+' '+unit().n+'</b> ('+hemat(med)+' همت)'+
+    (spread>3?' — <span style="color:var(--warn)">پراکندگی بیش از سه برابر؛ روش‌ها با هم حرف نمی‌زنند.</span>':'')+
+    '<br>ضرایب صنعت از '+IND_ASOF+' و روی ارقام سال پایه.';
 }
 
 /* ===== main ===== */
 function calc(){
+  document.querySelectorAll('.u').forEach(e=>e.textContent='('+unit().n+')');
   const mode=document.getElementById('path').value, k=n('k');
-  const kb=document.getElementById('kbox');
-  kb.style.display=(mode==='s'||mode==='front'||mode==='back')?'':'none';
-  document.getElementById('klab').textContent=
-    mode==='s'?'(بزرگ‌تر = گذار تندتر)':(mode==='front'?'(بزرگ‌تر = جهش اول شدیدتر)':'(بزرگ‌تر = تعویق بیشتر)');
+  document.getElementById('kbox').style.display=(mode==='s'||mode==='front'||mode==='back')?'':'none';
+  document.getElementById('klab').textContent= mode==='s'?'(بزرگ‌تر = گذار تندتر)':(mode==='front'?'(بزرگ‌تر = جهش شدیدتر)':'(بزرگ‌تر = تعویق بیشتر)');
 
-  const s0=n('h3'), sT=n('sT'), mT=n('mT')/100;
-  const inf=n('infl')/100, W=wacc(), w=W.v;
-  const gt=n('gterm')/100, xm=n('xmult');
-
-  /* history against the target */
-  const hg1=cagr(n('h1'),n('h2'),1), hg2=cagr(n('h2'),n('h3'),1), h3y=cagr(n('h1'),n('h3'),2);
-  const tg=cagr(s0,sT,N);
+  const HS=histStats();
+  ['s','e','d','ni','cx','nw'].forEach(k2=>{
+    const el=document.getElementById('r_'+k2); if(!el)return;
+    el.textContent = k2==='s'?pc(HS.cagr)+' CAGR' : k2==='e'?pc(HS.m)+' حاشیه'
+      : k2==='d'?pc(HS.dpc)+' از فروش' : k2==='ni'?pc(HS.nipc)+' حاشیه'
+      : k2==='cx'?pc(HS.cxpc)+' از فروش' : pc(HS.nwpc)+' از فروش';
+  });
+  const roeEl=document.getElementById('r_roe'); if(roeEl)roeEl.textContent='ROE '+pc(HS.roe);
   document.getElementById('histnote').innerHTML=
-    'رشد ۱۴۰۴ '+pc(hg1)+' · رشد سال پایه '+pc(hg2)+' · <b>CAGR دوساله '+pc(h3y)+'</b>';
+    'رشد ۱۴۰۳ '+pc(HS.g1)+' · رشد ۱۴۰۴ '+pc(HS.g2)+' · <b>CAGR دوساله '+pc(HS.cagr)+'</b> · '+
+    'سرمایه در گردش '+pc(HS.dnwc)+' از هر ریال رشد فروش';
+
+  applyErp();
+  const R=keRoutes(), W=wacc(), w=W.v, inf=n('infl')/100;
+  const gt=n('gterm')/100, xm=n('xmult'), sT=n('sT'), mT=n('mT')/100, s0=H('s',2);
+
+  /* the three routes, side by side, always */
+  document.getElementById('ketab').innerHTML=
+    '<thead><tr><th>روش</th><th>نرخ بدون ریسک</th><th>صرف ریسک</th><th>هزینهٔ سهام</th></tr></thead><tbody>'+
+    '<tr'+(erpSrc==='loc'?' class="hi"':'')+'><td>محلی — اخزا</td><td>'+pc(R.rfL)+'</td><td>'+fa(DAM.mature)+'٪</td><td>'+pc(R.loc)+'</td></tr>'+
+    '<tr'+(erpSrc==='usd'?' class="hi"':'')+'><td>دلاری — داموداران</td><td>'+fa(UST.v.toFixed(2))+'٪ دلاری</td><td>'+fa(DAM.erp)+'٪</td><td>'+pc(R.usd)+' ریالی</td></tr>'+
+    '<tr><td>ضمنی بازار تهران</td><td>'+pc(R.rfL)+'</td><td style="color:var(--warn)">'+pc(R.impErp)+'</td><td>'+pc(R.ep)+' (E/P)</td></tr>'+
+    '</tbody>';
+  document.getElementById('waccnote').innerHTML=
+    'Ke '+pc(W.ke)+' · Kd پس از مالیات '+pc(W.kdAt)+' · وزن بدهی '+pc(W.wd)+' · <b>WACC '+pc(w)+'</b><br>'+
+    (basis==='nom'?'مبنا اسمی؛ معادل حقیقی WACC '+pc(toReal(w,inf)):'مبنا حقیقی؛ معادل اسمی WACC '+pc(toNom(w,inf)))+
+    '<br><span style="color:var(--warn)">بازار تهران با P/E '+fa(MKT_PE)+' یعنی بازده سود '+pc(R.ep)+
+    ' در برابر اخزا '+pc(R.rfL)+' — صرف ریسک ضمنی '+pc(R.impErp)+
+    '. برای اینکه این قیمت با صرف '+fa(DAM.mature)+'٪ جور دربیاید، سود باید تا ابد '+pc(R.gReq)+
+    ' اسمی رشد کند، یعنی تقریباً هم‌اندازهٔ تورم '+pc(inf)+'.</span>';
+
+  /* target against history */
+  const tg=cagr(s0,sT,N);
   let tn='تارگت یعنی CAGR پنج‌ساله <b>'+pc(tg)+'</b>';
-  if(isFinite(h3y)&&isFinite(tg)){
-    const d=(tg-h3y)*100;
-    tn+=' در برابر '+pc(h3y)+' تاریخی — '+(Math.abs(d)<5?'نزدیک به روند.'
-      :(d>0?'<span style="color:var(--warn)">'+fa(d.toFixed(0))+' واحد بالاتر از روند؛ باید بگویید چه چیزی عوض می‌شود.</span>'
-            :'<span style="color:var(--warn)">'+fa(Math.abs(d).toFixed(0))+' واحد پایین‌تر از روند.</span>'));
+  if(isFinite(HS.cagr)&&isFinite(tg)){
+    const d=(tg-HS.cagr)*100;
+    tn+=' در برابر '+pc(HS.cagr)+' تاریخی — '+(Math.abs(d)<5?'نزدیک به روند.'
+      :'<span style="color:var(--warn)">'+fa(Math.abs(d).toFixed(0))+' واحد '+(d>0?'بالاتر':'پایین‌تر')+' از روند.</span>');
   }
   if(basis==='nom'&&isFinite(tg)&&tg<inf)
-    tn+='<br><span style="color:var(--warn)">مبنا اسمی است ولی CAGR تارگت از تورم کمتر است — یعنی فرض کرده‌اید فروش حقیقی کوچک می‌شود.</span>';
+    tn+='<br><span style="color:var(--warn)">مبنا اسمی است ولی CAGR تارگت از تورم کمتر است — یعنی فروش حقیقی کوچک می‌شود.</span>';
   document.getElementById('tgtnote').innerHTML=tn;
 
-  document.getElementById('waccnote').innerHTML=
-    'Ke '+pc(W.ke)+' · Kd پس از مالیات '+pc(W.kdAt)+' · وزن بدهی '+pc(W.wd)+' · <b>WACC '+pc(w)+'</b>';
-  document.getElementById('basisnote').innerHTML= basis==='nom'
-    ? 'ورودی‌ها اسمی‌اند. معادل حقیقی این WACC: <b>'+pc(toReal(w,inf))+'</b>'
-    : 'ورودی‌ها حقیقی‌اند. معادل اسمی این WACC: <b>'+pc(toNom(w,inf))+'</b>';
-
-  const rows=project(mode,k,sT,mT);
-  const R=dcf(rows,w,gt,xm);
-  const eq=toEq(R.ev), sh=n('shares');
+  const rows=project(mode,k,sT,mT), D=dcf(rows,w,gt,xm);
+  const eq=toEq(D.ev), sh=n('shares'), u=unit();
   const box=document.getElementById('res');
-
-  if(R.err){
-    box.innerHTML='<h2>ارزش</h2><div class="flag bad">'+R.err+' — رشد دائمی '+pc(gt)+' در برابر WACC '+pc(w)+
-      '. رشد دائمی را پایین بیاورید یا روش ضریب خروج را بگیرید.</div>';
+  if(D.err){
+    box.innerHTML='<h2>ارزش</h2><div class="flag bad">'+D.err+' — رشد دائمی '+pc(gt)+' در برابر WACC '+pc(w)+'.</div>';
   }else{
-    let h='<h2>ارزش حقوق صاحبان سهام</h2>'+BIGR('پایه',money(eq))+SM('به همت',hemat(eq))+
-      SM('ارزش بنگاه',money(R.ev))+SM('ارزش فعلی افق · ارزش نهایی',money(R.pv)+' · '+money(R.pvTV));
-    if(sh>0)h+=SM('هر سهم (ریال)',money(eq/sh));
-    const notes=[];
-    notes.push({bad:R.tvShare>0.75,t:'سهم ارزش نهایی از کل: '+pc(R.tvShare)+
-      (R.tvShare>0.75?' — عملاً دارید یک عدد را حدس می‌زنید و افق تزئین است.':'')});
+    let h='<h2>ارزش حقوق صاحبان سهام — '+u.n+'</h2>'+BIGR('پایه',money(eq))+SM('به همت',hemat(eq))+
+      SM('ارزش بنگاه',money(D.ev))+SM('ارزش فعلی افق · ارزش نهایی',money(D.pv)+' · '+money(D.pvTV));
+    if(sh>0)h+=SM('هر سهم (ریال)',money(eq*u.m/sh));
+    const nt=[];
+    nt.push({bad:D.tvShare>0.75,t:'سهم ارزش نهایی: '+pc(D.tvShare)+(D.tvShare>0.75?' — عملاً یک عدد را حدس می‌زنید.':'')});
     if(basis==='nom'&&tvMode==='g'&&gt>inf+0.05)
-      notes.push({bad:true,t:'رشد دائمی '+pc(gt)+' بیش از پنج واحد بالاتر از تورم است — یعنی رشد ابدی سریع‌تر از اقتصاد.'});
-    if(R.impliedX!==null){
-      const ind=IND[document.getElementById('ind').value];
-      let c='';
-      if(ind&&ind.evebit>0){const d=(R.impliedX/ind.evebit-1)*100;
-        c=' در برابر EV/EBIT صنعت '+fa(ind.evebit.toFixed(1))+'×'+(Math.abs(d)>50?' — اختلاف '+fa(Math.abs(d).toFixed(0))+'٪':'');}
-      notes.push({bad:false,t:'ضریب خروج ضمنی '+fa(R.impliedX.toFixed(2))+'× روی EBITDA سال ۵'+c+'.'});
+      nt.push({bad:true,t:'رشد دائمی '+pc(gt)+' بیش از پنج واحد بالاتر از تورم است.'});
+    if(D.impliedX!==null){
+      const ind=IND[document.getElementById('ind').value]; let c='';
+      if(ind&&ind.evebit>0){const dd=(D.impliedX/ind.evebit-1)*100;
+        c=' در برابر EV/EBIT صنعت '+fa(ind.evebit.toFixed(1))+'×'+(Math.abs(dd)>50?' — اختلاف '+fa(Math.abs(dd).toFixed(0))+'٪':'');}
+      nt.push({bad:false,t:'ضریب خروج ضمنی '+fa(D.impliedX.toFixed(2))+'× روی EBITDA سال ۵'+c+'.'});
     }
-    if(eq<0)notes.push({bad:true,t:'ارزش حقوق صاحبان سهام منفی شد.'});
-    notes.forEach(o=>h+='<div class="flag'+(o.bad?' bad':'')+'">'+o.t+'</div>');
+    if(eq<0)nt.push({bad:true,t:'ارزش حقوق صاحبان سهام منفی شد.'});
+    nt.forEach(o=>h+='<div class="flag'+(o.bad?' bad':'')+'">'+o.t+'</div>');
     box.innerHTML=h;
   }
 
-  document.getElementById('tvnote').innerHTML = tvMode==='g'
-    ? 'گوردون: FCFF سال ۵ × (۱+g) ÷ (WACC − g). مخرج الان '+pc(w-gt)+' است.'
+  document.getElementById('tvnote').innerHTML= tvMode==='g'
+    ? 'گوردون: FCFF سال ۵ × (۱+g) ÷ (WACC − g). مخرج '+pc(w-gt)+'.'
     : 'ارزش نهایی = EBITDA سال ۵ × ضریب خروج.';
 
-  /* projection table */
-  const hd=['سال','فروش','رشد','EBITDA','حاشیه','EBIT','استهلاک','سرمایه‌ای','سرمایه در گردش','FCFF'];
-  let pt='<table><thead><tr>'+hd.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>';
-  pt+='<tr><td>پایه</td><td>'+money(s0)+'</td><td>—</td><td>'+money(s0*n('m0')/100)+'</td><td>'+pc(n('m0')/100)+
-      '</td><td colspan="5">—</td></tr>';
+  const hd=['سال','فروش','رشد','EBITDA','حاشیه','EBIT','استهلاک','سرمایه‌ای','Δسرمایه در گردش','FCFF'];
+  let pt='<table><thead><tr>'+hd.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+
+    '<tr><td>پایه</td><td>'+money(s0)+'</td><td>—</td><td>'+money(H('e',2))+'</td><td>'+pc(s0>0?H('e',2)/s0:0)+'</td><td colspan="5">—</td></tr>';
   rows.forEach(r=>{pt+='<tr><td>'+fa(r.t)+'</td><td>'+money(r.sales)+'</td><td>'+pc(r.g)+'</td><td>'+money(r.ebitda)+
     '</td><td>'+pc(r.m)+'</td><td>'+money(r.ebit)+'</td><td>'+money(r.dep)+'</td><td>'+money(r.capex)+
     '</td><td>'+money(r.dnwc)+'</td><td><b>'+money(r.fcff)+'</b></td></tr>';});
-  pt+='</tbody></table>';
-  document.getElementById('proj').innerHTML=pt;
+  document.getElementById('proj').innerHTML=pt+'</tbody></table><p class="note">مبالغ به '+u.n+'.</p>';
 
-  /* sensitivity */
-  const ws=[-0.06,-0.03,0,0.03,0.06].map(d=>w+d);
-  const gs=tvMode==='g'?[-0.06,-0.03,0,0.03,0.06].map(d=>gt+d):[-2,-1,0,1,2].map(d=>xm+d);
+  const ws=[-0.06,-0.03,0,0.03,0.06].map(x=>w+x);
+  const gs=tvMode==='g'?[-0.06,-0.03,0,0.03,0.06].map(x=>gt+x):[-2,-1,0,1,2].map(x=>xm+x);
   let s='<table><thead><tr><th>WACC \\ '+(tvMode==='g'?'g':'ضریب')+'</th>'+
     gs.map(g=>'<th>'+(tvMode==='g'?pc(g):fa(g.toFixed(1))+'×')+'</th>').join('')+'</tr></thead><tbody>';
-  ws.forEach(ww=>{
-    s+='<tr'+(Math.abs(ww-w)<1e-9?' class="hi"':'')+'><td>'+pc(ww)+'</td>';
+  ws.forEach(ww=>{s+='<tr'+(Math.abs(ww-w)<1e-9?' class="hi"':'')+'><td>'+pc(ww)+'</td>';
     gs.forEach(gg=>{const v=dcf(rows,ww,tvMode==='g'?gg:gt,tvMode==='g'?xm:gg);
-      s+='<td>'+(v.err?'—':money(toEq(v.ev)))+'</td>';});
-    s+='</tr>';
-  });
-  document.getElementById('sens').innerHTML=s+'</tbody></table>';
+      s+='<td>'+(v.err?'—':money(toEq(v.ev)))+'</td>';});s+='</tr>';});
+  document.getElementById('sens').innerHTML=s+'</tbody></table><p class="note">ارزش حقوق صاحبان سهام به '+u.n+'.</p>';
 
   football(rows,w,gt,xm);
 }
 
+/* sources */
+document.getElementById('srcs').innerHTML=
+ '<thead><tr><th>قلم</th><th>مقدار</th><th>منبع و تاریخ</th></tr></thead><tbody>'+
+ '<tr><td>صرف ریسک کل ایران</td><td>'+fa(DAM.erp)+'٪</td><td>داموداران — '+DAM.asof+'</td></tr>'+
+ '<tr><td>صرف ریسک کشوری ایران</td><td>'+fa(DAM.crp)+'٪</td><td>همان</td></tr>'+
+ '<tr><td>صرف بازار بالغ</td><td>'+fa(DAM.mature)+'٪</td><td>همان — آلمان با CRP صفر</td></tr>'+
+ '<tr><td>اسپرد نکول ایران</td><td>'+fa(DAM.spread)+'٪</td><td>همان — رتبه '+DAM.rating+'</td></tr>'+
+ '<tr><td>اوراق ۱۰ سالهٔ آمریکا</td><td>'+fa(UST.v.toFixed(2))+'٪</td><td>'+UST.src+' — '+UST.asof+'</td></tr>'+
+ '<tr><td>تورم ایران</td><td>'+fa(INF.ir)+'٪</td><td>بانک جهانی — میانگین '+INF.span+'</td></tr>'+
+ '<tr><td>تورم آمریکا</td><td>'+fa(INF.us)+'٪</td><td>فرض بلندمدت</td></tr>'+
+ '<tr><td>P/E بازار تهران</td><td>'+fa(MKT_PE)+'</td><td>بورس‌ویو — '+IND_ASOF+'</td></tr>'+
+ '<tr><td>نرخ بدون ریسک ریالی</td><td>زنده</td><td>اخزا — cdn.tsetmc.com</td></tr>'+
+ '</tbody>';
+
 /* wiring */
-(function(){
-  const sel=document.getElementById('ind');
+(function(){const sel=document.getElementById('ind');
   sel.innerHTML=IND.map((x,i)=>'<option value="'+i+'">'+x.name+'</option>').join('');
-  const i=IND.findIndex(x=>x.name.indexOf('آهن و فولاد')>=0); if(i>=0)sel.value=String(i);
-})();
+  const i=IND.findIndex(x=>x.name.indexOf('آهن و فولاد')>=0); if(i>=0)sel.value=String(i);})();
 document.querySelectorAll('#basis button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#basis button').forEach(x=>x.setAttribute('aria-pressed','false'));
-  b.setAttribute('aria-pressed','true');basis=b.dataset.x;drawCurve();applyRf();calc();}));
-document.querySelectorAll('#rfsrc button').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('#rfsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
-  b.setAttribute('aria-pressed','true');rfSrc=b.dataset.r;drawCurve();applyRf();calc();}));
+  b.setAttribute('aria-pressed','true');basis=b.dataset.x;applyErp();calc();}));
+document.querySelectorAll('#erpsrc button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#erpsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');erpSrc=b.dataset.e;applyErp();calc();}));
 document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#tvm button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');tvMode=b.dataset.t;
   document.getElementById('tvg').style.display=tvMode==='g'?'':'none';
   document.getElementById('tvx').style.display=tvMode==='x'?'':'none';calc();}));
-['h1','h2','h3','m0','ni0','bv0','ind','sT','mT','path','k','da','capex','nwc','taxop','mid','infl',
- 'rf','erp','beta','alpha','kd','tax','debt','eqmv','gterm','xmult','bdebt','bcash','bminor','bnonop','shares']
+document.getElementById('fillhist').addEventListener('click',()=>{
+  const S=histStats();
+  if(isFinite(S.dpc))document.getElementById('da').value=(S.dpc*100).toFixed(2);
+  if(isFinite(S.cxpc))document.getElementById('capex').value=(S.cxpc*100).toFixed(2);
+  if(isFinite(S.dnwc))document.getElementById('nwc').value=(S.dnwc*100).toFixed(2);
+  if(isFinite(S.m))document.getElementById('mT').value=(S.m*100).toFixed(2);
+  calc();});
+['unit','sT','mT','path','k','da','capex','nwc','taxop','mid','infl','rf','erp','beta','alpha','kd','tax',
+ 'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares']
  .forEach(id=>{const e=document.getElementById(id);if(!e)return;
-   const h=()=>{if(id==='infl')applyRf();calc();};
-   e.addEventListener('input',h);e.addEventListener('change',h);});
+   e.addEventListener('input',calc);e.addEventListener('change',calc);});
 
-calc();
-loadCurve(false);
+drawHist();calc();loadCurve(false);
 
-(function(){
-  const el=document.getElementById('offline');
+(function(){const el=document.getElementById('offline');
   const say=(t,w)=>{if(el)el.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
   if(location.protocol==='file:'){say('فایل محلی — همیشه آفلاین');return;}
-  if(!('serviceWorker' in navigator)){say('این مرورگر حالت آفلاین را پشتیبانی نمی‌کند',1);return;}
-  navigator.serviceWorker.register('sw.js').then(()=>say('آفلاین آماده است')).catch(()=>say('حالت آفلاین فعال نشد',1));
-})();
+  if(!('serviceWorker' in navigator)){say('بدون پشتیبانی آفلاین',1);return;}
+  navigator.serviceWorker.register('sw.js').then(()=>say('آفلاین آماده است')).catch(()=>say('حالت آفلاین فعال نشد',1));})();
 </script>
