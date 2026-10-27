@@ -1,11 +1,13 @@
 /* Cache the page shell so the app keeps working with no network. */
-const C = 'dcf-v6';
+const C = 'dcf-v7';
 const SHELL = ['./', './index.html', './icon-180.png', './icon-192.png', './icon-512.png', './app.webmanifest'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(C).then(c => Promise.allSettled(SHELL.map(u => c.add(u))))
+    caches.open(C).then(c => Promise.allSettled(SHELL.map(u =>
+      fetch(u, { cache: 'reload' }).then(res => res.ok && c.put(u, res))
+    )))
   );
 });
 
@@ -27,21 +29,27 @@ self.addEventListener('fetch', e => {
 
   if (r.mode === 'navigate') {
     e.respondWith(
-      fetch(r)
+      fetch(r.url, { cache: 'reload' })
         .then(res => {
-          const copy = res.clone();
-          caches.open(C).then(c => c.put(r, copy)).catch(() => {});
+          if (res.ok && !url.search) {
+            const copy = res.clone();
+            caches.open(C).then(c => Promise.all([c.put('./', copy.clone()),
+                                                  c.put('./index.html', copy)])).catch(() => {});
+          }
           return res;
         })
-        .catch(() => caches.match(r).then(m => m || caches.match('./')))
+        .catch(() => caches.match('./').then(m => m || caches.match(r)))
     );
     return;
   }
 
+  if (url.search) return;
   e.respondWith(
     caches.match(r).then(m => m || fetch(r).then(res => {
-      const copy = res.clone();
-      caches.open(C).then(c => c.put(r, copy)).catch(() => {});
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(C).then(c => c.put(r, copy)).catch(() => {});
+      }
       return res;
     }))
   );
