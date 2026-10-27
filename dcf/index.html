@@ -62,6 +62,8 @@ tr.hi td{background:var(--wash);font-weight:700}
 .seg button{flex:1;padding:9px 4px;border:0;border-radius:8px;background:transparent;color:var(--soft);font-family:var(--f);font-size:12.5px;font-weight:700;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
 .seg.sm button{font-size:11.5px;padding:8px 2px}
+.mini{border:1px solid var(--line);background:var(--field);color:var(--ink);font-family:var(--f);
+ font-size:11px;font-weight:700;border-radius:7px;padding:4px 9px;cursor:pointer}
 button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--acc);font-family:var(--f);font-size:14px;font-weight:700;cursor:pointer}
 .ff{margin-top:6px}
 .ffrow{display:grid;grid-template-columns:118px 1fr;gap:9px;align-items:center;margin-bottom:9px}
@@ -178,6 +180,29 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
       <div><label>دارایی غیرعملیاتی <span class="u"></span></label><input id="bnonop" inputmode="numeric" value="0"></div>
     </div>
     <div style="margin-top:10px"><label>تعداد سهام (میلیون برگه) — اختیاری</label><input id="shares" inputmode="numeric" value="0"></div>
+  </div>
+
+  <div class="card">
+    <h2>۷ · ارزش دلاری</h2>
+    <div class="seg sm" id="fxsrc" role="group">
+      <button data-f="live" aria-pressed="true">دلار آزاد — زنده</button>
+      <button data-f="man" aria-pressed="false">دستی</button>
+    </div>
+    <div class="g2" style="margin-top:11px">
+      <div><label>نرخ دلار (ریال)</label><input id="fx" inputmode="numeric" value="2715000"></div>
+      <div><label>کاهش سالانهٔ ارزش ریال ٪</label><input id="dep" inputmode="decimal" value="36.11"></div>
+    </div>
+    <div class="seg sm" id="depsrc" role="group" style="margin-top:8px">
+      <button data-d="ppp" aria-pressed="true">برابری قدرت خرید</button>
+      <button data-d="h5" aria-pressed="false">تاریخی ۵ ساله</button>
+      <button data-d="h3" aria-pressed="false">تاریخی ۳ ساله</button>
+      <button data-d="man" aria-pressed="false">دستی</button>
+    </div>
+    <div id="fxnote" class="note" style="margin-top:9px"></div>
+    <div id="usdres"></div>
+    <div class="tw" style="margin-top:12px"><table id="usdsum"></table></div>
+    <div class="tw" style="margin-top:10px"><table id="usdflow"></table></div>
+    <p class="note" id="usdnote"></p>
   </div>
 
   <div class="card">
@@ -337,6 +362,127 @@ function dcf(rows,w,gt,xm,mode){
           impliedX:(tv!==null&&last.ebitda>0)?tv/last.ebitda:null};
 }
 const toEq=ev=>ev-(n('bdebt')-n('bcash'))-n('bminor')+n('bnonop');
+
+/* ===== dollar layer =====
+   Everything here hangs on one number: how fast the rial is expected to fall.
+   Pick it and the dollar view follows by identity — no second model. */
+const FX={rl:2715000,asof:'۱۴۰۵/۰۸/۰۴',src:'tgju · price_dollar_rl',
+          dep:{3:75.07,5:58.21,1:100.27},
+          sana:1294782,sanaAsof:'۱۴۰۴/۱۰/۱۸'};
+const KE_USD=UST.v/100+DAM.erp/100;            /* دلاری: UST + صرف ریسک ایران داموداران */
+let fxSrc='live', depSrc='ppp', fxState='idle';
+
+const pppDep=()=>{const inf=n('infl')/100;return (1+inf)/(1+INF.us/100)-1;};
+function applyDep(){
+  const el=document.getElementById('dep'); if(!el)return;
+  if(depSrc==='man'){el.readOnly=false;return;}
+  const v=depSrc==='ppp'?pppDep():depSrc==='h5'?FX.dep[5]/100:FX.dep[3]/100;
+  el.value=(v*100).toFixed(2); el.readOnly=true;
+}
+const usdFmt=x=>{const a=Math.abs(x);
+  return !isFinite(x)?'—'
+   :a>=1e9?fa((x/1e9).toFixed(2))+' میلیارد دلار'
+   :a>=1e6?fa((x/1e6).toFixed(2))+' میلیون دلار'
+   :fa(Math.round(x).toLocaleString('en-US'))+' دلار';};
+
+function fxLine(){
+  const el=document.getElementById('fxnote'); if(!el)return;
+  const L=FX.live;
+  if(fxSrc!=='live'){el.innerHTML='<span class="badge old">نرخ دستی</span> هر عددی بگذارید، بقیه دنبالش می‌آید.';return;}
+  if(fxState==='busy'){el.innerHTML='<span class="badge">در حال گرفتن نرخ دلار…</span>';return;}
+  if(fxState==='fail'||!L){el.innerHTML='<span class="badge old">نرخ زنده نیامد</span> عدد پیش‌فرض '+
+    money(FX.rl)+' ریال از '+FX.asof+' است. <button id="fxref" class="mini">تلاش دوباره</button>';bindRef();return;}
+  el.innerHTML='<span class="badge">زنده</span> دلار آزاد '+money(L.v)+' ریال ('+money(L.v/10)+' تومان) — '+
+    fa(L.j||L.g)+'. <button id="fxref" class="mini">به‌روزرسانی</button>'+
+    '<br>نرخ سنا هم منتشر می‌شود ('+money(FX.sana)+' ریال) ولی داده‌اش از '+FX.sanaAsof+
+    ' جلوتر نرفته، پس به‌عنوان نرخ زنده استفاده نمی‌شود.';
+  bindRef();
+  function bindRef(){const b=document.getElementById('fxref');if(b)b.addEventListener('click',()=>loadFx(true));}
+}
+
+async function loadFx(force){
+  const el=document.getElementById('fx'); if(!el)return;
+  if(fxSrc!=='live'){el.readOnly=false;fxLine();return;}
+  el.readOnly=true;
+  const KEY='fx_rl_v1';
+  try{const c=JSON.parse(localStorage.getItem(KEY)||'null');
+    if(c&&!force&&Date.now()-c.t<6*3600e3){FX.live=c;el.value=String(c.v);fxState='ok';fxLine();calc();return;}
+  }catch(e){}
+  fxState='busy'; fxLine();
+  try{
+    const r=await fetch('https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl',{cache:'no-store'});
+    const j=await r.json(), rows=(j&&j.data)||[];
+    let best=null;
+    rows.forEach(row=>{
+      const v=parseFloat(String(row[3]).replace(/[^\d.]/g,''));
+      const g=String(row[6]||'').trim();
+      const t=Date.parse(g.replace(/\//g,'-'));
+      if(!isFinite(v)||v<=0||!isFinite(t))return;
+      if(!best||t>best.t)best={t,v,g,j:String(row[7]||'').trim()};
+    });
+    if(best){FX.live={v:Math.round(best.v),g:best.g,j:best.j,t:Date.now()};
+      el.value=String(FX.live.v); fxState='ok';
+      try{localStorage.setItem(KEY,JSON.stringify(FX.live));}catch(e){}}
+    else fxState='fail';
+  }catch(e){fxState='fail';}
+  fxLine(); calc();
+}
+
+function usdBlock(rows,w,eq,ev,tg){
+  const fx=n('fx'), dep=n('dep')/100, inf=n('infl')/100, u=unit(), sh=n('shares');
+  const box=document.getElementById('usdres');
+  const sum=document.getElementById('usdsum'), flow=document.getElementById('usdflow');
+  if(!(fx>0)){box.innerHTML='<div class="flag bad">نرخ دلار وارد نشده.</div>';sum.innerHTML='';flow.innerHTML='';return;}
+  const d=x=>x*u.m*1e6/fx;                       /* مبلغ به دلار امروز */
+  const infU=(1+inf)/(1+dep)-1;                  /* تورم دلاری */
+  const wU=(1+w)/(1+dep)-1;                      /* همان WACC، به دلار */
+  const tgU=isFinite(tg)?(1+tg)/(1+dep)-1:NaN;
+  const wReq=(1+KE_USD)*(1+dep)-1;               /* WACC ریالی که نرخ دلاری متعارف می‌خواهد */
+
+  /* the number worth acting on: value when the dollar return is the one you'd demand */
+  const Dreq=dcf(rows,wReq,n('gterm')/100,n('xmult'));
+  const eqReq=Dreq.err?NaN:toEq(Dreq.ev);
+
+  let h='<h2 style="margin:0 0 9px">ارزش به دلار</h2>'+
+    BIGR('حقوق صاحبان سهام',usdFmt(d(eq)))+SM('ارزش بنگاه',usdFmt(d(ev)));
+  if(sh>0)h+=SM('هر سهم',fa(d(eq)/sh>=1?(d(eq)/sh).toFixed(2):(d(eq)/sh).toFixed(4))+' دلار');
+  h+=SM('با بازده دلاری '+pc(KE_USD)+' (WACC ریالی '+pc(wReq)+')',
+        isFinite(eqReq)?usdFmt(d(eqReq)):'رشد دائمی از WACC بزرگ‌تر شد');
+  const fl=[];
+  if(infU<0)fl.push({bad:false,t:'تورم دلاری '+pc(infU)+' — ریال تندتر از قیمت‌ها افتاده، پس به دلار قیمت‌ها پایین آمده‌اند. '+
+    'شرکتی که فروش ریالی‌اش '+pc(tg)+' رشد می‌کند، به دلار '+pc(tgU)+' «رشد» دارد.'});
+  if(wU<0)fl.push({bad:true,t:'نرخ تنزیل دلاری منفی شد ('+pc(wU)+'). با این نرخ کاهش ارزش ریال، WACC ریالی '+pc(w)+
+    ' بی‌معنی است — باید حدود '+pc(wReq)+' باشد.'});
+  else if(wU<UST.v/100)fl.push({bad:true,t:'نرخ تنزیل دلاری '+pc(wU)+' از نرخ بدون ریسک دلاری '+fa(UST.v.toFixed(2))+
+    '٪ کمتر است؛ یعنی ریسک ایران را منفی قیمت کرده‌اید. WACC ریالی متناظر با نرخ دلاری متعارف '+pc(wReq)+' است.'});
+  else if(wU<KE_USD)fl.push({bad:false,t:'نرخ تنزیل دلاری '+pc(wU)+' در برابر '+pc(KE_USD)+
+    ' هزینهٔ سهام دلاری داموداران — WACC ریالی متناظر '+pc(wReq)+'.'});
+  fl.forEach(o=>h+='<div class="flag'+(o.bad?' bad':'')+'">'+o.t+'</div>');
+  box.innerHTML=h;
+
+  sum.innerHTML='<thead><tr><th>سنجه</th><th>ریالی</th><th>دلاری</th></tr></thead><tbody>'+
+   '<tr><td>تورم</td><td>'+pc(inf)+'</td><td'+(infU<0?' style="color:var(--warn)"':'')+'>'+pc(infU)+'</td></tr>'+
+   '<tr><td>CAGR فروش تارگت</td><td>'+pc(tg)+'</td><td'+(tgU<0?' style="color:var(--warn)"':'')+'>'+pc(tgU)+'</td></tr>'+
+   '<tr class="hi"><td>نرخ تنزیل</td><td>'+pc(w)+'</td><td>'+pc(wU)+'</td></tr>'+
+   '<tr><td>ارزش حقوق صاحبان سهام</td><td>'+money(eq)+' '+u.n+'</td><td>'+usdFmt(d(eq))+'</td></tr>'+
+   '<tr><td>ارزش بنگاه</td><td>'+money(ev)+' '+u.n+'</td><td>'+usdFmt(d(ev))+'</td></tr>'+
+   '<tr><td>ارزش با بازده دلاری '+pc(KE_USD)+'</td><td>'+(isFinite(eqReq)?money(eqReq)+' '+u.n:'—')+
+     '</td><td>'+(isFinite(eqReq)?usdFmt(d(eqReq)):'—')+'</td></tr>'+
+   '</tbody>';
+
+  let f='<thead><tr><th>سال</th><th>FCFF ('+u.n+')</th><th>نرخ دلار پیش‌بینی</th><th>FCFF دلاری</th></tr></thead><tbody>';
+  rows.forEach(r=>{const fxt=fx*Math.pow(1+dep,r.t);
+    f+='<tr><td>'+fa(r.t)+'</td><td>'+money(r.fcff)+'</td><td>'+money(fxt)+'</td><td>'+
+       usdFmt(r.fcff*u.m*1e6/fxt)+'</td></tr>';});
+  flow.innerHTML=f+'</tbody>';
+
+  document.getElementById('usdnote').innerHTML=
+    'ارزش دلاری با نرخ امروز تبدیل شده است. ستون «FCFF دلاری» همان جریان‌ها با نرخ پیش‌بینی هر سال است؛ '+
+    'اگر آن‌ها را با نرخ تنزیل دلاری '+pc(wU)+' تنزیل کنید دقیقاً به همین عدد می‌رسید — این یک اتحاد است، نه تأیید مستقل. '+
+    'چیزی که اینجا آزمون می‌شود این است: آیا نرخ تنزیل دلاری قابل دفاع است؟'+
+    '<br>کاهش ارزش ریال — تاریخی: یک‌ساله '+fa(FX.dep[1].toFixed(2))+'٪ · سه‌ساله '+fa(FX.dep[3].toFixed(2))+
+    '٪ · پنج‌ساله '+fa(FX.dep[5].toFixed(2))+'٪ · برابری قدرت خرید '+pc(pppDep())+'.';
+}
 
 /* ===== اخزا curve ===== */
 const _d=(a,b)=>~~(a/b), _m=(a,b)=>a-~~(a/b)*b;
@@ -538,6 +684,7 @@ function calc(){
   document.getElementById('sens').innerHTML=s+'</tbody></table><p class="note">ارزش حقوق صاحبان سهام به '+u.n+'.</p>';
 
   football(rows,w,gt,xm);
+  applyDep(); usdBlock(rows,w,eq,D.ev,tg);
 }
 
 /* sources */
@@ -569,6 +716,12 @@ document.querySelectorAll('#tvm button').forEach(b=>b.addEventListener('click',(
   b.setAttribute('aria-pressed','true');tvMode=b.dataset.t;
   document.getElementById('tvg').style.display=tvMode==='g'?'':'none';
   document.getElementById('tvx').style.display=tvMode==='x'?'':'none';calc();}));
+document.querySelectorAll('#fxsrc button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#fxsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');fxSrc=b.dataset.f;loadFx(false);}));
+document.querySelectorAll('#depsrc button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#depsrc button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');depSrc=b.dataset.d;applyDep();calc();}));
 document.getElementById('fillhist').addEventListener('click',()=>{
   const S=histStats();
   if(isFinite(S.dpc))document.getElementById('da').value=(S.dpc*100).toFixed(2);
@@ -577,11 +730,11 @@ document.getElementById('fillhist').addEventListener('click',()=>{
   if(isFinite(S.m))document.getElementById('mT').value=(S.m*100).toFixed(2);
   calc();});
 ['unit','sT','mT','path','k','da','capex','nwc','taxop','mid','infl','rf','erp','beta','alpha','kd','tax',
- 'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares']
+ 'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares','fx','dep']
  .forEach(id=>{const e=document.getElementById(id);if(!e)return;
    e.addEventListener('input',calc);e.addEventListener('change',calc);});
 
-drawHist();calc();loadCurve(false);
+drawHist();applyDep();calc();loadCurve(false);loadFx(false);
 
 (function(){const el=document.getElementById('offline');
   const say=(t,w)=>{if(el)el.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
