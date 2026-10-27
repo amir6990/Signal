@@ -109,6 +109,12 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
     <div class="g2">
       <div><label>فروش سال ۵ <span class="u"></span></label><input id="sT" inputmode="numeric" value="4000000"></div>
       <div><label>حاشیه EBITDA سال ۵ ٪</label><input id="mT" inputmode="decimal" value="21"></div>
+      <div><label>مخارج سرمایه‌ای سال ۵ ٪ از فروش</label><input id="cxT" inputmode="decimal" value="6"></div>
+      <div><label>سرمایه در گردش سال ۵ ٪ از رشد فروش</label><input id="nwT" inputmode="decimal" value="20"></div>
+    </div>
+    <div style="margin-top:11px">
+      <label>سود خالص سال ۵ <span class="u"></span> — اختیاری، فقط برای آزمون</label>
+      <input id="niT" inputmode="numeric" value="" placeholder="خالی بگذارید تا مدل خودش بگوید">
     </div>
     <div style="margin-top:11px"><label>تابع رسیدن به تارگت</label>
       <select id="path">
@@ -125,12 +131,13 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
   </div>
 
   <div class="card">
-    <h2>۳ · درایورهای ثابت</h2>
+    <h2>۳ · نقطهٔ شروع درایورها</h2>
     <div class="g2">
       <div><label>استهلاک ٪ از فروش</label><input id="da" inputmode="decimal" value="4"></div>
       <div><label>مخارج سرمایه‌ای ٪ از فروش</label><input id="capex" inputmode="decimal" value="6"></div>
       <div><label>سرمایه در گردش ٪ از رشد فروش</label><input id="nwc" inputmode="decimal" value="20"></div>
       <div><label>نرخ مالیات عملیاتی ٪</label><input id="taxop" inputmode="decimal" value="25"></div>
+      <div><label>سرمایهٔ به‌کارگرفتهٔ ابتدای دوره <span class="u"></span></label><input id="ic0" inputmode="numeric" value="0"></div>
       <div><label>تنزیل</label><select id="mid"><option value="0" selected>پایان سال</option><option value="1">میانهٔ سال</option></select></div>
       <div><label>تورم بلندمدت ایران ٪</label><input id="infl" inputmode="decimal" value="39.5"></div>
     </div>
@@ -180,6 +187,13 @@ button.add{width:100%;padding:11px;border-radius:10px;border:1px dashed var(--li
       <div><label>دارایی غیرعملیاتی <span class="u"></span></label><input id="bnonop" inputmode="numeric" value="0"></div>
     </div>
     <div style="margin-top:10px"><label>تعداد سهام (میلیون برگه) — اختیاری</label><input id="shares" inputmode="numeric" value="0"></div>
+  </div>
+
+  <div class="card">
+    <h2>آزمون سازگاری رشد</h2>
+    <div id="consres"></div>
+    <div class="tw" style="margin-top:12px"><table id="constab"></table></div>
+    <p class="note" id="consnote"></p>
   </div>
 
   <div class="card">
@@ -338,14 +352,25 @@ function applyErp(){
 /* ===== projection ===== */
 function project(mode,k,sT,mT){
   const s0=H('s',2), m0=(H('s',2)>0?H('e',2)/H('s',2):0);
-  const da=n('da')/100, cx=n('capex')/100, nw=n('nwc')/100, t=n('taxop')/100;
-  const rows=[]; let prev=s0;
+  const da=n('da')/100, t=n('taxop')/100;
+  /* capex and working capital converge to their own year-5 targets on the same path —
+     holding them flat while the margin expands is not a forecast, it is an oversight */
+  const cx0=n('capex')/100, cxT=n('cxT')/100, nw0=n('nwc')/100, nwT=n('nwT')/100;
+  const intr=n('debt')*n('kd')/100;            /* interest, held flat on the stated debt */
+  const rows=[]; let prev=s0, ic=n('ic0');
   for(let i=1;i<=N;i++){
     const sales=pathVal(s0,sT,i,mode,k), m=pathVal(m0,mT,i,mode,k);
+    const cx=pathVal(cx0,cxT,i,mode,k), nw=pathVal(nw0,nwT,i,mode,k);
     const ebitda=sales*m, dep=sales*da, ebit=ebitda-dep;
     const capex=sales*cx, dnwc=(sales-prev)*nw;
-    rows.push({t:i,sales,g:prev>0?sales/prev-1:0,m,ebitda,dep,ebit,nopat:ebit*(1-t),
-               capex,dnwc,fcff:ebit*(1-t)+dep-capex-dnwc});
+    const nopat=ebit*(1-t), reinv=capex-dep+dnwc;
+    const icOpen=ic; ic=icOpen+reinv;
+    rows.push({t:i,sales,g:prev>0?sales/prev-1:0,m,ebitda,dep,ebit,nopat,
+               capex,dnwc,reinv,icOpen,icClose:ic,
+               roic:icOpen>0?nopat/icOpen:NaN,
+               rir:nopat>0?reinv/nopat:NaN,
+               ni:(ebit-intr)*(1-t),
+               fcff:nopat+dep-capex-dnwc});
     prev=sales;
   }
   return rows;
@@ -433,6 +458,76 @@ async function loadFx(force){
     if(c&&c.v>0){FX.live=c;el.value=String(c.v);fxState='stale';}
   }
   fxLine(); calc();
+}
+
+/* ===== does the plan pay for its own growth? =====
+   g = reinvestment rate x ROIC. If the target growth is far above what the
+   stated capex and working capital can fund, the model is assuming free growth. */
+function consistency(rows,w,tg){
+  const box=document.getElementById('consres'), tab=document.getElementById('constab');
+  const u=unit(), ic0=n('ic0'), t=n('taxop')/100, niT=n('niT');
+  const last=rows[N-1];
+  const sumReinv=rows.reduce((a,r)=>a+r.reinv,0);
+  const nopat0=(H('e',2)-H('d',2))*(1-t);
+  const roiic=sumReinv>0?(last.nopat-nopat0)/sumReinv:NaN;
+  const avgRir=rows.reduce((a,r)=>a+(isFinite(r.rir)?r.rir:0),0)/N;
+  const avgRoic=ic0>0?rows.reduce((a,r)=>a+(isFinite(r.roic)?r.roic:0),0)/N:NaN;
+  const gSupported=(isFinite(avgRoic)&&isFinite(avgRir))?avgRir*avgRoic:NaN;
+  const niModel=last.ni, niMargin=last.sales>0?niModel/last.sales:NaN;
+
+  let h='<h2 style="margin:0 0 9px">رشد پرداخت شده است؟</h2>';
+  h+=BIGR('ROIIC دورهٔ پیش‌بینی',isFinite(roiic)?pc(roiic):'سرمایهٔ به‌کارگرفته لازم است');
+  if(isFinite(gSupported))h+=SM('رشدی که سرمایه‌گذاری مجدد پشتیبانی می‌کند',pc(gSupported)+' در برابر تارگت '+pc(tg));
+  if(ic0>0&&isFinite(rows[0].roic)&&isFinite(last.roic))
+    h+=SM('مسیر ROIC',pc(rows[0].roic)+' → '+pc(last.roic));
+  h+=SM('سود خالص سال ۵ طبق مدل',money(niModel)+' '+u.n+(isFinite(niMargin)?' · حاشیه '+pc(niMargin):''));
+
+  const fl=[];
+  if(!(ic0>0))fl.push({bad:false,t:'برای ROIC و ROIIC باید «سرمایهٔ به‌کارگرفتهٔ ابتدای دوره» را وارد کنید '+
+    '(حقوق صاحبان سهام دفتری + بدهی بهره‌دار − نقد). بدون آن این آزمون کار نمی‌کند.'});
+  if(isFinite(roiic)){
+    if(roiic>3*w)fl.push({bad:true,t:'ROIIC '+pc(roiic)+' بیش از سه برابر WACC است. یعنی هر ریال سرمایه‌گذاری مجدد '+
+      'بازدهی غیرمتعارف می‌سازد — یا capex تارگت خیلی کم است یا حاشیهٔ تارگت خیلی خوش‌بین.'});
+    else if(roiic<0)fl.push({bad:true,t:'ROIIC منفی است: دارید سرمایه می‌گذارید و NOPAT کم می‌شود. '+
+      'با این فرض‌ها رشد ارزش‌سوز است، نه ارزش‌ساز.'});
+    else if(roiic<w)fl.push({bad:true,t:'ROIIC '+pc(roiic)+' کمتر از WACC '+pc(w)+' است. '+
+      'رشد در این حالت ارزش را کم می‌کند؛ هر چه بیشتر رشد کنید بدتر.'});
+  }
+  if(isFinite(gSupported)&&isFinite(tg)&&tg>gSupported*1.5&&gSupported>0){
+    const up=isFinite(rows[0].roic)&&isFinite(last.roic)&&last.roic>rows[0].roic;
+    fl.push({bad:true,t:'تارگت فروش '+pc(tg)+' است ولی نرخ سرمایه‌گذاری مجدد × ROIC فقط '+pc(gSupported)+
+      ' را پشتیبانی می‌کند. '+(up
+        ? 'مابه‌التفاوت از بهبود کارایی سرمایه می‌آید — ROIC از '+pc(rows[0].roic)+' به '+pc(last.roic)+
+          ' می‌رسد. این فرض ممکن است درست باشد، ولی فرض است نه نتیجه: باید بگویید چرا همان دارایی '+
+          'قرار است این‌قدر بهتر کار کند.'
+        : 'یعنی رشد از جایی نمی‌آید — capex یا سرمایه در گردش را بالا ببرید یا تارگت را پایین.')});
+  }
+  if(niT>0&&isFinite(niModel)&&niModel!==0){
+    const gap=(niT/niModel-1)*100;
+    fl.push({bad:Math.abs(gap)>15,t:'سود خالص تارگت شما '+money(niT)+' در برابر '+money(niModel)+' طبق مدل — '+
+      (Math.abs(gap)<1?'هم‌خوان.':fa(Math.abs(gap).toFixed(0))+'٪ '+(gap>0?'بالاتر':'پایین‌تر')+
+      '. سود خالص ورودی مدل نیست؛ اگر عدد خودتان را باور دارید باید حاشیهٔ EBITDA، استهلاک، '+
+      'بهره یا نرخ مالیات را عوض کنید تا مدل به آن برسد.')});
+  }
+  if(last.capex<last.dep)fl.push({bad:true,t:'در سال ۵ مخارج سرمایه‌ای ('+money(last.capex)+
+    ') از استهلاک ('+money(last.dep)+') کمتر است. شرکتی که رشد می‌کند نمی‌تواند کمتر از فرسایش دارایی سرمایه‌گذاری کند.'});
+  fl.forEach(o=>h+='<div class="flag'+(o.bad?' bad':'')+'">'+o.t+'</div>');
+  box.innerHTML=h;
+
+  let r='<thead><tr><th>سال</th><th>NOPAT</th><th>سرمایه‌گذاری مجدد</th><th>نرخ سرمایه‌گذاری مجدد</th>'+
+        '<th>سرمایهٔ به‌کارگرفته</th><th>ROIC</th><th>سود خالص</th></tr></thead><tbody>';
+  rows.forEach(x=>{r+='<tr><td>'+fa(x.t)+'</td><td>'+money(x.nopat)+'</td><td>'+money(x.reinv)+
+    '</td><td>'+(isFinite(x.rir)?pc(x.rir):'—')+'</td><td>'+money(x.icClose)+
+    '</td><td>'+(isFinite(x.roic)?pc(x.roic):'—')+'</td><td>'+money(x.ni)+'</td></tr>';});
+  tab.innerHTML=r+'</tbody>';
+
+  document.getElementById('consnote').innerHTML=
+    'سرمایه‌گذاری مجدد = مخارج سرمایه‌ای − استهلاک + Δسرمایه در گردش. '+
+    'ROIIC = تغییر NOPAT نسبت به سال پایه ÷ جمع سرمایه‌گذاری مجدد پنج سال. '+
+    'اتحادی که باید برقرار باشد: رشد = نرخ سرمایه‌گذاری مجدد × ROIC. '+
+    'سود خالص = (EBIT − بهره) × (۱ − نرخ مالیات)، با بهرهٔ '+money(n('debt')*n('kd')/100)+' '+u.n+
+    ' روی بدهی اعلامی — ورودی ارزش‌گذاری نیست، خروجی آزمون است.';
+  return {roiic,gSupported,niModel};
 }
 
 function usdBlock(rows,w,eq,ev,tg){
@@ -573,7 +668,10 @@ function football(rows,w,gt,xm){
     const x0=dcf(rows,w,gt,xm,'x'), xl=dcf(rows,w,gt,xm-1,'x'), xh=dcf(rows,w,gt,xm+1,'x');
     push('DCF — ضریب خروج',toEq(xl.ev),toEq(x0.ev),toEq(xh.ev));
   }
-  if(ni0>0&&ind.pe>0)push('P/E صنعت',ni0*ind.pe*.85,ni0*ind.pe,ni0*ind.pe*1.15);
+  if(ni0>0&&ind.pe>0)push('P/E صنعت — سال پایه',ni0*ind.pe*.85,ni0*ind.pe,ni0*ind.pe*1.15);
+  /* the same multiple on year-5 earnings, discounted back — a forward view, not a base-year one */
+  const ni5=rows[N-1].ni, df=Math.pow(1+w,N);
+  if(ni5>0&&ind.pe>0&&df>0)push('P/E صنعت — سود سال ۵',ni5*ind.pe*.85/df,ni5*ind.pe/df,ni5*ind.pe*1.15/df);
   if(bv0>0&&ind.pb>0)push('P/B صنعت',bv0*ind.pb*.85,bv0*ind.pb,bv0*ind.pb*1.15);
   if(s0>0&&ind.ps>0)push('P/S صنعت',s0*ind.ps*.85,s0*ind.ps,s0*ind.ps*1.15);
   if(ebit0>0&&ind.evebit>0)push('EV/EBIT صنعت',toEq(ebit0*ind.evebit*.85),toEq(ebit0*ind.evebit),toEq(ebit0*ind.evebit*1.15));
@@ -599,7 +697,7 @@ function football(rows,w,gt,xm){
   const spread=mids[mids.length-1]/Math.max(1e-9,mids[0]);
   document.getElementById('ffnote').innerHTML='میانهٔ روش‌ها <b>'+money(med)+' '+unit().n+'</b> ('+hemat(med)+' همت)'+
     (spread>3?' — <span style="color:var(--warn)">پراکندگی بیش از سه برابر؛ روش‌ها با هم حرف نمی‌زنند.</span>':'')+
-    '<br>ضرایب صنعت از '+IND_ASOF+' و روی ارقام سال پایه.';
+    '<br>ضرایب صنعت از '+IND_ASOF+'. ردیف «سود سال ۵» همان ضریب روی سود پیش‌بینی، تنزیل‌شده با WACC.';
 }
 
 /* ===== main ===== */
@@ -698,6 +796,7 @@ function calc(){
   document.getElementById('sens').innerHTML=s+'</tbody></table><p class="note">ارزش حقوق صاحبان سهام به '+u.n+'.</p>';
 
   football(rows,w,gt,xm);
+  consistency(rows,w,tg);
   applyDep(); usdBlock(rows,w,eq,D.ev,tg);
 }
 
@@ -742,9 +841,12 @@ document.getElementById('fillhist').addEventListener('click',()=>{
   if(isFinite(S.cxpc))document.getElementById('capex').value=(S.cxpc*100).toFixed(2);
   if(isFinite(S.dnwc))document.getElementById('nwc').value=(S.dnwc*100).toFixed(2);
   if(isFinite(S.m))document.getElementById('mT').value=(S.m*100).toFixed(2);
+  if(isFinite(S.cxpc))document.getElementById('cxT').value=(S.cxpc*100).toFixed(2);
+  if(isFinite(S.dnwc))document.getElementById('nwT').value=(S.dnwc*100).toFixed(2);
   calc();});
 ['unit','sT','mT','path','k','da','capex','nwc','taxop','mid','infl','rf','erp','beta','alpha','kd','tax',
- 'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares','fx','dep']
+ 'debt','eqmv','gterm','xmult','ind','bdebt','bcash','bminor','bnonop','shares','fx','dep',
+ 'cxT','nwT','niT','ic0']
  .forEach(id=>{const e=document.getElementById(id);if(!e)return;
    e.addEventListener('input',calc);e.addEventListener('change',calc);});
 
