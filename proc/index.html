@@ -1,0 +1,376 @@
+<title>فرآیند انتشار</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="فرآیند انتشار">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1F5E57">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="app.webmanifest">
+<style>
+
+:root{--bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
+ --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;--bar:#7FB3A6;
+ --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;
+ --soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;
+ --line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
+ --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;direction:rtl;
+ -webkit-text-size-adjust:100%;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:720px;margin-inline:auto;padding-top:20px}
+h1{font-size:21px;font-weight:800;margin:0 0 2px}
+.sub{color:var(--soft);font-size:12.5px;margin:0 0 6px}
+a{color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card>h2{font-size:13px;font-weight:700;margin:0 0 12px;color:var(--acc)}
+label{display:block;font-size:12px;font-weight:600;color:var(--soft);margin-bottom:4px}
+input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);background:var(--field);
+ border:1px solid var(--line);border-radius:10px;padding:10px 11px;appearance:none;direction:ltr;text-align:right}
+select{direction:rtl;padding-left:30px;background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
+ background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:var(--acc)}
+input[readonly]{opacity:.62}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.g2+.g2,.g3+.g2,.g2+.g3,.g3+.g3{margin-top:10px}
+.res{background:var(--acc);color:var(--acc-ink);border-radius:14px;padding:16px;margin-bottom:12px}
+.res h2{color:var(--acc-ink);opacity:.72;font-size:12px;margin:0 0 10px;font-weight:700}
+.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.16)}
+.big:last-of-type{border-bottom:0}
+.big .k{font-size:13px;opacity:.85;font-weight:600}
+.big .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
+.big.sm .v{font-size:16px;font-weight:700}
+.flag{margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.14)}
+.flag.bad{background:var(--warn-wash);color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 3px;border-bottom:1px solid var(--line);text-align:center}
+th:first-child,td:first-child{text-align:right;white-space:nowrap;font-weight:600}
+th{font-size:10.5px;color:var(--soft);font-weight:700}
+td{direction:ltr} td:first-child{direction:rtl}
+tr:last-child td{border-bottom:0}
+tr.hi td{background:var(--wash);font-weight:700}
+.tw{overflow-x:auto;margin-top:4px}
+.note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
+.badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;background:var(--wash);color:var(--acc)}
+.badge.old{background:var(--warn-wash);color:var(--warn)}
+
+.seg{display:flex;gap:5px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
+.seg button{flex:1;padding:9px 2px;border:0;border-radius:8px;background:transparent;color:var(--soft);
+ font-family:var(--f);font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+.btn{display:block;width:100%;border:0;border-radius:11px;padding:13px;font-family:var(--f);
+ font-size:14px;font-weight:700;background:var(--acc);color:var(--acc-ink);cursor:pointer;margin-top:9px}
+.btn.g{background:var(--wash);color:var(--acc)}
+.btn.w{background:var(--warn-wash);color:var(--warn)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px}
+.row2 .btn{margin-top:0}
+.slot{display:flex;align-items:flex-start;gap:9px;background:var(--field);border:1px solid var(--line);
+ border-radius:11px;padding:11px;margin-bottom:8px;text-align:right;width:100%;font-family:var(--f);
+ font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;line-height:1.5}
+.slot .num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--wash);color:var(--acc);
+ display:grid;place-items:center;font-size:12px;font-weight:800}
+.slot.ok{border-color:var(--acc);background:var(--wash)}
+.slot.no{border-color:var(--warn);background:var(--warn-wash);color:var(--warn)}
+.slot.ok .num{background:var(--acc);color:var(--acc-ink)}
+.slot.no .num{background:var(--warn);color:#fff}
+.slot:disabled{cursor:default}
+.pick{background:var(--card);border:1px dashed var(--line)}
+.det{font-size:12px;font-weight:500;color:var(--soft);line-height:1.6;margin:-2px 0 10px 35px}
+.fc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 15px;min-height:140px;
+ display:flex;flex-direction:column;justify-content:center}
+.fc .q{font-size:16px;font-weight:700;line-height:1.6}
+.fc .a{font-size:14px;line-height:1.75;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+.fc .a b{color:var(--acc)}
+.tag{display:inline-block;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700;
+ background:var(--wash);color:var(--acc);margin-bottom:9px}
+.tag.c{background:var(--warn-wash);color:var(--warn)}
+.prog{height:5px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:11px}
+.prog i{display:block;height:100%;background:var(--acc);transition:width .25s}
+.boxes{display:flex;gap:5px;margin-top:10px}
+.boxes div{flex:1;text-align:center;font-size:10px;font-weight:700;color:var(--soft);
+ background:var(--field);border:1px solid var(--line);border-radius:8px;padding:5px 2px}
+.boxes div b{display:block;font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+.opt{display:block;width:100%;text-align:right;background:var(--field);border:1px solid var(--line);
+ border-radius:11px;padding:12px;margin-top:8px;font-family:var(--f);font-size:13.5px;font-weight:600;
+ color:var(--ink);cursor:pointer;line-height:1.5}
+.opt.ok{border-color:var(--acc);background:var(--wash);color:var(--acc);font-weight:800}
+.opt.no{border-color:var(--warn);background:var(--warn-wash);color:var(--warn)}
+.opt:disabled{cursor:default}
+.spine{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:4px}
+.spine span{background:var(--wash);color:var(--acc);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:700}
+.spine i{color:var(--soft);font-style:normal;font-size:12px}
+/* checklist */
+.ck{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
+.ck:last-child{border-bottom:0}
+.ck input{flex:0 0 22px;width:22px;height:22px;margin:1px 0 0;accent-color:var(--acc)}
+.ck .bd{flex:1;min-width:0}
+.ck h4{margin:0;font-size:13.5px;font-weight:700;line-height:1.5}
+.ck.done h4{text-decoration:line-through;color:var(--soft)}
+.ck p{margin:4px 0 0;font-size:12px;color:var(--soft);line-height:1.6}
+.ck p.tr{color:var(--warn);background:var(--warn-wash);border-radius:8px;padding:7px 9px;margin-top:6px;font-weight:600}
+.ck .gi{font-size:10.5px;font-weight:800;color:var(--acc);background:var(--wash);border-radius:6px;padding:1px 6px;margin-inline-start:5px}
+.cond{font-size:10px;font-weight:700;color:var(--warn);background:var(--warn-wash);border-radius:6px;padding:1px 6px;margin-inline-start:5px}
+.hk{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.hk:last-child{border-bottom:0}
+.hk b{flex:0 0 32px;font-size:22px;font-weight:800;color:var(--acc);text-align:center;direction:ltr}
+.hk div{flex:1}
+.hk strong{display:block;font-size:13px;font-weight:700}
+.hk small{display:block;font-size:11.5px;color:var(--soft);line-height:1.6;margin-top:2px}
+</style>
+
+<div class="wrap">
+  <h1>فرآیند انتشار</h1>
+  <p class="sub">از موافقت اصولی تا مجوز انتشار · ۳۱ گام · ۸ مرحله · نقش مشاور پذیرش</p>
+  <p class="sub"><a href="../learn/">مرور اوراق</a> · <a href="../ytm/">نرخ مؤثر</a> · <a href="../dcf/">DCF</a></p>
+  <p class="sub" id="offline" style="margin-bottom:14px"></p>
+
+  <div class="seg" id="nav" role="group">
+    <button data-v="sp" aria-pressed="true">ستون فقرات</button>
+    <button data-v="st" aria-pressed="false">گام‌ها</button>
+    <button data-v="tr" aria-pressed="false">تله‌ها</button>
+    <button data-v="nu" aria-pressed="false">اعداد</button>
+    <button data-v="ck" aria-pressed="false">چک‌لیست</button>
+  </div>
+
+  <div id="view"></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const FA='۰۱۲۳۴۵۶۷۸۹', fa=s=>String(s).replace(/\d/g,d=>FA[d]);
+const el=id=>document.getElementById(id), V=()=>el('view');
+const shuf=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+let view='sp';
+
+const KEY='proc_v1', DAY=864e5;
+let ST={box:{},due:{},ck:{},rec:{}};
+try{const r=JSON.parse(localStorage.getItem(KEY)||'null'); if(r)ST=Object.assign(ST,r);}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ST));}catch(e){}};
+const IVL=[0,1,3,7,21];
+const boxOf=k=>ST.box[k]||0, dueNow=k=>(ST.due[k]||0)<=Date.now();
+const grade=(k,ok)=>{const b=ok?Math.min(4,boxOf(k)+1):0;ST.box[k]=b;ST.due[k]=Date.now()+IVL[b]*DAY;save();};
+
+/* flat step list with global گام numbers */
+const FLAT=[]; P.stages.forEach((s,si)=>s.steps.forEach(x=>FLAT.push(Object.assign({si,g:FLAT.length+1},x))));
+
+/* ---------- ordering drill, reused for spine and stages ---------- */
+let drill='sp', placed=[], pool=[], done=false;
+const drillItems=()=>drill==='sp'?P.spine.map((t,i)=>({t,d:''}))
+  :P.stages.map((s,i)=>({t:s.name,d:s.c}));
+function dInit(){placed=[];done=false;pool=shuf(drillItems().map((x,i)=>i));drawD();}
+function drawD(){
+  const items=drillItems(), N=items.length, rk='rec_'+drill;
+  let h='<div class="card"><h2>ترتیب را بسازید</h2>'+
+    '<div class="seg" id="dsw" role="group" style="margin-bottom:11px">'+
+      '<button data-d="sp" aria-pressed="'+(drill==='sp')+'">شش ضرب اصلی</button>'+
+      '<button data-d="stg" aria-pressed="'+(drill==='stg')+'">هشت مرحله</button></div>'+
+    '<div class="spine">'+P.spine.map((x,i)=>(i?'<i>←</i>':'')+'<span>'+(drill==='sp'&&!done?'؟':x)+'</span>').join('')+'</div>'+
+    '<p class="note">'+(drill==='sp'
+      ? 'هر کاری در فاز ۲ روی یکی از این شش ضرب می‌نشیند. وقتی گم شدید، اول بپرسید روی کدام ضرب هستید.'
+      : 'هشت مرحلهٔ فاز ۲ را به ترتیب بچینید.')+
+    ((ST.rec[rk]||0)?' بهترین رکورد: <b>'+fa(ST.rec[rk])+' از '+fa(N)+'</b>.':'')+'</p></div>';
+
+  h+='<div class="card"><h2>ترتیب شما</h2>';
+  if(!placed.length)h+='<p class="note" style="margin:0">هنوز چیزی انتخاب نکرده‌اید.</p>';
+  placed.forEach((ix,k)=>{
+    const ok=ix===k;
+    h+='<button class="slot'+(done?(ok?' ok':' no'):'')+'" disabled><span class="num">'+fa(k+1)+'</span><span>'+
+       items[ix].t+(done&&!ok?' — جای درستش '+fa(ix+1):'')+'</span></button>';
+    if(done&&items[ix].d)h+='<div class="det">'+items[ix].d+'</div>';
+  });
+  h+='</div>';
+  if(pool.length){
+    h+='<div class="card"><h2>شمارهٔ '+fa(placed.length+1)+' کدام است؟</h2>';
+    pool.forEach(ix=>h+='<button class="slot pick" data-p="'+ix+'"><span class="num">؟</span><span>'+items[ix].t+'</span></button>');
+    h+='</div>';
+  }else{
+    const right=placed.filter((ix,k)=>ix===k).length;
+    h+='<div class="res"><h2>نتیجه</h2><div class="big"><span class="k">درست</span><span class="v">'+
+      fa(right)+' از '+fa(N)+'</span></div>'+
+      (right===N?'<div class="flag">کامل درست.</div>':'<div class="flag bad">جاهای قرمز را ببینید.</div>')+'</div>'+
+      '<button class="btn" id="again">دوباره</button>';
+  }
+  V().innerHTML=h;
+  V().querySelectorAll('#dsw button').forEach(b=>b.onclick=()=>{drill=b.dataset.d;dInit();});
+  V().querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
+    placed.push(+b.dataset.p); pool=pool.filter(x=>x!==+b.dataset.p);
+    if(!pool.length){done=true;
+      const r=placed.filter((ix,k)=>ix===k).length, rk='rec_'+drill;
+      if(r>(ST.rec[rk]||0)){ST.rec[rk]=r;save();}}
+    drawD();});
+  const a=el('again'); if(a)a.onclick=dInit;
+}
+
+/* ---------- step flashcards: name -> output + trap ---------- */
+let sStage='all', sQ=[], sAt=0, sShow=false;
+function sInit(){
+  sQ=shuf(FLAT.map((x,i)=>i).filter(i=>(sStage==='all'||FLAT[i].si===+sStage)&&dueNow('s'+i)));
+  sAt=0;sShow=false;drawS();
+}
+function drawS(){
+  const cnt=[0,0,0,0,0]; FLAT.forEach((x,i)=>cnt[boxOf('s'+i)]++);
+  let h='<div class="card"><h2>مرحله</h2><select id="ss">'+
+    '<option value="all">همه — '+fa(FLAT.length)+' گام</option>'+
+    P.stages.map((s,i)=>'<option value="'+i+'"'+(String(i)===sStage?' selected':'')+'>'+s.n+' · '+s.name+' — '+fa(s.steps.length)+'</option>').join('')+
+    '</select><div class="boxes">'+['تازه','۱ روز','۳ روز','۷ روز','۲۱ روز']
+      .map((n,i)=>'<div>'+n+'<b>'+fa(cnt[i])+'</b></div>').join('')+'</div>'+
+    '<p class="note">سؤال: این گام چه خروجی‌ای دارد و تله‌اش چیست؟</p></div>';
+  if(!sQ.length){
+    const nx=Math.min(...FLAT.map((x,i)=>ST.due['s'+i]||0).filter(t=>t>Date.now()));
+    h+='<div class="res"><h2>فعلاً تمام</h2><div class="big"><span class="k">باقی‌مانده</span><span class="v">۰</span></div>'+
+      '<div class="flag">'+(isFinite(nx)?'گام بعدی '+fa(new Date(nx).toLocaleDateString('fa-IR'))+' برمی‌گردد.':'همه را دیده‌اید.')+'</div></div>'+
+      '<button class="btn g" id="rs">صفر کردن پیشرفت</button>';
+    V().innerHTML=h;bindSS();
+    const r=el('rs'); if(r)r.onclick=()=>{FLAT.forEach((x,i)=>{if(sStage==='all'||x.si===+sStage){delete ST.box['s'+i];delete ST.due['s'+i];}});save();sInit();};
+    return;
+  }
+  const i=sQ[sAt], x=FLAT[i], stg=P.stages[x.si];
+  h+='<div class="fc"><span class="tag">گام '+fa(x.g)+' · '+stg.name+'</span>'+
+     (x.opt?'<span class="tag c" style="margin-inline-start:5px">'+x.opt+'</span>':'')+
+     '<div class="q">'+x.t+'</div>'+
+     (sShow?'<div class="a">'+x.o.replace('خروجی:','<b>خروجی:</b>')+
+       (x.p?'<div style="margin-top:9px;color:var(--warn);font-weight:600">تله · '+x.p+'</div>':'')+'</div>':'')+
+     '</div><div class="prog"><i style="width:'+((sAt/sQ.length)*100).toFixed(1)+'%"></i></div>'+
+     '<p class="note">'+fa(sAt+1)+' از '+fa(sQ.length)+'</p>';
+  h+= sShow?'<div class="row2"><button class="btn w" id="bad">نمی‌دانستم</button><button class="btn" id="good">می‌دانستم</button></div>'
+           :'<button class="btn" id="show">جواب</button>';
+  V().innerHTML=h;bindSS();
+  const sh=el('show'); if(sh)sh.onclick=()=>{sShow=true;drawS();};
+  const nx=ok=>{grade('s'+i,ok);sAt++;sShow=false;if(sAt>=sQ.length)sInit();else drawS();};
+  const g=el('good'),b=el('bad'); if(g)g.onclick=()=>nx(true); if(b)b.onclick=()=>nx(false);
+}
+function bindSS(){const e=el('ss'); if(e)e.onchange=()=>{sStage=e.value;sInit();};}
+
+/* ---------- traps: which step does this trap belong to? ---------- */
+let tQ=[], tAt=0, tPick=-1, tOpts=[];
+function tInit(){tQ=shuf(P.traps.map((x,i)=>i));tAt=0;tPick=-1;mkT();drawT();}
+function mkT(){
+  const t=P.traps[tQ[tAt]]; if(!t){tOpts=[];return;}
+  const wrong=shuf(P.traps.map((x,i)=>i).filter(i=>i!==tQ[tAt])).slice(0,3);
+  tOpts=shuf([{t:t.t,ok:true}].concat(wrong.map(i=>({t:P.traps[i].t,ok:false}))));
+}
+function drawT(){
+  if(tAt>=tQ.length){
+    V().innerHTML='<div class="res"><h2>تمام شد</h2><div class="flag">ده تلهٔ اجرایی را یک دور زدید. '+
+      'برای تمرین دوباره بزنید؛ هر بار گزینه‌ها جابه‌جا می‌شوند.</div></div>'+
+      '<button class="btn" id="ta">دوباره</button>';
+    el('ta').onclick=tInit;return;
+  }
+  const t=P.traps[tQ[tAt]];
+  let h='<div class="card"><h2>تلهٔ '+fa(tAt+1)+' از '+fa(tQ.length)+'</h2>'+
+    '<div style="font-size:14.5px;font-weight:600;line-height:1.7">'+t.d+'</div>'+
+    '<p class="note">این توضیح، کدام تله است؟</p>';
+  tOpts.forEach((o,k)=>{let c='opt';
+    if(tPick>=0){if(o.ok)c+=' ok';else if(k===tPick)c+=' no';}
+    h+='<button class="'+c+'" data-o="'+k+'"'+(tPick>=0?' disabled':'')+'>'+o.t+'</button>';});
+  h+='</div><div class="prog"><i style="width:'+((tAt/tQ.length)*100).toFixed(1)+'%"></i></div>';
+  if(tPick>=0)h+='<button class="btn" id="tn">'+(tAt+1>=tQ.length?'پایان':'بعدی')+'</button>';
+  V().innerHTML=h;
+  V().querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{tPick=+b.dataset.o;drawT();});
+  const n=el('tn'); if(n)n.onclick=()=>{tAt++;tPick=-1;mkT();drawT();};
+}
+
+/* ---------- numeric hooks ---------- */
+let nQ=[], nAt=0, nPick=-1, nOpts=[];
+function nInit(){nQ=shuf(P.hooks.map((x,i)=>i));nAt=0;nPick=-1;mkN();drawN();}
+function mkN(){
+  const hk=P.hooks[nQ[nAt]]; if(!hk){nOpts=[];return;}
+  const n=parseInt(hk.n.replace(/[۰-۹]/g,d=>FA.indexOf(d)),10);
+  const cand=new Set([n]); let add=1;
+  while(cand.size<4){cand.add(Math.max(1,n+add));cand.add(Math.max(1,n-add));add++;}
+  nOpts=shuf([...cand].slice(0,4).map(v=>({v,ok:v===n})));
+  if(!nOpts.some(o=>o.ok)){nOpts[0]={v:n,ok:true};nOpts=shuf(nOpts);}
+}
+function drawN(){
+  if(nAt>=nQ.length){
+    let h='<div class="res"><h2>هفت قلاب عددی</h2><div class="flag">'+
+      'اگر این هفت عدد را بدانید، فهرست مدارک را بدون نگاه کردن به چک‌لیست بازسازی می‌کنید.</div></div>'+
+      '<div class="card"><h2>مرور</h2>';
+    P.hooks.forEach(hk=>h+='<div class="hk"><b>'+hk.n+'</b><div><strong>'+hk.k+'</strong><small>'+hk.d+'</small></div></div>');
+    h+='</div><button class="btn" id="na">دوباره</button>';
+    V().innerHTML=h;el('na').onclick=nInit;return;
+  }
+  const hk=P.hooks[nQ[nAt]];
+  let h='<div class="card"><h2>عدد '+fa(nAt+1)+' از '+fa(nQ.length)+'</h2>'+
+    '<div style="font-size:16px;font-weight:700;line-height:1.6">چند '+hk.k+'؟</div>';
+  nOpts.forEach((o,k)=>{let c='opt';
+    if(nPick>=0){if(o.ok)c+=' ok';else if(k===nPick)c+=' no';}
+    h+='<button class="'+c+'" data-o="'+k+'"'+(nPick>=0?' disabled':'')+' style="text-align:center;font-size:17px;font-weight:800">'+fa(o.v)+'</button>';});
+  if(nPick>=0)h+='<div class="flag'+(nOpts[nPick].ok?'':' bad')+'" style="margin-top:12px">'+hk.d+'</div>';
+  h+='</div><div class="prog"><i style="width:'+((nAt/nQ.length)*100).toFixed(1)+'%"></i></div>';
+  if(nPick>=0)h+='<button class="btn" id="nn">'+(nAt+1>=nQ.length?'مرور همه':'بعدی')+'</button>';
+  V().innerHTML=h;
+  V().querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{nPick=+b.dataset.o;drawN();});
+  const n=el('nn'); if(n)n.onclick=()=>{nAt++;nPick=-1;mkN();drawN();};
+}
+
+/* ---------- live checklist, doubles as the reference ---------- */
+function drawC(){
+  const tot=FLAT.length, dn=FLAT.filter((x,i)=>ST.ck['g'+(i+1)]).length;
+  let h='<div class="res"><h2>پیشرفت پرونده</h2><div class="big"><span class="k">انجام‌شده</span>'+
+    '<span class="v" id="ckv">'+fa(dn)+' از '+fa(tot)+'</span></div>'+
+    '<div class="prog" style="background:rgba(255,255,255,.25)"><i id="ckb" style="width:'+(dn/tot*100).toFixed(1)+'%;background:#fff"></i></div>'+
+    '<div id="ckf">'+(dn===tot?'<div class="flag">هر '+fa(tot)+' گام تیک خورده است.</div>':'')+'</div></div>';
+  P.stages.forEach((s,si)=>{
+    const ids=FLAT.filter(x=>x.si===si);
+    const sd=ids.filter(x=>ST.ck['g'+x.g]).length;
+    h+='<div class="card"><h2 id="sh'+si+'">'+s.n+' · '+s.name+' — '+fa(sd)+'/'+fa(ids.length)+'</h2>';
+    ids.forEach(x=>{
+      const on=!!ST.ck['g'+x.g];
+      h+='<div class="ck'+(on?' done':'')+'"><input type="checkbox" data-g="'+x.g+'"'+(on?' checked':'')+
+        ' aria-label="گام '+fa(x.g)+'"><div class="bd"><h4>'+x.t+
+        '<span class="gi">گام '+fa(x.g)+'</span>'+(x.opt?'<span class="cond">'+x.opt+'</span>':'')+'</h4>'+
+        (x.o?'<p>'+x.o.replace('خروجی:','<b>خروجی:</b>')+'</p>':'')+
+        (x.p?'<p class="tr">تله · '+x.p+'</p>':'')+'</div></div>';
+    });
+    h+='</div>';
+  });
+  h+='<div class="card"><h2>هفت قلاب عددی</h2>';
+  P.hooks.forEach(hk=>h+='<div class="hk"><b>'+hk.n+'</b><div><strong>'+hk.k+'</strong><small>'+hk.d+'</small></div></div>');
+  h+='</div><div class="card"><h2>ده تلهٔ اجرایی</h2>';
+  P.traps.forEach((t,i)=>h+='<div class="ck"><div class="bd"><h4>'+fa(i+1)+'. '+t.t+'</h4><p>'+t.d+'</p></div></div>');
+  h+='</div><button class="btn g" id="cr">پاک کردن همهٔ تیک‌ها</button>';
+  V().innerHTML=h;
+  /* update in place: a full redraw would throw the reader back to the top of 31 items */
+  V().querySelectorAll('[data-g]').forEach(b=>b.onchange=()=>{
+    const k='g'+b.dataset.g;
+    if(b.checked)ST.ck[k]=1; else delete ST.ck[k];
+    save();
+    b.closest('.ck').classList.toggle('done',b.checked);
+    ckCounts();});
+  el('cr').onclick=()=>{if(confirm('همهٔ تیک‌ها پاک شوند؟')){ST.ck={};save();drawC();}};
+}
+
+function ckCounts(){
+  const tot=FLAT.length, dn=FLAT.filter(x=>ST.ck['g'+x.g]).length;
+  const hv=el('ckv'), hb=el('ckb'), hf=el('ckf');
+  if(hv)hv.textContent=fa(dn)+' از '+fa(tot);
+  if(hb)hb.style.width=(dn/tot*100).toFixed(1)+'%';
+  if(hf)hf.innerHTML=dn===tot?'<div class="flag">هر '+fa(tot)+' گام تیک خورده است.</div>':'';
+  P.stages.forEach((st,si)=>{
+    const ids=FLAT.filter(x=>x.si===si), sd=ids.filter(x=>ST.ck['g'+x.g]).length;
+    const h2=el('sh'+si);
+    if(h2)h2.textContent=st.n+' · '+st.name+' — '+fa(sd)+'/'+fa(ids.length);
+  });
+}
+function render(){
+  ({sp:dInit,st:sInit,tr:tInit,nu:nInit,ck:drawC})[view]();
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');view=b.dataset.v;render();});
+render();
+
+(function(){const o=el('offline');
+  const say=(t,w)=>{if(o)o.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
+  if(location.protocol==='file:'){say('فایل محلی — همیشه آفلاین');return;}
+  if(!('serviceWorker' in navigator)){say('بدون پشتیبانی آفلاین',1);return;}
+  navigator.serviceWorker.register('sw.js').then(()=>say('آفلاین آماده است')).catch(()=>say('حالت آفلاین فعال نشد',1));})();
+</script>
