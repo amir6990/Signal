@@ -249,7 +249,7 @@ const HROWS=[['s','فروش',1],['e','EBITDA',1],['d','استهلاک',1],['ni',
 const HDEF={s:[520000,700000,1000000],e:[120000,165000,240000],d:[22000,29000,40000],
             ni:[70000,100000,150000],cx:[33000,43000,60000],nw:[110000,150000,215000]};
 
-let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='';
+let basis='nom', tvMode='g', erpSrc='loc', curve=[], curveSel=-1, curveState='', curveAge=null;
 const toReal=(nm,i)=>(1+nm)/(1+i)-1, toNom=(r,i)=>(1+r)*(1+i)-1;
 
 /* ===== historical grid ===== */
@@ -392,8 +392,10 @@ function fxLine(){
   if(fxState==='busy'){el.innerHTML='<span class="badge">در حال گرفتن نرخ دلار…</span>';return;}
   if(fxState==='fail'||!L){el.innerHTML='<span class="badge old">نرخ زنده نیامد</span> عدد پیش‌فرض '+
     money(FX.rl)+' ریال از '+FX.asof+' است. <button id="fxref" class="mini">تلاش دوباره</button>';bindRef();return;}
-  el.innerHTML='<span class="badge">زنده</span> دلار آزاد '+money(L.v)+' ریال ('+money(L.v/10)+' تومان) — '+
-    fa(L.j||L.g)+'. <button id="fxref" class="mini">به‌روزرسانی</button>'+
+  const stale=fxState==='stale';
+  el.innerHTML='<span class="badge'+(stale?' old':'')+'">'+
+    (stale?'ذخیره‌شده — بدون شبکه':'زنده')+'</span> دلار آزاد '+money(L.v)+' ریال ('+money(L.v/10)+' تومان) — '+
+    fa(L.j||L.g)+(stale?' (آخرین نرخی که دیده شد)':'')+'. <button id="fxref" class="mini">به‌روزرسانی</button>'+
     '<br>نرخ سنا هم منتشر می‌شود ('+money(FX.sana)+' ریال) ولی داده‌اش از '+FX.sanaAsof+
     ' جلوتر نرفته، پس به‌عنوان نرخ زنده استفاده نمی‌شود.';
   bindRef();
@@ -405,9 +407,9 @@ async function loadFx(force){
   if(fxSrc!=='live'){el.readOnly=false;fxLine();return;}
   el.readOnly=true;
   const KEY='fx_rl_v1';
-  try{const c=JSON.parse(localStorage.getItem(KEY)||'null');
-    if(c&&!force&&Date.now()-c.t<6*3600e3){FX.live=c;el.value=String(c.v);fxState='ok';fxLine();calc();return;}
-  }catch(e){}
+  const rd=()=>{try{return JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){return null;}};
+  const c0=rd();
+  if(c0&&!force&&Date.now()-c0.t<6*3600e3){FX.live=c0;el.value=String(c0.v);fxState='ok';fxLine();calc();return;}
   fxState='busy'; fxLine();
   try{
     const r=await fetch('https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl',{cache:'no-store'});
@@ -425,6 +427,11 @@ async function loadFx(force){
       try{localStorage.setItem(KEY,JSON.stringify(FX.live));}catch(e){}}
     else fxState='fail';
   }catch(e){fxState='fail';}
+  if(fxState==='fail'){
+    /* offline: the last rate actually observed beats the baked-in one — dated, not disguised */
+    const c=rd();
+    if(c&&c.v>0){FX.live=c;el.value=String(c.v);fxState='stale';}
+  }
   fxLine(); calc();
 }
 
@@ -499,8 +506,9 @@ function _g2d(gy,gm,gd){let x=_d((gy+_d(gm-8,6)+100100)*1461,4)+_d(153*_m(gm+9,1
 function _j2d(jy,jm,jd){const r=_jc(jy);return _g2d(r.gy,3,r.march)+(jm-1)*31-_d(jm,7)*(jm-7)+jd-1;}
 const todayJdn=()=>{const t=new Date();return _g2d(t.getFullYear(),t.getMonth()+1,t.getDate());};
 async function loadCurve(force){
-  try{const c=JSON.parse(localStorage.getItem('akhza')||'null');
-    if(!force&&c&&Date.now()-c.t<6*36e5){curve=c.rows;pick();drawCurve();applyErp();calc();return;}}catch(e){}
+  const rd=()=>{try{return JSON.parse(localStorage.getItem('akhza')||'null');}catch(e){return null;}};
+  const c0=rd();
+  if(!force&&c0&&Date.now()-c0.t<6*36e5){curve=c0.rows;curveAge=null;pick();drawCurve();applyErp();calc();return;}
   curveState='busy';drawCurve();
   try{
     const j=await (await fetch('https://cdn.tsetmc.com/api/Instrument/GetInstrumentSearch/'+encodeURIComponent('اخزا'))).json();
@@ -523,9 +531,14 @@ async function loadCurve(force){
     }
     rows.sort((a,b)=>a.d-b.d);
     if(!rows.length)throw new Error('empty');
-    curve=rows;curveState='';
+    curve=rows;curveState='';curveAge=null;
     try{localStorage.setItem('akhza',JSON.stringify({t:Date.now(),rows}));}catch(e){}
-  }catch(e){curveState='fail';}
+  }catch(e){
+    /* offline: an old real curve beats the baked-in default — but say how old */
+    const c=rd();
+    if(c&&c.rows&&c.rows.length){curve=c.rows;curveState='';curveAge=c.t;}
+    else curveState='fail';
+  }
   pick();drawCurve();applyErp();calc();
 }
 function pick(){ if(!curve.length){curveSel=-1;return;} if(curveSel<0||curveSel>=curve.length)curveSel=curve.length-1; }
@@ -536,7 +549,8 @@ function drawCurve(){
   const lo=curve[0], hi=curve[curve.length-1];
   box.innerHTML='<label>سررسید مرجع اخزا</label><select id="cursel">'+
     curve.map((r,i)=>'<option value="'+i+'"'+(i===curveSel?' selected':'')+'>'+r.s+' — '+fa(r.d)+' روز — '+fa((r.y*100).toFixed(2))+'٪</option>').join('')+
-    '</select><p class="note"><span class="badge">'+fa(curve.length)+' ورقه · زنده</span> '+
+    '</select><p class="note"><span class="badge'+(curveAge?' old':'')+'">'+fa(curve.length)+' ورقه · '+
+      (curveAge?('ذخیره‌شده '+fa(new Date(curveAge).toLocaleDateString('fa-IR'))):'زنده')+'</span> '+
     fa(lo.d)+' روز '+fa((lo.y*100).toFixed(2))+'٪ تا '+fa(hi.d)+' روز '+fa((hi.y*100).toFixed(2))+'٪.</p>'+
     '<button class="add" id="curref" style="margin-top:6px">به‌روزرسانی منحنی</button>';
   document.getElementById('cursel').addEventListener('change',e=>{curveSel=+e.target.value;applyErp();calc();});
