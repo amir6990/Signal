@@ -209,11 +209,15 @@ function drawD(){
 }
 
 /* ---------- گام‌ها: a mixed, auto-graded drill ----------
-   Self-grading let recognition pass for recall, and one direction (title -> output)
-   is not how the process gets used. These questions are marked by the app, so the
-   spacing intervals are driven by what actually happened, not by a feeling.
-   Guards: six steps share the output "طبقه‌بندی در مستندات", so reverse questions
-   are only generated where the output identifies one step. */
+   Scheduling is per question *direction*, not per step. Getting "which stage"
+   right says nothing about whether you know the trap, so one right answer must
+   not retire the whole step for a day — that was how a step could look learned
+   while one of its facets had never been asked.
+   Every generator refuses to build a question the data cannot support fairly:
+   six steps share the output "طبقه‌بندی در مستندات", so neither direction of the
+   output question is asked about them — otherwise it is a free mark. What does
+   distinguish those six is which of the two confusable sets they belong to, so
+   that is asked directly. */
 const splitOut=o=>{
   if(o.indexOf('خروجی:')<0)return{a:'',o:o,d:''};
   let[a,b]=o.split('خروجی:'); b=b.trim().replace(/^·\s*/,'');
@@ -225,65 +229,96 @@ FLAT.forEach(x=>{const z=splitOut(x.o);x.act=z.a;x.out=z.o;x.dur=z.d;});
 const OUTCOUNT={}; FLAT.forEach(x=>OUTCOUNT[x.out]=(OUTCOUNT[x.out]||0)+1);
 const UNIQOUT=i=>OUTCOUNT[FLAT[i].out]===1;
 const TRAPIX=FLAT.map((x,i)=>i).filter(i=>FLAT[i].p);
-const CONDIX=FLAT.map((x,i)=>i).filter(i=>FLAT[i].opt);
 const PLAINIX=FLAT.map((x,i)=>i).filter(i=>!FLAT[i].opt);
+/* the two sets people mix up, taken from the stage names themselves */
+const SETS=P.stages.map((s,si)=>({si,nm:s.name,ix:FLAT.map((x,i)=>i).filter(i=>FLAT[i].si===si)}))
+  .filter(s=>/^چهار /.test(s.nm));
+const SETPOOL=SETS.reduce((a,s)=>a.concat(s.ix),[]);
 
 const mkOpts=(correct,poolTexts,n)=>{
   const seen=new Set([correct]), ds=[];
   shuf(poolTexts.slice()).forEach(t=>{if(ds.length<n-1&&!seen.has(t)){seen.add(t);ds.push(t);}});
   return shuf([{t:correct,ok:true}].concat(ds.map(t=>({t,ok:false}))));
 };
-/* every generator returns null when the data cannot make a fair question */
-const GEN={
-  out:i=>{const x=FLAT[i];
-    const o=mkOpts(x.out,FLAT.filter((y,j)=>j!==i).map(y=>y.out),4);
-    return o.length<4?null:{q:'خروجی این گام چیست؟',s:x.t,o,why:'گام '+fa(x.g)+' · '+P.stages[x.si].name};},
-  rev:i=>{if(!UNIQOUT(i))return null; const x=FLAT[i];
-    const o=mkOpts(x.t,FLAT.filter((y,j)=>j!==i).map(y=>y.t),4);
-    return o.length<4?null:{q:'این خروجی از کدام گام می‌آید؟',s:x.out,o,why:'گام '+fa(x.g)+' · '+P.stages[x.si].name};},
-  stage:i=>{const x=FLAT[i];
-    const o=mkOpts(P.stages[x.si].name,P.stages.filter((st,k)=>k!==x.si).map(st=>st.name),4);
-    return o.length<4?null:{q:'این گام در کدام مرحله است؟',s:x.t,o,why:'گام '+fa(x.g)+' از ۳۱'};},
-  next:i=>{if(i+1>=FLAT.length)return null; const x=FLAT[i], nx=FLAT[i+1];
-    const o=mkOpts(nx.t,FLAT.filter((y,j)=>j!==i+1&&j!==i).map(y=>y.t),4);
-    return o.length<4?null:{q:'بعد از این گام، گام بعدی چیست؟',s:x.t,o,
-      why:'گام '+fa(x.g)+' ← گام '+fa(nx.g)+(x.si!==nx.si?' (ورود به '+P.stages[nx.si].name+')':'')};},
-  trap:i=>{if(!FLAT[i].p)return null; const x=FLAT[i];
-    const o=mkOpts(x.p,TRAPIX.filter(j=>j!==i).map(j=>FLAT[j].p),4);
-    return o.length<4?null:{q:'تلهٔ این گام کدام است؟',s:x.t,o,why:'گام '+fa(x.g)};},
-  cond:i=>{if(!CONDIX.length)return null;
-    const c=CONDIX[Math.floor(Math.random()*CONDIX.length)];
-    const o=mkOpts(FLAT[c].t,shuf(PLAINIX.slice()).map(j=>FLAT[j].t),4);
-    return o.length<4?null:{q:'کدام‌یک «حسب مورد» است، نه الزامی؟',s:'',o,
-      why:'سه گام حسب مورد است: '+CONDIX.map(j=>FLAT[j].t).join(' · '),fix:c};}
+const chain=i=>{
+  const a=FLAT[i-1], x=FLAT[i], b=FLAT[i+1];
+  return (a?'گام '+fa(a.g)+' '+a.t+' ← ':'')+'<b>گام '+fa(x.g)+' '+x.t+'</b>'+
+         (b?' ← گام '+fa(b.g)+' '+b.t:'');
+};
+/* which directions each step can be asked in */
+const CAN={
+  out:i=>UNIQOUT(i), rev:i=>UNIQOUT(i), stage:i=>true,
+  next:i=>i+1<FLAT.length, trap:i=>!!FLAT[i].p, cond:i=>!!FLAT[i].opt
 };
 const TYPES=['out','rev','stage','next','trap','cond'];
+const TL={out:'خروجی',rev:'گام از خروجی',stage:'مرحله',next:'گام بعدی',trap:'تله',cond:'حسب مورد',set:'عضویت در گروه'};
 
-let stMode='mix', stStage='all', stQ=[], stAt=0, stPick=-1, stCur=null, stShow=false, stRes=[];
+const GEN={
+  out:c=>{const i=c.i,x=FLAT[i];
+    return {q:'خروجی این گام چیست؟',s:x.t,
+      o:mkOpts(x.out,FLAT.filter((y,j)=>j!==i&&UNIQOUT(j)).map(y=>y.out),4),
+      why:'گام '+fa(x.g)+' · '+P.stages[x.si].name+(x.dur?' · '+x.dur:'')};},
+  rev:c=>{const i=c.i,x=FLAT[i];
+    return {q:'این خروجی از کدام گام می‌آید؟',s:x.out,
+      o:mkOpts(x.t,FLAT.filter((y,j)=>j!==i).map(y=>y.t),4),
+      why:'گام '+fa(x.g)+' · '+P.stages[x.si].name};},
+  stage:c=>{const i=c.i,x=FLAT[i];
+    return {q:'این گام در کدام مرحله است؟',s:x.t,
+      o:mkOpts(P.stages[x.si].name,P.stages.filter((st,k)=>k!==x.si).map(st=>st.name),4),
+      why:'گام '+fa(x.g)+' از ۳۱ · '+P.stages[x.si].n};},
+  next:c=>{const i=c.i,x=FLAT[i],nx=FLAT[i+1];
+    return {q:'بعد از این گام، گام بعدی چیست؟',s:x.t,
+      o:mkOpts(nx.t,FLAT.filter((y,j)=>j!==i+1&&j!==i).map(y=>y.t),4),
+      why:chain(i)+(x.si!==nx.si?'<br>اینجا وارد «'+P.stages[nx.si].name+'» می‌شوید.':'')};},
+  trap:c=>{const i=c.i,x=FLAT[i];
+    return {q:'تلهٔ این گام کدام است؟',s:x.t,
+      o:mkOpts(x.p,TRAPIX.filter(j=>j!==i).map(j=>FLAT[j].p),4),
+      why:'گام '+fa(x.g)+' · '+x.t};},
+  cond:c=>{const i=c.i,x=FLAT[i];
+    return {q:'کدام‌یک «حسب مورد» است، نه الزامی؟',s:'',
+      o:mkOpts(x.t,shuf(PLAINIX.slice()).map(j=>FLAT[j].t),4),
+      why:'گام '+fa(x.g)+' حسب مورد است. سه گام حسب مورد داریم: '+
+        FLAT.filter(y=>y.opt).map(y=>y.t).join(' · ')};},
+  /* multi-select: pick exactly the members of one set out of both sets pooled */
+  set:c=>{const S=SETS[c.s];
+    return {multi:true,q:'کدام‌ها «'+S.nm+'» هستند؟ هر چهار مورد را انتخاب کنید.',s:'',
+      o:shuf(SETPOOL.map(j=>({t:FLAT[j].t,ok:S.ix.indexOf(j)>=0}))),
+      why:S.nm+': '+S.ix.map(j=>FLAT[j].t).join(' · ')};}
+};
+
+/* the card deck: one card per (step, direction), plus one per confusable set */
+const DECK=[];
+FLAT.forEach((x,i)=>TYPES.forEach(t=>{if(CAN[t](i))DECK.push({k:'c'+x.g+':'+t,t,i,g:x.g,si:x.si});}));
+SETS.forEach((S,si)=>DECK.push({k:'cset:'+S.si,t:'set',s:si,i:-1,g:0,si:S.si}));
+
+const SESS=12;
+let stMode='mix', stStage='all', stQ=[], stAt=0, stPick=-1, stSel=[], stCur=null, stShow=false, stRes=[], stMiss=[];
+function deckPool(){return DECK.filter(c=>stStage==='all'||c.si===+stStage);}
 function stPool(){return FLAT.map((x,i)=>i).filter(i=>stStage==='all'||FLAT[i].si===+stStage);}
+/* a step counts as solid when every direction it can be asked in is at 3 days or more */
+function solidCount(){
+  let n=0;
+  FLAT.forEach((x,i)=>{const ks=TYPES.filter(t=>CAN[t](i)).map(t=>'c'+x.g+':'+t);
+    if(ks.length&&ks.every(k=>boxOf(k)>=2))n++;});
+  return n;
+}
 function stInit(){
   if(stMode==='ord'){ordInit();return;}
   if(stMode==='weak'){drawWeak();return;}
-  const pool=stPool().filter(i=>dueNow('s'+i));
-  stQ=shuf(pool); stAt=0; stPick=-1; stShow=false; stRes=[];
-  nextQ(); drawSt();
+  if(stMode==='full'){
+    stQ=shuf(stPool().filter(i=>dueNow('s'+i))).map(i=>({full:true,i}));
+    stAt=0;stShow=false;stRes=[];stMiss=[];stCur=stQ[0]||null;drawSt();return;
+  }
+  const due=deckPool().filter(c=>dueNow(c.k));
+  stQ=shuf(due).slice(0,SESS);
+  stAt=0;stPick=-1;stSel=[];stRes=[];stMiss=[];
+  stCur=stQ[0]?build(stQ[0]):null;
+  drawSt();
 }
-function nextQ(){
-  const i=stQ[stAt]; if(i===undefined){stCur=null;return;}
-  if(stMode==='full'){stCur={full:true};return;}
-  const g=FLAT[i].g;
-  ST.seen=ST.seen||{};
-  /* ask a step in a way it has not been asked yet, and a way it was failed in
-     before that, so a step you only recognise one way does not look learned */
-  const rank=t=>{const r=ST.seen[g+':'+t];
-    if(!r)return 0;                 /* never asked this way */
-    if(r.x>r.o)return 1;            /* asked and mostly failed */
-    return 2+r.o;                   /* already reliable here */
-  };
-  const cands=shuf(TYPES.slice()).sort((a,b)=>rank(a)-rank(b));
-  for(const t of cands){const q=GEN[t](i); if(q){stCur=Object.assign({type:t},q);return;}}
-  stCur=null;
-}
+function build(c){const q=GEN[c.t](c);return q?Object.assign({},c,q):null;}
+
+/* per-step tally feeding the "ضعیف‌ها" view, and a per-direction tally so that
+   view can say which way round a step keeps failing */
 function bumpSeen(g,t,ok){
   ST.seen=ST.seen||{}; const k=g+':'+t, r=ST.seen[k]||{o:0,x:0};
   if(ok)r.o++;else r.x++; ST.seen[k]=r; save();
@@ -293,22 +328,28 @@ function bump(g,ok){ST.stat=ST.stat||{};const st=ST.stat[g]||{o:0,x:0};
   if(ok)st.o++;else st.x++;ST.stat[g]=st;save();}
 
 function stHead(){
-  const cnt=[0,0,0,0,0]; FLAT.forEach((x,i)=>cnt[boxOf('s'+i)]++);
-  const due=stPool().filter(i=>dueNow('s'+i)).length;
+  const pool=deckPool(), due=pool.filter(c=>dueNow(c.k)).length;
+  const cnt=[0,0,0,0,0]; pool.forEach(c=>cnt[boxOf(c.k)]++);
+  const sc=solidCount();
   return '<div class="card"><h2>گام‌ها</h2>'+
    '<div class="seg" id="sm" role="group" style="margin-bottom:10px">'+
     [['mix','تمرین ترکیبی'],['ord','ترتیب درون مرحله'],['full','کارت کامل'],['weak','ضعیف‌ها']]
-     .map(([k,n])=>'<button data-m="'+k+'" aria-pressed="'+(k===stMode)+'">'+n+'</button>').join('')+'</div>'+
-   '<select id="ss"><option value="all">همهٔ مراحل — '+fa(FLAT.length)+' گام</option>'+
+      .map(([k,t])=>'<button data-m="'+k+'" aria-pressed="'+(stMode===k)+'">'+t+'</button>').join('')+
+   '</div><select id="ss">'+
+    '<option value="all">همه — '+fa(FLAT.length)+' گام</option>'+
     P.stages.map((st,i)=>'<option value="'+i+'"'+(String(i)===stStage?' selected':'')+'>'+
-      st.n+' · '+st.name+' — '+fa(st.steps.length)+'</option>').join('')+'</select>'+
-   (stMode==='mix'||stMode==='full'
+      st.n+' · '+st.name+' — '+fa(st.steps.length)+'</option>').join('')+
+   '</select>'+
+   (stMode==='mix'
      ? '<div class="boxes">'+['تازه','۱ روز','۳ روز','۷ روز','۲۱ روز']
          .map((n,i)=>'<div>'+n+'<b>'+fa(cnt[i])+'</b></div>').join('')+'</div>'+
-       '<p class="note">'+(stMode==='mix'
-         ? 'شش نوع سؤال، همه با تصحیح خودکار: خروجی، گام از خروجی، مرحله، گام بعدی، تله، و حسب مورد.'
-         : 'کارت کامل برای بازگویی آزاد — خودتان قضاوت می‌کنید، پس برای مرور عمیق است نه سنجش.')+
-       ' آمادهٔ مرور: <b>'+fa(due)+'</b></p>'
+       '<p class="note">شمارش روی <b>'+fa(pool.length)+' کارت</b> است، نه '+fa(stPool().length)+
+       ' گام: هر گام در هر جهتی که بشود پرسید، کارت جداگانه و زمان‌بندی جداگانه دارد. '+
+       'آمادهٔ مرور: <b>'+fa(due)+'</b> · هر دوره '+fa(SESS)+' سؤال.'+
+       '<br>گام‌های محکم در همهٔ جهت‌ها: <b>'+fa(sc)+' از '+fa(FLAT.length)+'</b></p>'
+     : stMode==='full'
+     ? '<p class="note">کارت کامل برای بازگویی آزاد — خودتان قضاوت می‌کنید، پس برای مرور عمیق است نه سنجش. '+
+       'زمان‌بندی این حالت جداست و روی تمرین ترکیبی اثر نمی‌گذارد.</p>'
      : '')+
    '</div>';
 }
@@ -319,24 +360,14 @@ function bindHead(){
 
 function drawSt(){
   let h=stHead();
-  if(!stQ.length||stCur===null&&stAt>=stQ.length){
-    const nx=Math.min(...stPool().map(i=>ST.due['s'+i]||0).filter(t=>t>Date.now()));
-    const ok=stRes.filter(r=>r).length;
-    h+='<div class="res"><h2>'+(stRes.length?'پایان دوره':'فعلاً تمام')+'</h2>'+
-      (stRes.length?'<div class="big"><span class="k">درست</span><span class="v">'+
-        fa(ok)+' از '+fa(stRes.length)+'</span></div>':
-        '<div class="big"><span class="k">باقی‌مانده</span><span class="v">۰</span></div>')+
-      '<div class="flag">'+(isFinite(nx)
-        ? 'گام بعدی '+fa(new Date(nx).toLocaleDateString('fa-IR'))+' برمی‌گردد.'
-        : 'همه را دیده‌اید.')+'</div></div>'+
-      '<button class="btn g" id="rs">صفر کردن پیشرفت این انتخاب</button>';
-    V().innerHTML=h;bindHead();
-    const r=el('rs'); if(r)r.onclick=()=>{stPool().forEach(i=>{delete ST.box['s'+i];delete ST.due['s'+i];});save();stInit();};
-    return;
-  }
-  const i=stQ[stAt], x=FLAT[i];
 
+  /* ----- free-recall mode keeps its own schedule, keyed per step ----- */
   if(stMode==='full'){
+    if(stAt>=stQ.length){
+      h+='<div class="res"><h2>پایان</h2><div class="flag">کارت‌های این انتخاب تمام شد.</div></div>';
+      V().innerHTML=h;bindHead();return;
+    }
+    const i=stQ[stAt].i, x=FLAT[i];
     h+='<div class="fc"><span class="tag">گام '+fa(x.g)+' · '+P.stages[x.si].name+'</span>'+
       (x.opt?'<span class="tag c" style="margin-inline-start:5px">'+x.opt+'</span>':'')+
       '<div class="q">'+x.t+'</div>'+
@@ -349,30 +380,94 @@ function drawSt(){
              :'<button class="btn" id="show">جواب</button>');
     V().innerHTML=h;bindHead();
     const sh=el('show'); if(sh)sh.onclick=()=>{stShow=true;drawSt();};
-    const go=ok=>{grade('s'+i,ok);bump(x.g,ok);stRes.push(ok);stAt++;stShow=false;nextQ();drawSt();};
+    const go=ok=>{grade('s'+i,ok);bump(x.g,ok);stAt++;stShow=false;drawSt();};
     const g=el('good'),b=el('bad'); if(g)g.onclick=()=>go(true); if(b)b.onclick=()=>go(false);
     return;
   }
 
+  /* ----- end of a session: say what was missed and why ----- */
+  if(!stQ.length||stAt>=stQ.length){
+    const pool=deckPool();
+    const nx=Math.min(...pool.map(c=>ST.due[c.k]||0).filter(t=>t>Date.now()));
+    const left=pool.filter(c=>dueNow(c.k)).length;
+    const ok=stRes.filter(r=>r).length;
+    h+='<div class="res"><h2>'+(stRes.length?'پایان دوره':'فعلاً تمام')+'</h2>'+
+      (stRes.length
+        ? '<div class="big"><span class="k">درست</span><span class="v">'+fa(ok)+' از '+fa(stRes.length)+'</span></div>'
+        : '<div class="big"><span class="k">کارت آمادهٔ مرور</span><span class="v">۰</span></div>')+
+      '<div class="flag">'+(left
+        ? 'هنوز <b>'+fa(left)+'</b> کارت آمادهٔ مرور است.'
+        : isFinite(nx)
+          ? 'کارت بعدی '+fa(new Date(nx).toLocaleDateString('fa-IR'))+' برمی‌گردد.'
+          : 'همهٔ کارت‌ها را دیده‌اید.')+'</div></div>';
+    if(stMiss.length){
+      h+='<div class="card"><h2>این‌ها را اشتباه زدید — '+fa(stMiss.length)+'</h2>'+
+        '<p class="note" style="margin:0 0 6px">هر کدام همین حالا با فاصلهٔ صفر برگشته‌اند، پس در دورهٔ بعد باز می‌آیند.</p>';
+      stMiss.forEach(m=>{
+        h+='<div class="ck"><div class="bd"><h4>'+(m.g?'گام '+fa(m.g)+' · ':'')+TL[m.t]+'</h4>'+
+          '<p>'+m.why+'</p></div></div>';});
+      h+='</div>';
+    }
+    h+=(stRes.length?'<button class="btn" id="go">دورهٔ بعد</button>':'')+
+       '<button class="btn g" id="rs">صفر کردن پیشرفت این انتخاب</button>';
+    V().innerHTML=h;bindHead();
+    const go=el('go'); if(go)go.onclick=stInit;
+    const r=el('rs'); if(r)r.onclick=()=>{deckPool().forEach(c=>{delete ST.box[c.k];delete ST.due[c.k];});save();stInit();};
+    return;
+  }
+
   const c=stCur;
-  if(!c){stAt++;nextQ();return drawSt();}
-  h+='<div class="card"><h2>سؤال '+fa(stAt+1)+' از '+fa(stQ.length)+'</h2>'+
+  if(!c){stAt++;stCur=stQ[stAt]?build(stQ[stAt]):null;return drawSt();}
+
+  h+='<div class="card"><h2>سؤال '+fa(stAt+1)+' از '+fa(stQ.length)+
+     ' <span style="color:var(--soft);font-weight:600">· '+TL[c.t]+'</span></h2>'+
     '<div style="font-size:14px;font-weight:600;color:var(--soft);margin-bottom:7px">'+c.q+'</div>'+
     (c.s?'<div style="font-size:16px;font-weight:700;line-height:1.6">'+c.s+'</div>':'');
-  c.o.forEach((o,k)=>{let cl='opt';
-    if(stPick>=0){if(o.ok)cl+=' ok';else if(k===stPick)cl+=' no';}
-    h+='<button class="'+cl+'" data-o="'+k+'"'+(stPick>=0?' disabled':'')+'>'+o.t+'</button>';});
-  if(stPick>=0)h+='<div class="flag'+(c.o[stPick].ok?'':' bad')+'" style="margin-top:12px">'+c.why+'</div>';
+
+  if(c.multi){
+    c.o.forEach((o,k)=>{let cl='opt';
+      if(stPick>=0){ if(o.ok)cl+=' ok'; else if(stSel.indexOf(k)>=0)cl+=' no'; }
+      else if(stSel.indexOf(k)>=0)cl+=' ok';
+      h+='<button class="'+cl+'" data-s="'+k+'"'+(stPick>=0?' disabled':'')+'>'+o.t+'</button>';});
+    if(stPick<0)h+='<button class="btn'+(stSel.length?'':' g')+'" id="chk">بررسی ('+fa(stSel.length)+' انتخاب)</button>';
+  }else{
+    c.o.forEach((o,k)=>{let cl='opt';
+      if(stPick>=0){if(o.ok)cl+=' ok';else if(k===stPick)cl+=' no';}
+      h+='<button class="'+cl+'" data-o="'+k+'"'+(stPick>=0?' disabled':'')+'>'+o.t+'</button>';});
+  }
+  if(stPick>=0)h+='<div class="flag'+(stRes[stRes.length-1]?'':' bad')+'" style="margin-top:12px">'+c.why+'</div>';
   h+='</div><div class="prog"><i style="width:'+((stAt/stQ.length)*100).toFixed(1)+'%"></i></div>';
   if(stPick>=0)h+='<button class="btn" id="qn">'+(stAt+1>=stQ.length?'نتیجه':'بعدی')+'</button>';
   V().innerHTML=h;bindHead();
+
+  const settle=ok=>{
+    grade(c.k,ok);
+    if(c.g){bump(c.g,ok);bumpSeen(c.g,c.t,ok);}
+    stRes.push(ok);
+    if(!ok){
+      if(!c.again)stMiss.push({g:c.g,t:c.t,why:c.why});
+      /* see it again before the session ends, not tomorrow — but only one retry
+         per card, or a session you keep failing never reaches its end */
+      if(!c.again){
+        const at=Math.min(stQ.length,stAt+3);
+        stQ.splice(at,0,Object.assign({},c,{again:true}));
+      }
+    }
+  };
   V().querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{
-    stPick=+b.dataset.o;
-    const ok=c.o[stPick].ok;
-    /* a cond question is about whichever step it named, not the one in the queue */
-    const tg=(c.type==='cond'&&c.fix!==undefined)?c.fix:i;
-    grade('s'+tg,ok); bump(FLAT[tg].g,ok); bumpSeen(FLAT[tg].g,c.type,ok); stRes.push(ok); drawSt();});
-  const n=el('qn'); if(n)n.onclick=()=>{stAt++;stPick=-1;nextQ();drawSt();};
+    stPick=+b.dataset.o; settle(c.o[stPick].ok); drawSt();});
+  V().querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{
+    const k=+b.dataset.s, at=stSel.indexOf(k);
+    if(at>=0)stSel.splice(at,1); else stSel.push(k);
+    drawSt();});
+  const ch=el('chk'); if(ch)ch.onclick=()=>{
+    const want=c.o.map((o,k)=>o.ok?k:-1).filter(k=>k>=0);
+    const ok=want.length===stSel.length&&want.every(k=>stSel.indexOf(k)>=0);
+    stPick=0; settle(ok); drawSt();};
+  const n=el('qn'); if(n)n.onclick=()=>{
+    stAt++;stPick=-1;stSel=[];
+    stCur=stQ[stAt]?build(stQ[stAt]):null;
+    drawSt();};
 }
 
 /* within-stage ordering: the order inside a stage matters too */
@@ -443,8 +538,7 @@ function drawWeak(){
       (x.act?'<p class="note" style="margin:0">'+x.act+'</p>':'')+
       '<p class="note" style="margin:4px 0 0"><b>خروجی:</b> '+x.out+(x.dur?' · '+x.dur:'')+'</p>'+
       (x.p?'<p class="note" style="margin:6px 0 0;color:var(--warn)">تله · '+x.p+'</p>':'')+
-      (function(){const L={out:'خروجی',rev:'گام از خروجی',stage:'مرحله',next:'گام بعدی',trap:'تله',cond:'حسب مورد'};
-        const f=TYPES.filter(t=>{const r=(ST.seen||{})[x.g+':'+t];return r&&r.x>0;}).map(t=>L[t]);
+      (function(){const f=TYPES.filter(t=>{const r=(ST.seen||{})[x.g+':'+t];return r&&r.x>0;}).map(t=>TL[t]);
         return f.length?'<p class="note" style="margin:6px 0 0">در این جهت‌ها غلط داده‌اید: <b>'+f.join(' · ')+'</b></p>':'';})()+
       '</div>';
   });
