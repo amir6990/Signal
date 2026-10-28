@@ -61,8 +61,9 @@ tr.hi td{background:var(--wash);font-weight:700}
 .badge.old{background:var(--warn-wash);color:var(--warn)}
 
 .seg{display:flex;gap:5px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
-.seg button{flex:1;padding:9px 2px;border:0;border-radius:8px;background:transparent;color:var(--soft);
- font-family:var(--f);font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.seg{flex-wrap:wrap}
+.seg button{flex:1 1 auto;min-width:30%;padding:9px 4px;border:0;border-radius:8px;background:transparent;
+ color:var(--soft);font-family:var(--f);font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
 .btn{display:block;width:100%;border:0;border-radius:11px;padding:13px;font-family:var(--f);
  font-size:14px;font-weight:700;background:var(--acc);color:var(--acc-ink);cursor:pointer;margin-top:9px}
@@ -117,6 +118,17 @@ tr.hi td{background:var(--wash);font-weight:700}
 .ck .gi{font-size:10.5px;font-weight:800;color:var(--acc);background:var(--wash);border-radius:6px;padding:1px 6px;margin-inline-start:5px}
 .cond{font-size:10px;font-weight:700;color:var(--warn);background:var(--warn-wash);border-radius:6px;padding:1px 6px;margin-inline-start:5px}
 .fc h4,.card h4{font-family:var(--f)}
+.rt{position:relative;padding:0 0 0 0}
+.rn{display:flex;gap:10px;align-items:flex-start;padding:10px 0}
+.rn .who{flex:0 0 94px;font-size:10.5px;font-weight:800;color:#fff;border-radius:7px;padding:4px 6px;
+ text-align:center;line-height:1.35}
+.rn .wh{flex:1;min-width:0;font-size:13px;font-weight:600;line-height:1.6}
+.rn .gg{font-size:10.5px;font-weight:800;color:var(--acc);background:var(--wash);border-radius:6px;
+ padding:1px 6px;margin-inline-start:5px;white-space:nowrap}
+.rarr{color:var(--soft);font-size:13px;padding:0 0 0 100px;line-height:1}
+.ritems{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ritems span{background:var(--field);border:1px solid var(--line);border-radius:7px;padding:3px 8px;
+ font-size:11px;font-weight:600}
 .hk{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
 .hk:last-child{border-bottom:0}
 .hk b{flex:0 0 32px;font-size:22px;font-weight:800;color:var(--acc);text-align:center;direction:ltr}
@@ -136,6 +148,7 @@ tr.hi td{background:var(--wash);font-weight:700}
     <button data-v="st" aria-pressed="false">گام‌ها</button>
     <button data-v="tr" aria-pressed="false">تله‌ها</button>
     <button data-v="nu" aria-pressed="false">اعداد</button>
+    <button data-v="rt" aria-pressed="false">گردش سند</button>
     <button data-v="ck" aria-pressed="false">چک‌لیست</button>
   </div>
 
@@ -143,6 +156,7 @@ tr.hi td{background:var(--wash);font-weight:700}
 </div>
 
 <script src="data.js"></script>
+<script src="route.js"></script>
 <script>
 const FA='۰۱۲۳۴۵۶۷۸۹', fa=s=>String(s).replace(/\d/g,d=>FA[d]);
 const el=id=>document.getElementById(id), V=()=>el('view');
@@ -659,8 +673,76 @@ function ckCounts(){
     if(h2)h2.textContent=st.n+' · '+st.name+' — '+fa(sd)+'/'+fa(ids.length);
   });
 }
+/* ---------- گردش سند: who touches each document, in what order ---------- */
+let rSel=0, rDrill=false, rPlaced=[], rPool=[], rDone=false;
+function rtInit(){rDrill=false;rPlaced=[];rDone=false;drawRt();}
+function rdInit(){
+  rDrill=true;rPlaced=[];rDone=false;
+  rPool=shuf(ROUTES[rSel].ch.map((x,i)=>i));
+  drawRt();
+}
+function node(n,k){
+  const a=ACT[n.a]||ACT.unk;
+  return '<div class="rn"><span class="who" style="background:'+a[1]+'">'+a[0]+'</span>'+
+    '<span class="wh">'+n.t+'<span class="gg">گام '+n.g+'</span></span></div>';
+}
+function drawRt(){
+  const R=ROUTES[rSel];
+  let h='<div class="card"><h2>گردش سند</h2><select id="rs">'+
+    ROUTES.map((r,i)=>'<option value="'+i+'"'+(i===rSel?' selected':'')+'>'+r.nm+'</option>').join('')+
+    '</select><p class="note">هر حلقه شمارهٔ گامش را دارد تا بتوانید با چک‌لیست تطبیق بدهید. '+
+    'جایی که سند نگفته چه کسی، قرمز علامت خورده و حدس نزده‌ام.</p></div>';
+
+  h+='<div class="card"><h2>'+R.nm+'</h2>'+
+     (R.sub?'<p class="note" style="margin:0 0 6px">'+R.sub+'</p>':'');
+  if(R.items)h+='<div class="ritems">'+R.items.map(x=>'<span>'+x+'</span>').join('')+'</div>';
+  h+='</div>';
+
+  if(!rDrill){
+    h+='<div class="card"><h2>ترتیب گردش — '+fa(R.ch.length)+' حلقه</h2><div class="rt">';
+    R.ch.forEach((n,k)=>{h+=node(n,k); if(k<R.ch.length-1)h+='<div class="rarr">↓</div>';});
+    h+='</div></div><button class="btn" id="rd">تمرین ترتیب همین سند</button>';
+    V().innerHTML=h;bindRt();return;
+  }
+
+  h+='<div class="card"><h2>ترتیب شما</h2>';
+  if(!rPlaced.length)h+='<p class="note" style="margin:0">هنوز چیزی انتخاب نکرده‌اید.</p>';
+  rPlaced.forEach((ix,k)=>{
+    const ok=ix===k, n=R.ch[ix], a=ACT[n.a]||ACT.unk;
+    h+='<button class="slot'+(rDone?(ok?' ok':' no'):'')+'" disabled><span class="num">'+fa(k+1)+'</span>'+
+       '<span><b style="color:'+a[1]+'">'+a[0]+'</b> — '+n.t+(rDone?'<span class="gg">گام '+n.g+'</span>':'')+
+       (rDone&&!ok?' · جای درستش '+fa(ix+1):'')+'</span></button>';
+  });
+  h+='</div>';
+  if(rPool.length){
+    h+='<div class="card"><h2>حلقهٔ '+fa(rPlaced.length+1)+' کدام است؟</h2>';
+    rPool.forEach(ix=>{const n=R.ch[ix], a=ACT[n.a]||ACT.unk;
+      h+='<button class="slot pick" data-rp="'+ix+'"><span class="num">؟</span>'+
+         '<span><b style="color:'+a[1]+'">'+a[0]+'</b> — '+n.t+'</span></button>';});
+    h+='</div>';
+  }else{
+    const right=rPlaced.filter((ix,k)=>ix===k).length, rk='rt'+R.id;
+    if(right>(ST.rec[rk]||0)){ST.rec[rk]=right;save();}
+    h+='<div class="res"><h2>نتیجه</h2><div class="big"><span class="k">درست</span><span class="v">'+
+      fa(right)+' از '+fa(R.ch.length)+'</span></div>'+
+      (right===R.ch.length?'<div class="flag">کامل درست.</div>':'<div class="flag bad">جاهای قرمز را ببینید؛ شمارهٔ گام هر حلقه کنارش آمده.</div>')+'</div>'+
+      '<div class="row2"><button class="btn g" id="rv">دیدن ترتیب</button><button class="btn" id="rag">دوباره</button></div>';
+  }
+  V().innerHTML=h;bindRt();
+}
+function bindRt(){
+  const e=el('rs'); if(e)e.onchange=()=>{rSel=+e.value;rtInit();};
+  const d=el('rd'); if(d)d.onclick=rdInit;
+  const a=el('rag'); if(a)a.onclick=rdInit;
+  const v=el('rv'); if(v)v.onclick=rtInit;
+  V().querySelectorAll('[data-rp]').forEach(b=>b.onclick=()=>{
+    rPlaced.push(+b.dataset.rp); rPool=rPool.filter(x=>x!==+b.dataset.rp);
+    if(!rPool.length)rDone=true;
+    drawRt();});
+}
+
 function render(){
-  ({sp:dInit,st:stInit,tr:tInit,nu:nInit,ck:drawC})[view]();
+  ({sp:dInit,st:stInit,tr:tInit,nu:nInit,rt:rtInit,ck:drawC})[view]();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
