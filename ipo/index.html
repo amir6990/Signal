@@ -1,0 +1,484 @@
+<title>پذیرش و عرضه اولیه</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="پذیرش سهام">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1F5E57">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="app.webmanifest">
+<style>
+
+:root{--bg:#F4F6F5;--card:#FFF;--ink:#111A18;--soft:#5C6B67;--acc:#1F5E57;--acc-ink:#FFF;
+ --wash:#E6EFEC;--warn:#9C3326;--warn-wash:#FAEAE6;--line:#D9DEDB;--field:#FFF;--bar:#7FB3A6;
+ --f:-apple-system,BlinkMacSystemFont,"SF Arabic","Geeza Pro","IRANSans","Vazirmatn","Segoe UI",Tahoma,system-ui,sans-serif;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;
+ --soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;--wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;
+ --line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#0F1614;--card:#19211F;--ink:#E8EDEA;--soft:#93A29D;--acc:#6DBCAC;--acc-ink:#0F1614;
+ --wash:#1D2B28;--warn:#E89684;--warn-wash:#2E201D;--line:#2B3734;--field:#121A18;--bar:#2F5C53;color-scheme:dark;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.65;direction:rtl;
+ -webkit-text-size-adjust:100%;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:720px;margin-inline:auto;padding-top:20px}
+h1{font-size:21px;font-weight:800;margin:0 0 2px}
+.sub{color:var(--soft);font-size:12.5px;margin:0 0 6px}
+a{color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card>h2{font-size:13px;font-weight:700;margin:0 0 12px;color:var(--acc)}
+label{display:block;font-size:12px;font-weight:600;color:var(--soft);margin-bottom:4px}
+input,select{width:100%;font-family:var(--f);font-size:16px;font-weight:600;color:var(--ink);background:var(--field);
+ border:1px solid var(--line);border-radius:10px;padding:10px 11px;appearance:none;direction:ltr;text-align:right}
+select{direction:rtl;padding-left:30px;background-image:linear-gradient(45deg,transparent 50%,var(--soft) 50%),linear-gradient(135deg,var(--soft) 50%,transparent 50%);
+ background-position:14px calc(50% - 2px),19px calc(50% - 2px);background-size:5px 5px;background-repeat:no-repeat}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:var(--acc)}
+input[readonly]{opacity:.62}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.g2+.g2,.g3+.g2,.g2+.g3,.g3+.g3{margin-top:10px}
+.res{background:var(--acc);color:var(--acc-ink);border-radius:14px;padding:16px;margin-bottom:12px}
+.res h2{color:var(--acc-ink);opacity:.72;font-size:12px;margin:0 0 10px;font-weight:700}
+.big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.16)}
+.big:last-of-type{border-bottom:0}
+.big .k{font-size:13px;opacity:.85;font-weight:600}
+.big .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;direction:ltr}
+.big.sm .v{font-size:16px;font-weight:700}
+.flag{margin-top:10px;padding:9px 11px;border-radius:9px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.14)}
+.flag.bad{background:var(--warn-wash);color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 3px;border-bottom:1px solid var(--line);text-align:center}
+th:first-child,td:first-child{text-align:right;white-space:nowrap;font-weight:600}
+th{font-size:10.5px;color:var(--soft);font-weight:700}
+td{direction:ltr} td:first-child{direction:rtl}
+tr:last-child td{border-bottom:0}
+tr.hi td{background:var(--wash);font-weight:700}
+.tw{overflow-x:auto;margin-top:4px}
+.note{font-size:12px;color:var(--soft);margin:10px 0 0;line-height:1.6}
+.badge{display:inline-block;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;background:var(--wash);color:var(--acc)}
+.badge.old{background:var(--warn-wash);color:var(--warn)}
+
+.seg{display:flex;gap:5px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:4px}
+.seg{flex-wrap:wrap}
+.seg button{flex:1 1 auto;min-width:30%;padding:9px 4px;border:0;border-radius:8px;background:transparent;
+ color:var(--soft);font-family:var(--f);font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+.btn{display:block;width:100%;border:0;border-radius:11px;padding:13px;font-family:var(--f);
+ font-size:14px;font-weight:700;background:var(--acc);color:var(--acc-ink);cursor:pointer;margin-top:9px}
+.btn.g{background:var(--wash);color:var(--acc)}
+.btn.w{background:var(--warn-wash);color:var(--warn)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px}
+.row2 .btn{margin-top:0}
+.slot{display:flex;align-items:flex-start;gap:9px;background:var(--field);border:1px solid var(--line);
+ border-radius:11px;padding:11px;margin-bottom:8px;text-align:right;width:100%;font-family:var(--f);
+ font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;line-height:1.5}
+.slot .num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--wash);color:var(--acc);
+ display:grid;place-items:center;font-size:12px;font-weight:800}
+.slot.ok{border-color:var(--acc);background:var(--wash)}
+.slot.no{border-color:var(--warn);background:var(--warn-wash);color:var(--warn)}
+.slot.ok .num{background:var(--acc);color:var(--acc-ink)}
+.slot.no .num{background:var(--warn);color:#fff}
+.slot:disabled{cursor:default}
+.pick{background:var(--card);border:1px dashed var(--line)}
+.det{font-size:12px;font-weight:500;color:var(--soft);line-height:1.6;margin:-2px 0 10px 35px}
+.fc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 15px;min-height:140px;
+ display:flex;flex-direction:column;justify-content:center}
+.fc .q{font-size:16px;font-weight:700;line-height:1.6}
+.fc .a{font-size:14px;line-height:1.75;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+.fc .a b{color:var(--acc)}
+.tag{display:inline-block;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700;
+ background:var(--wash);color:var(--acc);margin-bottom:9px}
+.tag.c{background:var(--warn-wash);color:var(--warn)}
+.prog{height:5px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:11px}
+.prog i{display:block;height:100%;background:var(--acc);transition:width .25s}
+.boxes{display:flex;gap:5px;margin-top:10px}
+.boxes div{flex:1;text-align:center;font-size:10px;font-weight:700;color:var(--soft);
+ background:var(--field);border:1px solid var(--line);border-radius:8px;padding:5px 2px}
+.boxes div b{display:block;font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+.opt{display:block;width:100%;text-align:right;background:var(--field);border:1px solid var(--line);
+ border-radius:11px;padding:12px;margin-top:8px;font-family:var(--f);font-size:13.5px;font-weight:600;
+ color:var(--ink);cursor:pointer;line-height:1.5}
+.opt.ok{border-color:var(--acc);background:var(--wash);color:var(--acc);font-weight:800}
+.opt.no{border-color:var(--warn);background:var(--warn-wash);color:var(--warn)}
+.opt:disabled{cursor:default}
+.spine{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:4px}
+.spine span{background:var(--wash);color:var(--acc);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:700}
+.spine i{color:var(--soft);font-style:normal;font-size:12px}
+/* checklist */
+.ck{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
+.ck:last-child{border-bottom:0}
+.ck input{flex:0 0 22px;width:22px;height:22px;margin:1px 0 0;accent-color:var(--acc)}
+.ck .bd{flex:1;min-width:0}
+.ck h4{margin:0;font-size:13.5px;font-weight:700;line-height:1.5}
+.ck.done h4{text-decoration:line-through;color:var(--soft)}
+.ck p{margin:4px 0 0;font-size:12px;color:var(--soft);line-height:1.6}
+.ck p.tr{color:var(--warn);background:var(--warn-wash);border-radius:8px;padding:7px 9px;margin-top:6px;font-weight:600}
+.ck .gi{font-size:10.5px;font-weight:800;color:var(--acc);background:var(--wash);border-radius:6px;padding:1px 6px;margin-inline-start:5px}
+.cond{font-size:10px;font-weight:700;color:var(--warn);background:var(--warn-wash);border-radius:6px;padding:1px 6px;margin-inline-start:5px}
+.fc h4,.card h4{font-family:var(--f)}
+.rt{position:relative;padding:0 0 0 0}
+.rn{display:flex;gap:10px;align-items:flex-start;padding:10px 0}
+.rn .who{flex:0 0 94px;font-size:10.5px;font-weight:800;color:#fff;border-radius:7px;padding:4px 6px;
+ text-align:center;line-height:1.35}
+.rn .wh{flex:1;min-width:0;font-size:13px;font-weight:600;line-height:1.6}
+.rn .gg{font-size:10.5px;font-weight:800;color:var(--acc);background:var(--wash);border-radius:6px;
+ padding:1px 6px;margin-inline-start:5px;white-space:nowrap}
+.rarr{color:var(--soft);font-size:13px;padding:0 0 0 100px;line-height:1}
+.ritems{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ritems span{background:var(--field);border:1px solid var(--line);border-radius:7px;padding:3px 8px;
+ font-size:11px;font-weight:600}
+.hk{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.hk:last-child{border-bottom:0}
+.hk b{flex:0 0 32px;font-size:22px;font-weight:800;color:var(--acc);text-align:center;direction:ltr}
+.hk div{flex:1}
+.hk strong{display:block;font-size:13px;font-weight:700}
+.hk small{display:block;font-size:11.5px;color:var(--soft);line-height:1.6;margin-top:2px}
+</style>
+
+<div class="wrap">
+  <h1>پذیرش و عرضه اولیه</h1>
+  <p class="sub">بورس تهران · ۴۹ مرحله · ۸ فاز · ۵۰ فرم · ۱۸ ریسک</p>
+  <p class="sub"><a href="../proc/">انتشار اوراق</a> · <a href="../learn/">مرور اوراق</a> · <a href="../dcf/">DCF</a></p>
+  <p class="sub" id="offline" style="margin-bottom:14px"></p>
+
+  <div class="seg" id="nav" role="group">
+    <button data-v="ph" aria-pressed="true">فازها</button>
+    <button data-v="st" aria-pressed="false">مراحل</button>
+    <button data-v="rt" aria-pressed="false">گردش کار</button>
+    <button data-v="fm" aria-pressed="false">فرم‌ها</button>
+    <button data-v="rk" aria-pressed="false">ریسک‌ها</button>
+    <button data-v="ck" aria-pressed="false">چک‌لیست</button>
+  </div>
+
+  <div id="view"></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const FA='۰۱۲۳۴۵۶۷۸۹', fa=s=>String(s).replace(/\d/g,d=>FA[d]);
+const el=id=>document.getElementById(id), V=()=>el('view');
+const shuf=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+let view='ph';
+
+const KEY='ipo_v1', DAY=864e5;
+let ST={box:{},due:{},ck:{},rec:{},stat:{}};
+try{const r=JSON.parse(localStorage.getItem(KEY)||'null'); if(r)ST=Object.assign(ST,r);}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ST));}catch(e){}};
+const IVL=[0,1,3,7,21];
+const boxOf=k=>ST.box[k]||0, dueNow=k=>(ST.due[k]||0)<=Date.now();
+const grade=(k,ok)=>{const b=ok?Math.min(4,boxOf(k)+1):0;ST.box[k]=b;ST.due[k]=Date.now()+IVL[b]*DAY;save();};
+
+const S=G.steps, PH=G.phases;
+const phName=n=>{const p=PH.find(x=>x.n===n);return p?('فاز '+fa(p.n)+' · '+p.nm):'—';};
+const byPhase=n=>S.filter(x=>x.ph===n);
+const FIELDS=[['who','مسئول اصلی'],['flow','مسیر گردش کار'],['pre','پیش‌نیاز'],['out','خروجی مرحله'],
+              ['time','زمان تقریبی'],['law','مبنای مقرراتی'],['risk','نکته کلیدی / ریسک'],
+              ['forms','فرم‌ها و مدارک'],['note','توضیح فرم و نکات تکمیل']];
+
+/* ---------- 1. phases: the spine ---------- */
+let pPlaced=[],pPool=[],pDone=false,pDrill=false;
+function phInit(){pDrill=false;pPlaced=[];pDone=false;drawPh();}
+function pdInit(){pDrill=true;pPlaced=[];pDone=false;pPool=shuf(PH.map((x,i)=>i));drawPh();}
+function drawPh(){
+  let h='<div class="card"><h2>هشت فاز</h2><p class="note" style="margin:0">'+
+    'هر یک از ۴۹ مرحله داخل یکی از این هشت فاز می‌نشیند. وقتی گم شدید، اول بپرسید در کدام فازید.'+
+    ((ST.rec.ph||0)?' بهترین رکورد: <b>'+fa(ST.rec.ph)+' از '+fa(PH.length)+'</b>.':'')+'</p></div>';
+  if(!pDrill){
+    h+='<div class="card">';
+    PH.forEach((p,i)=>{const n=byPhase(p.n).length;
+      h+='<div class="rn"><span class="who" style="background:var(--acc)">فاز '+fa(p.n)+'</span>'+
+         '<span class="wh">'+p.nm+'<span class="gg">'+fa(n)+' مرحله</span></span></div>'+
+         (i<PH.length-1?'<div class="rarr">↓</div>':'');});
+    h+='</div><button class="btn" id="pd">تمرین ترتیب فازها</button>';
+    V().innerHTML=h; el('pd').onclick=pdInit; return;
+  }
+  h+='<div class="card"><h2>ترتیب شما</h2>';
+  if(!pPlaced.length)h+='<p class="note" style="margin:0">هنوز چیزی انتخاب نکرده‌اید.</p>';
+  pPlaced.forEach((ix,k)=>{const ok=ix===k;
+    h+='<button class="slot'+(pDone?(ok?' ok':' no'):'')+'" disabled><span class="num">'+fa(k)+'</span>'+
+       '<span>'+PH[ix].nm+(pDone&&!ok?' — جای درستش فاز '+fa(PH[ix].n):'')+'</span></button>';});
+  h+='</div>';
+  if(pPool.length){
+    h+='<div class="card"><h2>فاز '+fa(pPlaced.length)+' کدام است؟</h2>';
+    pPool.forEach(ix=>h+='<button class="slot pick" data-p="'+ix+'"><span class="num">؟</span><span>'+PH[ix].nm+'</span></button>');
+    h+='</div>';
+  }else{
+    const r=pPlaced.filter((ix,k)=>ix===k).length;
+    if(r>(ST.rec.ph||0)){ST.rec.ph=r;save();}
+    h+='<div class="res"><h2>نتیجه</h2><div class="big"><span class="k">درست</span><span class="v">'+
+      fa(r)+' از '+fa(PH.length)+'</span></div>'+(r===PH.length?'<div class="flag">کامل درست.</div>':'<div class="flag bad">جاهای قرمز را ببینید.</div>')+'</div>'+
+      '<div class="row2"><button class="btn g" id="pv">دیدن فازها</button><button class="btn" id="pa">دوباره</button></div>';
+  }
+  V().innerHTML=h;
+  V().querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
+    pPlaced.push(+b.dataset.p);pPool=pPool.filter(x=>x!==+b.dataset.p);
+    if(!pPool.length)pDone=true;drawPh();});
+  const a=el('pa'); if(a)a.onclick=pdInit;
+  const v=el('pv'); if(v)v.onclick=phInit;
+}
+
+/* ---------- 2. steps: auto-graded mixed drill, scheduled per direction ---------- */
+const mkOpts=(correct,pool,n)=>{
+  const seen=new Set([correct]),ds=[];
+  shuf(pool.slice()).forEach(t=>{if(ds.length<n-1&&t&&!seen.has(t)){seen.add(t);ds.push(t);}});
+  return shuf([{t:correct,ok:true}].concat(ds.map(t=>({t,ok:false}))));
+};
+const sIx=g=>S.findIndex(x=>x.g===g);
+const chain=i=>{const a=S[i-1],x=S[i],b=S[i+1];
+  return (a?'مرحله '+fa(a.g)+' '+a.t+' ← ':'')+'<b>مرحله '+fa(x.g)+' '+x.t+'</b>'+(b?' ← مرحله '+fa(b.g)+' '+b.t:'');};
+const uniq=(f)=>{const c={};S.forEach(x=>{if(x[f])c[x[f]]=(c[x[f]]||0)+1;});return i=>S[i][f]&&c[S[i][f]]===1;};
+const uOut=uniq('out'), uWho=uniq('who'), uFlow=uniq('flow');
+const CAN={
+  phase:i=>S[i].ph!=null,
+  out:i=>uOut(i), rev:i=>uOut(i),
+  who:i=>!!S[i].who&&uWho(i),
+  flow:i=>!!S[i].flow&&uFlow(i),
+  next:i=>i+1<S.length,
+  time:i=>!!S[i].time, law:i=>!!S[i].law, risk:i=>!!S[i].risk
+};
+const TYPES=['phase','out','rev','who','flow','next','time','law','risk'];
+const TL={phase:'فاز',out:'خروجی',rev:'مرحله از خروجی',who:'مسئول',flow:'گردش کار',
+          next:'مرحلهٔ بعد',time:'زمان',law:'مبنای مقرراتی',risk:'ریسک'};
+const GEN={
+  phase:c=>({q:'این مرحله در کدام فاز است؟',s:S[c.i].t,
+    o:mkOpts(phName(S[c.i].ph),PH.filter(p=>p.n!==S[c.i].ph).map(p=>phName(p.n)),4),
+    why:'مرحله '+fa(S[c.i].g)+' از ۴۹'}),
+  out:c=>({q:'خروجی این مرحله چیست؟',s:S[c.i].t,
+    o:mkOpts(S[c.i].out,S.filter((y,j)=>j!==c.i&&CAN.out(j)).map(y=>y.out),4),
+    why:'مرحله '+fa(S[c.i].g)+' · '+phName(S[c.i].ph)}),
+  rev:c=>({q:'این خروجی از کدام مرحله می‌آید؟',s:S[c.i].out,
+    o:mkOpts(S[c.i].t,S.filter((y,j)=>j!==c.i).map(y=>y.t),4),
+    why:'مرحله '+fa(S[c.i].g)}),
+  who:c=>({q:'مسئول اصلی این مرحله کیست؟',s:S[c.i].t,
+    o:mkOpts(S[c.i].who,S.filter((y,j)=>j!==c.i&&y.who).map(y=>y.who),4),
+    why:'مرحله '+fa(S[c.i].g)}),
+  flow:c=>({q:'مسیر گردش کار این مرحله کدام است؟',s:S[c.i].t,
+    o:mkOpts(S[c.i].flow,S.filter((y,j)=>j!==c.i&&y.flow).map(y=>y.flow),4),
+    why:'مرحله '+fa(S[c.i].g)+' · '+phName(S[c.i].ph)}),
+  next:c=>({q:'بعد از این مرحله چه می‌آید؟',s:S[c.i].t,
+    o:mkOpts(S[c.i+1].t,S.filter((y,j)=>j!==c.i&&j!==c.i+1).map(y=>y.t),4),
+    why:chain(c.i)+(S[c.i].ph!==S[c.i+1].ph?'<br>اینجا وارد '+phName(S[c.i+1].ph)+' می‌شوید.':'')}),
+  time:c=>({q:'زمان تقریبی این مرحله؟',s:S[c.i].t,
+    o:mkOpts(S[c.i].time,S.filter((y,j)=>j!==c.i&&y.time).map(y=>y.time),4),
+    why:'مرحله '+fa(S[c.i].g)+' — زمان‌ها تقریبی‌اند و در سند به همین شکل آمده‌اند.'}),
+  law:c=>({q:'مبنای مقرراتی این مرحله؟',s:S[c.i].t,
+    o:mkOpts(S[c.i].law,S.filter((y,j)=>j!==c.i&&y.law).map(y=>y.law),4),
+    why:'مرحله '+fa(S[c.i].g)}),
+  risk:c=>({q:'نکتهٔ کلیدی یا ریسک این مرحله کدام است؟',s:S[c.i].t,
+    o:mkOpts(S[c.i].risk,S.filter((y,j)=>j!==c.i&&y.risk).map(y=>y.risk),4),
+    why:'مرحله '+fa(S[c.i].g)})
+};
+const DECK=[];
+S.forEach((x,i)=>TYPES.forEach(t=>{
+  if(!CAN[t](i))return;
+  const c={k:'c'+x.g+':'+t,t,i,g:x.g,ph:x.ph};
+  /* keep only cards that can actually be posed with four distinct options,
+     so a session of twelve is twelve real questions */
+  let q=null; try{q=GEN[t](c);}catch(e){}
+  if(q&&q.o.length>=3)DECK.push(c);
+}));
+
+const SESS=12;
+let stPh='all', stQ=[], stAt=0, stPick=-1, stCur=null, stRes=[], stMiss=[];
+const pool=()=>DECK.filter(c=>stPh==='all'||c.ph===+stPh);
+function build(c){
+  /* distractors are drawn at random, so retry before giving up; a three-option
+     question is still a fair question, fewer is not */
+  for(let k=0;k<6;k++){
+    let q=null; try{q=GEN[c.t](c);}catch(e){}
+    if(q&&q.o.length===4)return Object.assign({},c,q);
+    if(k===5&&q&&q.o.length>=3)return Object.assign({},c,q);
+  }
+  return null;
+}
+function solid(){let n=0;S.forEach((x,i)=>{const ks=TYPES.filter(t=>CAN[t](i)).map(t=>'c'+x.g+':'+t);
+  if(ks.length&&ks.every(k=>boxOf(k)>=2))n++;});return n;}
+function stInit(){
+  stQ=shuf(pool().filter(c=>dueNow(c.k))).slice(0,SESS);
+  stAt=0;stPick=-1;stRes=[];stMiss=[];stCur=stQ[0]?build(stQ[0]):null;drawSt();
+}
+function stHead(){
+  const p=pool(), due=p.filter(c=>dueNow(c.k)).length, cnt=[0,0,0,0,0];
+  p.forEach(c=>cnt[boxOf(c.k)]++);
+  return '<div class="card"><h2>مراحل</h2><select id="sp">'+
+    '<option value="all">همهٔ فازها — '+fa(S.length)+' مرحله</option>'+
+    PH.map(x=>'<option value="'+x.n+'"'+(String(x.n)===stPh?' selected':'')+'>فاز '+fa(x.n)+' · '+x.nm+' — '+fa(byPhase(x.n).length)+'</option>').join('')+
+    '</select><div class="boxes">'+['تازه','۱ روز','۳ روز','۷ روز','۲۱ روز']
+      .map((n,i)=>'<div>'+n+'<b>'+fa(cnt[i])+'</b></div>').join('')+'</div>'+
+    '<p class="note">'+fa(p.length)+' کارت — هر مرحله در هر جهتی که سند گفته، کارت و زمان‌بندی جدا دارد. '+
+    'آمادهٔ مرور: <b>'+fa(due)+'</b> · هر دوره '+fa(SESS)+' سؤال.<br>مراحل محکم در همهٔ جهت‌ها: <b>'+
+    fa(solid())+' از '+fa(S.length)+'</b></p></div>';
+}
+function bindSp(){const e=el('sp'); if(e)e.onchange=()=>{stPh=e.value;stInit();};}
+function drawSt(){
+  let h=stHead();
+  if(!stQ.length||stAt>=stQ.length){
+    const p=pool(), left=p.filter(c=>dueNow(c.k)).length;
+    const nx=Math.min(...p.map(c=>ST.due[c.k]||0).filter(t=>t>Date.now()));
+    const ok=stRes.filter(r=>r).length;
+    h+='<div class="res"><h2>'+(stRes.length?'پایان دوره':'فعلاً تمام')+'</h2>'+
+      (stRes.length?'<div class="big"><span class="k">درست</span><span class="v">'+fa(ok)+' از '+fa(stRes.length)+'</span></div>'
+                   :'<div class="big"><span class="k">کارت آماده</span><span class="v">۰</span></div>')+
+      '<div class="flag">'+(left?'هنوز <b>'+fa(left)+'</b> کارت آمادهٔ مرور است.'
+        :isFinite(nx)?'کارت بعدی '+fa(new Date(nx).toLocaleDateString('fa-IR'))+' برمی‌گردد.':'همه را دیده‌اید.')+'</div></div>';
+    if(stMiss.length){
+      h+='<div class="card"><h2>اشتباه‌ها — '+fa(stMiss.length)+'</h2>';
+      stMiss.forEach(m=>h+='<div class="ck"><div class="bd"><h4>مرحله '+fa(m.g)+' · '+TL[m.t]+'</h4><p>'+m.why+'</p></div></div>');
+      h+='</div>';
+    }
+    h+=(stRes.length?'<button class="btn" id="go">دورهٔ بعد</button>':'')+
+       '<button class="btn g" id="rs">صفر کردن پیشرفت این انتخاب</button>';
+    V().innerHTML=h;bindSp();
+    const g=el('go'); if(g)g.onclick=stInit;
+    el('rs').onclick=()=>{pool().forEach(c=>{delete ST.box[c.k];delete ST.due[c.k];});save();stInit();};
+    return;
+  }
+  const c=stCur;
+  if(!c){stAt++;stCur=stQ[stAt]?build(stQ[stAt]):null;return drawSt();}
+  h+='<div class="card"><h2>سؤال '+fa(stAt+1)+' از '+fa(stQ.length)+
+     ' <span style="color:var(--soft);font-weight:600">· '+TL[c.t]+'</span></h2>'+
+    '<div style="font-size:14px;font-weight:600;color:var(--soft);margin-bottom:7px">'+c.q+'</div>'+
+    (c.s?'<div style="font-size:15.5px;font-weight:700;line-height:1.6">'+c.s+'</div>':'');
+  c.o.forEach((o,k)=>{let cl='opt';
+    if(stPick>=0){if(o.ok)cl+=' ok';else if(k===stPick)cl+=' no';}
+    h+='<button class="'+cl+'" data-o="'+k+'"'+(stPick>=0?' disabled':'')+'>'+o.t+'</button>';});
+  if(stPick>=0)h+='<div class="flag'+(c.o[stPick].ok?'':' bad')+'" style="margin-top:12px">'+c.why+'</div>';
+  h+='</div><div class="prog"><i style="width:'+((stAt/stQ.length)*100).toFixed(1)+'%"></i></div>';
+  if(stPick>=0)h+='<button class="btn" id="qn">'+(stAt+1>=stQ.length?'نتیجه':'بعدی')+'</button>';
+  V().innerHTML=h;bindSp();
+  V().querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{
+    stPick=+b.dataset.o; const ok=c.o[stPick].ok;
+    grade(c.k,ok); ST.stat[c.g]=ST.stat[c.g]||{o:0,x:0}; ST.stat[c.g][ok?'o':'x']++; save();
+    stRes.push(ok);
+    if(!ok&&!c.again){stMiss.push({g:c.g,t:c.t,why:c.why});
+      stQ.splice(Math.min(stQ.length,stAt+3),0,Object.assign({},c,{again:true}));}
+    drawSt();});
+  const n=el('qn'); if(n)n.onclick=()=>{stAt++;stPick=-1;stCur=stQ[stAt]?build(stQ[stAt]):null;drawSt();};
+}
+
+/* ---------- 3. workflow routing, straight from the document ---------- */
+let rPh='all';
+function rtInit(){
+  const list=S.filter(x=>x.flow&&(rPh==='all'||x.ph===+rPh));
+  let h='<div class="card"><h2>مسیر گردش کار</h2><select id="rp">'+
+    '<option value="all">همهٔ فازها</option>'+
+    PH.map(x=>'<option value="'+x.n+'"'+(String(x.n)===rPh?' selected':'')+'>فاز '+fa(x.n)+' · '+x.nm+'</option>').join('')+
+    '</select><p class="note">هر سطر همان «مسیر گردش کار» است که خودِ سند برای آن مرحله نوشته. '+
+    fa(list.length)+' مرحله از '+fa(S.length)+' مرحله مسیر دارد؛ بقیه در سند مسیری ذکر نشده.</p></div>';
+  let last=null;
+  list.forEach(x=>{
+    if(x.ph!==last){h+='<div class="card"><h2>'+phName(x.ph)+'</h2></div>';last=x.ph;}
+    h+='<div class="card"><h2>مرحله '+fa(x.g)+' · '+x.t+'</h2>'+
+      '<div class="rn"><span class="wh" style="font-size:13.5px">'+
+      x.flow.replace(/←/g,'<span style="color:var(--acc);font-weight:800"> ← </span>')+'</span></div>'+
+      (x.who?'<p class="note" style="margin:6px 0 0"><b>مسئول:</b> '+x.who+'</p>':'')+
+      (x.out?'<p class="note" style="margin:3px 0 0"><b>خروجی:</b> '+x.out+'</p>':'')+'</div>';
+  });
+  V().innerHTML=h;
+  const e=el('rp'); if(e)e.onchange=()=>{rPh=e.value;rtInit();};
+}
+
+/* ---------- 4. forms ---------- */
+let fQ=[],fAt=0,fPick=-1,fMode='list';
+function fmInit(){
+  if(fMode==='drill'){fQ=shuf(G.forms.map((x,i)=>i)).slice(0,10);fAt=0;fPick=-1;}
+  drawFm();
+}
+function drawFm(){
+  let h='<div class="card"><h2>۵۰ فرم و مدرک</h2>'+
+    '<div class="seg" id="fs" role="group">'+
+      [['list','فهرست'],['drill','تمرین']].map(([k,t])=>'<button data-f="'+k+'" aria-pressed="'+(fMode===k)+'">'+t+'</button>').join('')+
+    '</div></div>';
+  if(fMode==='list'){
+    G.forms.forEach(f=>h+='<div class="card"><h2>'+fa(f.n)+' · '+f.t+'</h2>'+
+      (f.d?'<p class="note" style="margin:0">'+f.d+'</p>':'')+'</div>');
+    V().innerHTML=h;bindFs();return;
+  }
+  if(fAt>=fQ.length){
+    h+='<div class="res"><h2>پایان</h2><div class="flag">ده فرم را یک دور زدید.</div></div>'+
+       '<button class="btn" id="fa2">دوباره</button>';
+    V().innerHTML=h;bindFs();el('fa2').onclick=fmInit;return;
+  }
+  const f=G.forms[fQ[fAt]];
+  const opts=mkOpts(f.t,G.forms.filter((y,j)=>j!==fQ[fAt]).map(y=>y.t),4);
+  if(!drawFm._o||drawFm._at!==fAt){drawFm._o=opts;drawFm._at=fAt;}
+  const o=drawFm._o;
+  h+='<div class="card"><h2>فرم '+fa(fAt+1)+' از '+fa(fQ.length)+'</h2>'+
+    '<div style="font-size:14px;font-weight:600;color:var(--soft);margin-bottom:7px">این توضیح مال کدام فرم است؟</div>'+
+    '<div style="font-size:14px;line-height:1.7">'+(f.d||'—').slice(0,320)+'</div>';
+  o.forEach((x,k)=>{let cl='opt';
+    if(fPick>=0){if(x.ok)cl+=' ok';else if(k===fPick)cl+=' no';}
+    h+='<button class="'+cl+'" data-o="'+k+'"'+(fPick>=0?' disabled':'')+'>'+x.t+'</button>';});
+  if(fPick>=0)h+='<div class="flag'+(o[fPick].ok?'':' bad')+'" style="margin-top:12px">فرم شماره '+fa(f.n)+'</div>';
+  h+='</div>'+(fPick>=0?'<button class="btn" id="fn">بعدی</button>':'');
+  V().innerHTML=h;bindFs();
+  V().querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{fPick=+b.dataset.o;drawFm();});
+  const n=el('fn'); if(n)n.onclick=()=>{fAt++;fPick=-1;drawFm._o=null;drawFm();};
+}
+function bindFs(){V().querySelectorAll('#fs button').forEach(b=>b.onclick=()=>{fMode=b.dataset.f;fmInit();});}
+
+/* ---------- 5. risks ---------- */
+function rkInit(){
+  const sev=t=>/بحرانی/.test(t)?'var(--warn)':/بالا/.test(t)?'#8A6D1F':'var(--soft)';
+  let h='<div class="card"><h2>۱۸ ریسک و اشتباه رایج</h2>'+
+    '<p class="note" style="margin:0">ستون «شدت» از خود سند است: بحرانی یعنی می‌تواند پروژه را متوقف کند.</p></div>';
+  G.risks.forEach((r,i)=>{
+    h+='<div class="card"><h2 style="color:'+sev(r.sev)+'">'+fa(i+1)+' · '+(r.sev||'—')+'</h2>'+
+      '<h4 style="margin:0 0 6px;font-size:14px">'+r.t+'</h4>'+
+      (r.stage?'<p class="note" style="margin:0"><b>مرحلهٔ بروز:</b> '+r.stage+'</p>':'')+
+      (r.eff?'<p class="note" style="margin:3px 0 0"><b>اثر:</b> '+r.eff+'</p>':'')+
+      (r.fix?'<p class="note" style="margin:3px 0 0;color:var(--acc)"><b>اقدام پیشگیرانه:</b> '+r.fix+'</p>':'')+
+      (r.law?'<p class="note" style="margin:3px 0 0"><b>مبنا:</b> '+r.law+'</p>':'')+'</div>';
+  });
+  V().innerHTML=h;
+}
+
+/* ---------- 6. checklist ---------- */
+function ckCounts(){
+  const done=S.filter(x=>ST.ck['g'+x.g]).length;
+  const v=el('ckv'),b=el('ckb');
+  if(v)v.textContent=fa(done)+' از '+fa(S.length);
+  if(b)b.style.width=(done/S.length*100).toFixed(1)+'%';
+  PH.forEach(p=>{const ids=byPhase(p.n),d2=ids.filter(x=>ST.ck['g'+x.g]).length;
+    const hh=el('ph'+p.n); if(hh)hh.textContent='فاز '+fa(p.n)+' · '+p.nm+' — '+fa(d2)+'/'+fa(ids.length);});
+}
+function drawCk(){
+  const done=S.filter(x=>ST.ck['g'+x.g]).length;
+  let h='<div class="res"><h2>پیشرفت پرونده</h2><div class="big"><span class="k">انجام‌شده</span>'+
+    '<span class="v" id="ckv">'+fa(done)+' از '+fa(S.length)+'</span></div>'+
+    '<div class="prog" style="background:rgba(255,255,255,.25)"><i id="ckb" style="width:'+(done/S.length*100).toFixed(1)+'%;background:#fff"></i></div></div>';
+  PH.forEach(p=>{
+    const ids=byPhase(p.n), d2=ids.filter(x=>ST.ck['g'+x.g]).length;
+    h+='<div class="card"><h2 id="ph'+p.n+'">فاز '+fa(p.n)+' · '+p.nm+' — '+fa(d2)+'/'+fa(ids.length)+'</h2>';
+    ids.forEach(x=>{
+      const on=!!ST.ck['g'+x.g];
+      h+='<div class="ck'+(on?' done':'')+'"><input type="checkbox" data-g="'+x.g+'"'+(on?' checked':'')+
+        ' aria-label="مرحله '+fa(x.g)+'"><div class="bd"><h4>'+x.t+'<span class="gi">مرحله '+fa(x.g)+'</span></h4>'+
+        FIELDS.filter(([k])=>x[k]).map(([k,lab])=>
+          '<p'+(k==='risk'?' class="tr"':'')+'><b>'+lab+':</b> '+x[k]+'</p>').join('')+
+        '</div></div>';});
+    h+='</div>';
+  });
+  h+='<button class="btn g" id="cr">پاک کردن همهٔ تیک‌ها</button>';
+  V().innerHTML=h;
+  V().querySelectorAll('[data-g]').forEach(b=>b.onchange=()=>{
+    const k='g'+b.dataset.g;
+    if(b.checked)ST.ck[k]=1; else delete ST.ck[k];
+    save(); b.closest('.ck').classList.toggle('done',b.checked); ckCounts();});
+  el('cr').onclick=()=>{if(confirm('همهٔ تیک‌ها پاک شوند؟')){ST.ck={};save();drawCk();}};
+}
+
+function render(){({ph:phInit,st:stInit,rt:rtInit,fm:fmInit,rk:rkInit,ck:drawCk})[view]();window.scrollTo(0,0);}
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');view=b.dataset.v;render();});
+render();
+(function(){const o=el('offline');
+  const say=(t,w)=>{if(o)o.innerHTML='<span class="badge'+(w?' old':'')+'">'+t+'</span>';};
+  if(location.protocol==='file:'){say('فایل محلی — همیشه آفلاین');return;}
+  if(!('serviceWorker' in navigator)){say('بدون پشتیبانی آفلاین',1);return;}
+  navigator.serviceWorker.register('sw.js').then(()=>say('آفلاین آماده است')).catch(()=>say('حالت آفلاین فعال نشد',1));})();
+
+</script>
