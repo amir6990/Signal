@@ -268,17 +268,26 @@ function answerHTML(x,full){
   if(x.plain)h+='<div class="flag" style="margin-top:0"><b>به زبان ساده · </b>'+esc(x.plain)+'</div>';
   (x.tabs||[]).forEach(t=>h+=tabHTML(t));
   if(x.src)h+='<p class="note" style="margin:8px 0 0"><b>مستند:</b> '+esc(x.src)+'</p>';
-  if(full&&x.body&&x.body.length>10){
+  if(full){
     const on=openFull===x.id;
-    h+='<button class="btn g" style="margin-top:9px" data-full="'+esc(x.id)+'">'+(on?'بستن متن کامل':'متن کامل')+'</button>'+
-       (on?'<p class="note" style="margin:8px 0 0;line-height:1.8">'+esc(x.body)+'</p>':'');
+    const sib=QS.filter(y=>y.ch===x.ch), pos=sib.findIndex(y=>y.id===x.id)+1;
+    let det='';
+    if(x.body&&x.body.length>10)det+='<p class="note" style="margin:8px 0 0;line-height:1.8">'+esc(x.body)+'</p>';
+    det+='<p class="note" style="margin:8px 0 0"><b>جایگاه:</b> '+esc(x.ch)+
+         ' — پرسش '+fa(pos)+' از '+fa(sib.length)+' این فصل (شمارهٔ '+esc(x.id)+').</p>';
+    if(!x.src)det+='<p class="note" style="margin:5px 0 0">راهنما برای این پرسش مستند مقرراتی جداگانه‌ای نیاورده است.</p>';
+    h+='<button class="btn g" style="margin-top:9px" data-full="'+esc(x.id)+'">'+(on?'بستن جزئیات و مبنا':'جزئیات و مبنا')+'</button>'+
+       (on?det:'');
   }
   if(!lead&&!x.plain&&!(x.tabs||[]).length)h+='<p class="note" style="margin:0;line-height:1.8">'+esc(x.body||'—')+'</p>';
   return h;
 }
 function bindFull(){
   V().querySelectorAll('[data-full]').forEach(b=>b.onclick=()=>{
-    openFull=openFull===b.dataset.full?null:b.dataset.full; render();});
+    openFull=openFull===b.dataset.full?null:b.dataset.full;
+    /* redraw the current view, never re-enter it: render() calls each view's init,
+       which would reshuffle the queue and flip the card back over */
+    ({dr:drawDr,fc:drawFc,br:brInit,sr:srInit,wk:wkInit}[view]||render)();});
 }
 function drawDr(){
   let h=head();
@@ -293,7 +302,7 @@ function drawDr(){
         :isFinite(nx)?'پرسش بعدی '+fa(new Date(nx).toLocaleDateString('fa-IR'))+' برمی‌گردد.':'همه را دیده‌اید.')+'</div></div>'+
       (drRes.length?'<button class="btn" id="go">دورهٔ بعد</button>':'')+
       '<button class="btn g" id="rs">صفر کردن پیشرفت این فصل</button>';
-    V().innerHTML=h;bindHead();
+    V().innerHTML=h;bindHead();bindFull();
     const g=el('go'); if(g)g.onclick=drInit;
     el('rs').onclick=()=>{poolOf().forEach(i=>{delete ST.box[key(i)];delete ST.due[key(i)];});save();drInit();};
     return;
@@ -318,7 +327,7 @@ function drawDr(){
        '<button class="btn g" id="g1">سخت بود</button></div>'+
        '<div class="row2"><button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>';
   }
-  V().innerHTML=h;bindHead();
+  V().innerHTML=h;bindHead();bindFull();
   const rev=c=>{sure=c;drShow=true;drawDr();};
   const su=el('sure'),un=el('unsure');
   if(su)su.onclick=()=>rev(true); if(un)un.onclick=()=>rev(false);
@@ -343,7 +352,7 @@ function brInit(){
     h+='<div class="card"><h2 style="cursor:pointer" data-t="'+i+'">'+esc(x.id)+' · '+esc(x.q)+'</h2>'+
        (open1===i?answerHTML(x,true):'')+'</div>';
   });
-  V().innerHTML=h;
+  V().innerHTML=h;bindFull();
   const e=el('ch2'); if(e)e.onchange=()=>{chSel=e.value;open1=null;brInit();};
   V().querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{open1=open1===+b.dataset.t?null:+b.dataset.t;brInit();});
 }
@@ -359,7 +368,7 @@ function srInit(){
   hits.slice(0,40).forEach(i=>{const x=QS[i];
     h+='<div class="card"><h2>'+esc(x.id)+' · '+esc(x.ch)+'</h2>'+
       '<h4 style="margin:0 0 6px;font-size:14px">'+esc(x.q)+'</h4>'+answerHTML(x,true)+'</div>';});
-  V().innerHTML=h;
+  V().innerHTML=h;bindFull();
   const e=el('sq');
   if(e){e.oninput=()=>{term=e.value;const p=e.selectionStart;srInit();
     const n=el('sq'); if(n){n.focus();try{n.setSelectionRange(p,p);}catch(x){}}};}

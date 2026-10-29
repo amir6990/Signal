@@ -837,26 +837,75 @@ function fcFront(i){
   if(fcDeck==='routes')return '<span class="tag">گردش سند</span><div class="q">'+ROUTES[i].nm+'</div>';
   return '<span class="tag">'+P.stages[i].n+'</span><div class="q">'+P.stages[i].name+'</div>';
 }
+/* the second layer holds only what the document itself supplies for that item:
+   where the step sits, which document routes cite it, and the step a trap names */
+const faN=s=>String(s).replace(/[۰-۹]/g,c=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(c));
+function routesFor(g){
+  return ROUTES.filter(r=>r.ch.some(n=>faN(n.g).split(/\D+/).filter(Boolean).includes(String(g))));
+}
+function moreBtn(i,label,inner){
+  const on=fcMore===i;
+  return '<button class="btn g" style="margin-top:9px" data-more="'+i+'">'+(on?'بستن '+label:label)+'</button>'+
+         (on?inner:'');
+}
 function fcBack(i){
-  if(fcDeck==='steps'){const x=FLAT[i];
+  if(fcDeck==='steps'){const x=FLAT[i], st=P.stages[x.si];
     let h='<p style="margin:0 0 7px"><b style="color:var(--acc)">خروجی:</b> '+x.out+'</p>'+
       (x.act?'<p style="margin:0 0 7px"><b style="color:var(--acc)">اقدام:</b> '+x.act+'</p>':'')+
       (x.dur?'<p style="margin:0 0 7px"><b style="color:var(--acc)">زمان:</b> '+x.dur+'</p>':'');
     if(x.p)h+='<div class="flag bad" style="margin-top:8px"><b>تله · </b>'+x.p+'</div>';
-    return h;}
-  if(fcDeck==='traps')return '<p style="margin:0">'+P.traps[i].d+'</p>';
-  if(fcDeck==='hooks')return '<div style="font-size:30px;font-weight:800;color:var(--acc);text-align:center">'+
-    P.hooks[i].n+'</div><p style="margin:8px 0 0">'+P.hooks[i].d+'</p>';
+    const pos=st.steps.findIndex(y=>y.t===x.t)+1;
+    const rs=routesFor(x.g);
+    let det='<p style="margin:8px 0 0"><b style="color:var(--acc)">جایگاه:</b> '+st.n+' · '+st.name+
+      ' — گام '+fa(pos)+' از '+fa(st.steps.length)+' این مرحله، و گام '+fa(x.g)+' از '+fa(FLAT.length)+' کل فرآیند.</p>';
+    if(x.opt)det+='<p style="margin:5px 0 0;color:var(--warn)"><b>'+x.opt+'</b> — الزامی نیست.</p>';
+    if(rs.length)det+='<p style="margin:5px 0 0"><b style="color:var(--acc)">در گردش این اسناد:</b> '+
+      rs.map(r=>r.nm).join(' · ')+'</p>';
+    else det+='<p class="note" style="margin:5px 0 0">در هیچ گردش سندی به این گام ارجاع نشده است.</p>';
+    return h+moreBtn(i,'جزئیات و مبنا',det);}
+  if(fcDeck==='traps'){
+    const t=P.traps[i], m=/گام\s*([۰-۹ و]+)/.exec(t.d);
+    let det='';
+    if(m){
+      const gs=faN(m[1]).split(/\D+/).filter(Boolean).map(Number);
+      gs.forEach(g=>{const x=FLAT.find(y=>y.g===g);
+        if(x)det+='<p style="margin:8px 0 0"><b style="color:var(--acc)">گام '+fa(g)+':</b> '+x.t+
+          '<br><span class="note">خروجی: '+x.out+'</span></p>';});
+    }
+    if(!det)det='<p class="note" style="margin:8px 0 0">این تله به گام مشخصی ارجاع نمی‌دهد.</p>';
+    return '<p style="margin:0">'+t.d+'</p>'+moreBtn(i,'جزئیات و مبنا',det);}
+  if(fcDeck==='hooks'){
+    const hk=P.hooks[i];
+    const items=hk.d.split('·').map(z=>z.trim()).filter(Boolean);
+    const steps=items.map(it=>FLAT.find(x=>it.indexOf(x.t)>=0||x.t.indexOf(it.replace(/\s*\(.*\)/,''))>=0))
+                     .filter(Boolean);
+    const key=hk.k.replace(/^[۰-۹0-9]+\s*/,'').split(' ')[0];
+    const traps=P.traps.filter(t=>key&&(t.t.indexOf(key)>=0||t.d.indexOf(key)>=0));
+    let det='';
+    if(steps.length)det+='<p style="margin:8px 0 0"><b style="color:var(--acc)">گام‌های متناظر:</b> '+
+      steps.map(x=>'گام '+fa(x.g)+' — '+x.t).join('<br>')+'</p>';
+    if(traps.length)det+='<p style="margin:8px 0 0"><b style="color:var(--acc)">تلهٔ مرتبط:</b> '+
+      traps.map(t=>t.t+' — '+t.d).join('<br>')+'</p>';
+    if(!det)det='<p class="note" style="margin:8px 0 0">سند برای این عدد ارجاع دیگری نیاورده است.</p>';
+    return '<div style="font-size:30px;font-weight:800;color:var(--acc);text-align:center">'+hk.n+'</div>'+
+      '<p style="margin:8px 0 0">'+hk.d+'</p>'+moreBtn(i,'جزئیات و مبنا',det);}
   if(fcDeck==='routes'){const R=ROUTES[i];
     const on=fcMore===i, ch=R.ch;
     let h='<p style="margin:0 0 7px"><b style="color:var(--acc)">'+fa(ch.length)+' حلقه:</b></p>';
     (on?ch:ch.slice(0,4)).forEach(n=>{const a=ACT[n.a]||ACT.unk;
       h+='<p style="margin:0 0 5px"><b style="color:'+a[1]+'">'+a[0]+'</b> — '+n.t+' <span class="gg">گام '+n.g+'</span></p>';});
-    if(ch.length>4)h+='<button class="btn g" style="margin-top:6px" data-more="'+i+'">'+(on?'بستن':'همهٔ حلقه‌ها')+'</button>';
+    if(ch.length>4)h+='<button class="btn g" style="margin-top:6px" data-more="'+i+'">'+(on?'بستن جزئیات و مبنا':'جزئیات و مبنا')+'</button>';
     return h;}
   const st=P.stages[i];
+  const ids=FLAT.filter(x=>x.si===i);
+  const traps=ids.filter(x=>x.p);
+  let det='<p style="margin:8px 0 0"><b style="color:var(--acc)">تله‌های این مرحله:</b></p>';
+  det+= traps.length
+    ? traps.map(x=>'<p style="margin:5px 0 0">گام '+fa(x.g)+' — '+x.p+'</p>').join('')
+    : '<p class="note" style="margin:5px 0 0">این مرحله تلهٔ ثبت‌شده‌ای ندارد.</p>';
   return '<p style="margin:0 0 7px"><b style="color:var(--acc)">'+st.c+'</b></p>'+
-    st.steps.map((x,k)=>'<p style="margin:0 0 4px">'+fa(k+1)+'. '+x.t+'</p>').join('');
+    st.steps.map((x,k)=>'<p style="margin:0 0 4px">'+fa(k+1)+'. '+x.t+'</p>').join('')+
+    moreBtn(i,'جزئیات و مبنا',det);
 }
 function drawFc(){
   let h='<div class="card"><h2>فلش‌کارت</h2>'+

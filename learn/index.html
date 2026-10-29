@@ -255,7 +255,7 @@ function drawSeq(){
 }
 
 /* ---------- 2. flashcards ---------- */
-let fcGroup='all', fcQueue=[], fcAt=0, fcShown=false, fcGraded=true;
+let fcGroup='all', fcQueue=[], fcAt=0, fcShown=false, fcGraded=true, fcMore=null;
 function fcInit(){
   if(fcGraded){
     fcQueue=dueList(fcGroup);
@@ -292,8 +292,20 @@ function drawFc(){
     return;
   }
   const i=fcQueue[fcAt], c=CARDS[i];
+  const det='<p style="margin:8px 0 0"><b style="color:var(--acc)">موضوع:</b> '+GROUPS[c[0]]+
+    ' — '+fa(CARDS.filter(z=>z[0]===c[0]).length)+' کارت در این دسته.</p>'+
+    '<p class="note" style="margin:6px 0 0">'+(c[0]==='rate'
+      ? 'اعداد این دسته از مدل جریان نقدی پروندهٔ آرین پارس موتور استخراج و با محاسبهٔ مستقل بازبینی شده است.'
+      : c[0]==='fail'
+      ? 'نقاط شکست از پروپوزال‌های مشاورهٔ تأمین مالی گروه مالی فیروزه (شهریور و مهر ۱۴۰۵) برداشته شده است.'
+      : 'ساختار و مراحل از پروپوزال‌های گروه مالی فیروزه؛ مبانی عقد، حسابداری و ریسک، سازوکار متعارف بازار است.')+
+    '</p>'+(c[0]==='sa'?'<p class="note" style="margin:6px 0 0;color:var(--warn)">مواد قانونی مالیاتی تأیید نشده‌اند؛ پیش از استناد با مشاور مالیاتی بررسی شود.</p>':'');
+  const onM=fcMore===i;
   h+='<div class="fc"><span class="tag">'+GROUPS[c[0]]+' · جعبهٔ '+fa(boxOf(i))+'</span>'+
-     '<div class="q">'+c[1]+'</div>'+(fcShown?'<div class="a">'+c[2]+'</div>':'')+'</div>'+
+     '<div class="q">'+c[1]+'</div>'+
+     (fcShown?'<div class="a">'+c[2]+
+       '<button class="btn g" style="margin-top:9px" data-more="'+i+'">'+(onM?'بستن جزئیات و مبنا':'جزئیات و مبنا')+'</button>'+
+       (onM?det:'')+'</div>':'')+'</div>'+
      '<div class="prog"><i style="width:'+((fcAt/fcQueue.length)*100).toFixed(1)+'%"></i></div>'+
      '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQueue.length)+'</p>';
   h+= !fcShown
@@ -304,7 +316,9 @@ function drawFc(){
       '<div class="row2"><button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>'
     : '<div class="row2"><button class="btn g" id="prev">قبلی</button><button class="btn" id="next">بعدی</button></div>';
   V().innerHTML=h; bindFg();
-  const s=el('show'); if(s)s.onclick=()=>{fcShown=true;drawFc();};
+  V().querySelectorAll('[data-more]').forEach(b2=>b2.onclick=()=>{
+    fcMore=fcMore===+b2.dataset.more?null:+b2.dataset.more;drawFc();});
+  const s=el('show'); if(s)s.onclick=()=>{fcShown=true;fcMore=null;drawFc();};
   const step=d=>{fcAt=(fcAt+d+fcQueue.length)%fcQueue.length;fcShown=false;drawFc();};
   ['prev','prev2'].forEach(id=>{const b2=el(id); if(b2)b2.onclick=()=>step(-1);});
   ['next','next2'].forEach(id=>{const b2=el(id); if(b2)b2.onclick=()=>step(1);});
