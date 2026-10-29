@@ -297,7 +297,7 @@ function drawFc(){
      '<div class="prog"><i style="width:'+((fcAt/fcQueue.length)*100).toFixed(1)+'%"></i></div>'+
      '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQueue.length)+'</p>';
   h+= !fcShown
-    ? '<button class="btn" id="show">جواب</button>'+
+    ? '<button class="btn" id="show">رو برگردان</button>'+
       (fcGraded?'':'<div class="row2"><button class="btn g" id="prev2">قبلی</button><button class="btn g" id="next2">بعدی</button></div>')
     : fcGraded
     ? '<div class="row2"><button class="btn w" id="g0">نمی‌دانستم</button><button class="btn g" id="g1">سخت بود</button></div>'+

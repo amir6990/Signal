@@ -449,12 +449,15 @@ function drawSt(){
         (x.p?'<div style="margin-top:9px;color:var(--warn);font-weight:600">تله · '+x.p+'</div>':'')+'</div>':'')+
       '</div><div class="prog"><i style="width:'+((stAt/stQ.length)*100).toFixed(1)+'%"></i></div>'+
       '<p class="note">'+fa(stAt+1)+' از '+fa(stQ.length)+'</p>'+
-      (stShow?'<div class="row2"><button class="btn w" id="bad">نمی‌دانستم</button><button class="btn" id="good">می‌دانستم</button></div>'
-             :'<button class="btn" id="show">جواب</button>');
+      (stShow?'<div class="row2"><button class="btn w" id="fg0">نمی‌دانستم</button><button class="btn g" id="fg1">سخت بود</button></div>'+
+              '<div class="row2"><button class="btn g" id="fg2">خوب</button><button class="btn" id="fg3">آسان</button></div>'
+             :'<button class="btn" id="show">رو برگردان</button>');
     V().innerHTML=h;bindHead();
     const sh=el('show'); if(sh)sh.onclick=()=>{stShow=true;drawSt();};
-    const go=ok=>{grade('s'+i,ok);bump(x.g,ok);stAt++;stShow=false;drawSt();};
-    const g=el('good'),b=el('bad'); if(g)g.onclick=()=>go(true); if(b)b.onclick=()=>go(false);
+    const go=q=>{LEARN.grade(ST,'s'+i,q,false);save();bump(x.g,q!==LEARN.Q.AGAIN);
+      stAt++;stShow=false;drawSt();};
+    [['fg0',LEARN.Q.AGAIN],['fg1',LEARN.Q.HARD],['fg2',LEARN.Q.GOOD],['fg3',LEARN.Q.EASY]]
+      .forEach(([id,q])=>{const b2=el(id); if(b2)b2.onclick=()=>go(q);});
     return;
   }
 
@@ -877,7 +880,7 @@ function drawFc(){
      '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQ.length)+'</p>';
   if(!fcFlip)h+='<button class="btn" id="flip">رو برگردان</button>'+
     '<div class="row2"><button class="btn g" id="prev2">قبلی</button><button class="btn g" id="next2">بعدی</button></div>';
-  else if(fcGraded)h+='<div class="row2"><button class="btn w" id="g0">دوباره</button>'+
+  else if(fcGraded)h+='<div class="row2"><button class="btn w" id="g0">نمی‌دانستم</button>'+
     '<button class="btn g" id="g1">سخت بود</button></div><div class="row2">'+
     '<button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>';
   else h+='<div class="row2"><button class="btn g" id="prev">قبلی</button><button class="btn" id="next">بعدی</button></div>';

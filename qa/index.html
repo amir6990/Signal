@@ -421,9 +421,9 @@ function drawFc(){
      (fcFlip?'<div class="a">'+answerHTML(x,true)+'</div>':'')+'</div>'+
      '<div class="prog"><i style="width:'+(((fcAt+1)/fcQ.length)*100).toFixed(1)+'%"></i></div>'+
      '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQ.length)+'</p>';
-  if(!fcFlip)h+='<button class="btn" id="flip">جواب</button>'+
+  if(!fcFlip)h+='<button class="btn" id="flip">رو برگردان</button>'+
     '<div class="row2"><button class="btn g" id="prev2">قبلی</button><button class="btn g" id="next2">بعدی</button></div>';
-  else if(fcGraded)h+='<div class="row2"><button class="btn w" id="g0">دوباره</button>'+
+  else if(fcGraded)h+='<div class="row2"><button class="btn w" id="g0">نمی‌دانستم</button>'+
     '<button class="btn g" id="g1">سخت بود</button></div><div class="row2">'+
     '<button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>';
   else h+='<div class="row2"><button class="btn g" id="prev">قبلی</button><button class="btn" id="next">بعدی</button></div>';
