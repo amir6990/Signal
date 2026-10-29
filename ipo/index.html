@@ -149,6 +149,7 @@ tr.hi td{background:var(--wash);font-weight:700}
     <button data-v="rt" aria-pressed="false">گردش کار</button>
     <button data-v="fm" aria-pressed="false">فرم‌ها</button>
     <button data-v="rk" aria-pressed="false">ریسک‌ها</button>
+    <button data-v="fc" aria-pressed="false">فلش‌کارت</button>
     <button data-v="ck" aria-pressed="false">چک‌لیست</button>
   </div>
 
@@ -470,7 +471,102 @@ function drawCk(){
   el('cr').onclick=()=>{if(confirm('همهٔ تیک‌ها پاک شوند؟')){ST.ck={};save();drawCk();}};
 }
 
-function render(){({ph:phInit,st:stInit,rt:rtInit,fm:fmInit,rk:rkInit,ck:drawCk})[view]();window.scrollTo(0,0);}
+
+/* ---------- flashcards: for learning and review, not for testing ----------
+   The mixed drill marks you; these do not have to. "مرور آزاد" leaves the
+   spacing data untouched so reading through a phase before a meeting cannot
+   quietly push every card out to 21 days. "با زمان‌بندی" is the same deck
+   wired into the same schedule as the drill, keyed per card. */
+let fcDeck='steps', fcScope='all', fcGraded=false, fcQ=[], fcAt=0, fcFlip=false, fcMore=null;
+const DECKS=[['steps','مراحل'],['forms','فرم‌ها'],['risks','ریسک‌ها'],['phases','فازها']];
+function fcItems(){
+  if(fcDeck==='steps')return S.map((x,i)=>i).filter(i=>fcScope==='all'||S[i].ph===+fcScope);
+  if(fcDeck==='forms')return G.forms.map((x,i)=>i);
+  if(fcDeck==='risks')return G.risks.map((x,i)=>i);
+  return PH.map((x,i)=>i);
+}
+const fcKey=i=>'f:'+fcDeck+':'+i;
+function fcInit(){
+  let it=fcItems();
+  if(fcGraded)it=it.filter(i=>dueNow(fcKey(i)));
+  fcQ=fcGraded?shuf(it):it;      /* free review keeps document order; graded shuffles */
+  fcAt=0;fcFlip=false;drawFc();
+}
+function fcFront(i){
+  if(fcDeck==='steps')return '<span class="tag">مرحله '+fa(S[i].g)+' · '+phName(S[i].ph)+'</span><div class="q">'+S[i].t+'</div>';
+  if(fcDeck==='forms')return '<span class="tag">فرم '+fa(G.forms[i].n)+' از ۵۰</span><div class="q">'+G.forms[i].t+'</div>';
+  if(fcDeck==='risks')return '<span class="tag">ریسک '+fa(i+1)+' · '+(G.risks[i].sev||'—')+'</span><div class="q">'+G.risks[i].t+'</div>';
+  return '<span class="tag">فاز '+fa(PH[i].n)+'</span><div class="q">'+PH[i].nm+'</div>';
+}
+function fcBack(i){
+  if(fcDeck==='steps'){
+    const x=S[i];
+    /* the decision-relevant fields first; the long reference text behind a toggle,
+       so the card answers the question instead of reprinting the page */
+    const KEY=['who','flow','out','time','pre'], REST=['law','risk','forms','note'];
+    const lab=k=>(FIELDS.find(f=>f[0]===k)||[k,k])[1];
+    let h=KEY.filter(k=>x[k]).map(k=>'<p style="margin:0 0 7px"><b style="color:var(--acc)">'+lab(k)+':</b> '+x[k]+'</p>').join('');
+    const more=REST.filter(k=>x[k]);
+    if(more.length){
+      const on=fcMore===i;
+      h+='<button class="btn g" style="margin-top:8px" data-more="'+i+'">'+(on?'بستن جزئیات':'جزئیات و مبنا')+'</button>'+
+         (on?more.map(k=>'<p style="margin:8px 0 0"><b style="color:var(--acc)">'+lab(k)+':</b> '+x[k]+'</p>').join(''):'');
+    }
+    return h||'<p class="note" style="margin:0">سند برای این مرحله جزئیاتی نیاورده است.</p>';
+  }
+  if(fcDeck==='forms')return '<p style="margin:0">'+(G.forms[i].d||'—')+'</p>';
+  if(fcDeck==='risks'){const r=G.risks[i];
+    return [['مرحلهٔ بروز',r.stage],['اثر',r.eff],['شدت',r.sev],['اقدام پیشگیرانه',r.fix],['مبنا',r.law]]
+      .filter(z=>z[1]).map(z=>'<p style="margin:0 0 7px"><b style="color:var(--acc)">'+z[0]+':</b> '+z[1]+'</p>').join('');}
+  const n=byPhase(PH[i].n);
+  return '<p style="margin:0 0 7px"><b style="color:var(--acc)">'+fa(n.length)+' مرحله:</b></p>'+
+    n.map(x=>'<p style="margin:0 0 4px">مرحله '+fa(x.g)+' — '+x.t+'</p>').join('');
+}
+function drawFc(){
+  const it=fcItems(), total=it.length;
+  let h='<div class="card"><h2>فلش‌کارت</h2>'+
+    '<div class="seg" id="fd" role="group" style="margin-bottom:9px">'+
+      DECKS.map(([k,t])=>'<button data-d="'+k+'" aria-pressed="'+(fcDeck===k)+'">'+t+'</button>').join('')+'</div>'+
+    (fcDeck==='steps'?'<select id="fsc"><option value="all">همهٔ فازها — '+fa(S.length)+'</option>'+
+      PH.map(x=>'<option value="'+x.n+'"'+(String(x.n)===fcScope?' selected':'')+'>فاز '+fa(x.n)+' · '+x.nm+' — '+fa(byPhase(x.n).length)+'</option>').join('')+
+      '</select>':'')+
+    '<div class="seg sm" id="fg" role="group" style="margin-top:9px">'+
+      '<button data-g="0" aria-pressed="'+(!fcGraded)+'">مرور آزاد</button>'+
+      '<button data-g="1" aria-pressed="'+fcGraded+'">با زمان‌بندی</button></div>'+
+    '<p class="note">'+(fcGraded
+      ? 'کارت‌ها طبق فاصلهٔ مرور برمی‌گردند و قضاوت شما ثبت می‌شود.'
+      : 'ترتیب سند، بدون نمره‌دهی — برای یادگیری اول بار یا مرور قبل از جلسه. چیزی در زمان‌بندی ثبت نمی‌شود.')+
+    '</p></div>';
+  if(!fcQ.length){
+    h+='<div class="res"><h2>کارتی نیست</h2><div class="flag">'+
+      (fcGraded?'همهٔ کارت‌های این دسته مرور شده‌اند؛ بعداً برمی‌گردند.':'این دسته خالی است.')+'</div></div>';
+    V().innerHTML=h;bindFc();return;
+  }
+  const i=fcQ[Math.min(fcAt,fcQ.length-1)];
+  h+='<div class="fc">'+fcFront(i)+(fcFlip?'<div class="a">'+fcBack(i)+'</div>':'')+'</div>'+
+     '<div class="prog"><i style="width:'+(((fcAt+1)/fcQ.length)*100).toFixed(1)+'%"></i></div>'+
+     '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQ.length)+(fcGraded?'':' · کل دسته '+fa(total))+'</p>';
+  if(!fcFlip)h+='<button class="btn" id="flip">رو برگردان</button>';
+  else if(fcGraded)h+='<div class="row2"><button class="btn w" id="again">دوباره</button><button class="btn" id="knew">بلد بودم</button></div>';
+  else h+='<div class="row2"><button class="btn g" id="prev">قبلی</button><button class="btn" id="next">بعدی</button></div>';
+  if(!fcGraded&&!fcFlip)h+='<div class="row2"><button class="btn g" id="prev2">قبلی</button><button class="btn g" id="next2">بعدی</button></div>';
+  V().innerHTML=h;bindFc();
+  const f=el('flip'); if(f)f.onclick=()=>{fcFlip=true;drawFc();};
+  const step=d=>{fcAt=(fcAt+d+fcQ.length)%fcQ.length;fcFlip=false;drawFc();};
+  ['prev','prev2'].forEach(id=>{const b=el(id); if(b)b.onclick=()=>step(-1);});
+  ['next','next2'].forEach(id=>{const b=el(id); if(b)b.onclick=()=>step(1);});
+  const g=ok=>{grade(fcKey(i),ok);fcAt++;fcFlip=false;if(fcAt>=fcQ.length)fcInit();else drawFc();};
+  const k=el('knew'),a=el('again'); if(k)k.onclick=()=>g(true); if(a)a.onclick=()=>g(false);
+}
+function bindFc(){
+  V().querySelectorAll('[data-more]').forEach(b=>b.onclick=()=>{
+    fcMore=fcMore===+b.dataset.more?null:+b.dataset.more;drawFc();});
+  V().querySelectorAll('#fd button').forEach(b=>b.onclick=()=>{fcDeck=b.dataset.d;fcMore=null;fcInit();});
+  V().querySelectorAll('#fg button').forEach(b=>b.onclick=()=>{fcGraded=b.dataset.g==='1';fcInit();});
+  const e=el('fsc'); if(e)e.onchange=()=>{fcScope=e.value;fcInit();};
+}
+
+function render(){({ph:phInit,st:stInit,rt:rtInit,fm:fmInit,rk:rkInit,fc:fcInit,ck:drawCk})[view]();window.scrollTo(0,0);}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');view=b.dataset.v;render();});

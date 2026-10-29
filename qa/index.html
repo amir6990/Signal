@@ -193,13 +193,35 @@ function drInit(){
   drQ=shuf(poolOf().filter(i=>dueNow(key(i)))).slice(0,SESS);
   drAt=0;drShow=false;drRes=[];drawDr();
 }
+function tabHTML(rows){
+  if(!rows||!rows.length)return '';
+  const head=rows[0], body=rows.slice(1);
+  return '<div class="tw"><table><thead><tr>'+head.map(c=>'<th>'+esc(c)+'</th>').join('')+
+    '</tr></thead><tbody>'+body.map(r=>'<tr>'+r.map(c=>'<td>'+esc(c)+'</td>').join('')+'</tr>').join('')+
+    '</tbody></table></div>';
+}
+/* answer first, detail after: the headline is the guide's own short answer or rule
+   clause, the tables are its tables, and the running text sits behind a toggle so a
+   card is not a wall of prose */
+let openFull=null;
 function answerHTML(x,full){
   let h='';
-  if(x.short)h+='<div style="font-size:15px;font-weight:800;color:var(--acc);margin-bottom:9px">'+esc(x.short)+'</div>';
+  const lead=x.short||x.head;
+  if(lead)h+='<div style="font-size:15.5px;font-weight:800;color:var(--acc);line-height:1.6;margin-bottom:10px">'+esc(lead)+'</div>';
   if(x.plain)h+='<div class="flag" style="margin-top:0"><b>به زبان ساده · </b>'+esc(x.plain)+'</div>';
+  (x.tabs||[]).forEach(t=>h+=tabHTML(t));
   if(x.src)h+='<p class="note" style="margin:8px 0 0"><b>مستند:</b> '+esc(x.src)+'</p>';
-  if(full)h+='<p class="note" style="margin:8px 0 0;line-height:1.75">'+esc(x.a)+'</p>';
+  if(full&&x.body&&x.body.length>10){
+    const on=openFull===x.id;
+    h+='<button class="btn g" style="margin-top:9px" data-full="'+esc(x.id)+'">'+(on?'بستن متن کامل':'متن کامل')+'</button>'+
+       (on?'<p class="note" style="margin:8px 0 0;line-height:1.8">'+esc(x.body)+'</p>':'');
+  }
+  if(!lead&&!x.plain&&!(x.tabs||[]).length)h+='<p class="note" style="margin:0;line-height:1.8">'+esc(x.body||'—')+'</p>';
   return h;
+}
+function bindFull(){
+  V().querySelectorAll('[data-full]').forEach(b=>b.onclick=()=>{
+    openFull=openFull===b.dataset.full?null:b.dataset.full; render();});
 }
 function drawDr(){
   let h=head();
@@ -221,6 +243,7 @@ function drawDr(){
   }
   const i=drQ[drAt], x=QS[i];
   h+='<div class="fc"><span class="tag">'+esc(x.ch)+' · '+esc(x.id)+'</span>'+
+     (x.qctx?'<p class="note" style="margin:0 0 5px">زمینه: '+esc(x.qctx)+'</p>':'')+
      '<div class="q">'+esc(x.q)+'</div>'+
      (drShow?'<div class="a">'+answerHTML(x,true)+'</div>':'')+'</div>'+
      '<div class="prog"><i style="width:'+((drAt/drQ.length)*100).toFixed(1)+'%"></i></div>'+
@@ -285,7 +308,7 @@ function wkInit(){
   const w=el('wr'); if(w)w.onclick=()=>{ST.stat={};save();wkInit();};
 }
 
-function render(){({dr:drInit,br:brInit,sr:srInit,wk:wkInit})[view]();window.scrollTo(0,0);}
+function render(){({dr:drInit,br:brInit,sr:srInit,wk:wkInit})[view]();bindFull();}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');view=b.dataset.v;render();});
