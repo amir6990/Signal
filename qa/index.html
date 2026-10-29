@@ -155,6 +155,61 @@ tr.hi td{background:var(--wash);font-weight:700}
 
 <script src="data.js"></script>
 <script>
+/* Shared scheduling and calibration engine.
+   Replaces fixed Leitner boxes with a graded, ease-adjusted interval, adds lapse
+   tracking so a chronically failed card is treated differently from a new one, and
+   records confidence alongside correctness so "sure and wrong" can be surfaced —
+   that pairing is where a misconception lives, and a box count cannot show it. */
+const LEARN=(function(){
+  const DAY=864e5;
+  const Q={AGAIN:0,HARD:1,GOOD:2,EASY:3};
+  const LEECH=4;                 /* lapses before a card is called out */
+  const EASE0=2.3, EMIN=1.3, EMAX=2.9;
+
+  function st(S,k){
+    S.c=S.c||{};
+    return S.c[k]||(S.c[k]={n:0,i:0,e:EASE0,d:0,l:0,cw:0,ok:0,no:0});
+  }
+  function due(S,k){return st(S,k).d<=Date.now();}
+  function dueIn(S,k){return st(S,k).d;}
+  function isLeech(S,k){return st(S,k).l>=LEECH;}
+  function confWrong(S,k){return st(S,k).cw;}
+
+  /* q: 0 again, 1 hard, 2 good, 3 easy. conf: true if the learner said they were sure. */
+  function grade(S,k,q,conf){
+    const c=st(S,k);
+    c.n++;
+    if(q===Q.AGAIN){
+      c.l++; c.ok=c.ok; c.no=(c.no||0)+1;
+      if(conf)c.cw=(c.cw||0)+1;          /* sure, and wrong */
+      c.e=Math.max(EMIN,c.e-0.2);
+      c.i=0;                              /* relearn today */
+      c.d=Date.now();
+    }else{
+      c.ok=(c.ok||0)+1;
+      c.e=Math.min(EMAX,c.e+(q===Q.EASY?0.12:q===Q.HARD?-0.14:0.02));
+      /* a card that has lapsed repeatedly re-grows more slowly */
+      const brake=c.l>=LEECH?0.6:1;
+      if(c.i===0)c.i=q===Q.EASY?2:1;
+      else if(c.i===1)c.i=q===Q.HARD?2:(q===Q.EASY?5:3);
+      else c.i=Math.max(c.i+1,Math.round(c.i*c.e*brake*(q===Q.HARD?0.6:1)));
+      c.i=Math.min(c.i,400);
+      c.d=Date.now()+c.i*DAY;
+    }
+    return c;
+  }
+  /* a coarse bucket, only for the progress strip */
+  function bucket(S,k){const i=st(S,k).i;
+    return i===0?0:i<=1?1:i<=3?2:i<=10?3:4;}
+  function summary(S,keys){
+    const b=[0,0,0,0,0]; let leech=0,cw=0,dueN=0;
+    keys.forEach(k=>{b[bucket(S,k)]++; if(isLeech(S,k))leech++; if(confWrong(S,k))cw++; if(due(S,k))dueN++;});
+    return {b,leech,cw,due:dueN};
+  }
+  return {Q,DAY,st,due,dueIn,isLeech,confWrong,grade,bucket,summary,LEECH};
+})();
+
+
 const FA='۰۱۲۳۴۵۶۷۸۹', fa=s=>String(s).replace(/\d/g,d=>FA[d]);
 const el=id=>document.getElementById(id), V=()=>el('view');
 const shuf=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
@@ -165,26 +220,27 @@ const KEY='qa_v1', DAY=864e5, IVL=[0,1,3,7,21];
 let ST={box:{},due:{},stat:{}};
 try{const r=JSON.parse(localStorage.getItem(KEY)||'null'); if(r)ST=Object.assign(ST,r);}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ST));}catch(e){}};
-const boxOf=k=>ST.box[k]||0, dueNow=k=>(ST.due[k]||0)<=Date.now();
-const grade=(k,ok)=>{const b=ok?Math.min(4,boxOf(k)+1):0;ST.box[k]=b;ST.due[k]=Date.now()+IVL[b]*DAY;save();};
+ST.c=ST.c||{};
+const boxOf=k=>LEARN.bucket(ST,k), dueNow=k=>LEARN.due(ST,k);
 
 const QS=Q.qs, CH=Q.chapters.map(c=>c.nm).filter(nm=>QS.some(x=>x.ch===nm));
 const SESS=10;
-let chSel='all', drQ=[], drAt=0, drShow=false, drRes=[], drMode='recall';
+let chSel='all', drQ=[], drAt=0, drShow=false, drRes=[], sure=false;
 
 const poolOf=()=>QS.map((x,i)=>i).filter(i=>chSel==='all'||QS[i].ch===chSel);
 const key=i=>'q'+QS[i].id;
 
 function head(){
-  const p=poolOf(), due=p.filter(i=>dueNow(key(i))).length, cnt=[0,0,0,0,0];
-  p.forEach(i=>cnt[boxOf(key(i))]++);
+  const p=poolOf(), sm=LEARN.summary(ST,p.map(i=>key(i))), due=sm.due, cnt=sm.b;
   return '<div class="card"><h2>فصل</h2><select id="ch">'+
    '<option value="all">همه — '+fa(QS.length)+' پرسش</option>'+
    CH.map(c=>'<option value="'+esc(c)+'"'+(c===chSel?' selected':'')+'>'+esc(c)+' — '+fa(QS.filter(x=>x.ch===c).length)+'</option>').join('')+
    '</select><div class="boxes">'+['تازه','۱ روز','۳ روز','۷ روز','۲۱ روز']
      .map((n,i)=>'<div>'+n+'<b>'+fa(cnt[i])+'</b></div>').join('')+'</div>'+
    '<p class="note">آمادهٔ مرور: <b>'+fa(due)+'</b> · هر دوره '+fa(SESS)+' پرسش. '+
-   'جواب را خودتان قضاوت می‌کنید، چون این‌ها پرسش‌های بازند نه چندگزینه‌ای.</p></div>';
+   'اول در ذهنتان جواب بدهید و میزان اطمینانتان را بگویید؛ بعد جواب را ببینید. '+
+   (sm.cw?'<br><span style="color:var(--warn)">'+fa(sm.cw)+' پرسش را با اطمینان غلط زده‌اید — در تب ضعیف‌ها.</span>':'')+
+   '</p></div>';
 }
 function bindHead(){const e=el('ch'); if(e)e.onchange=()=>{chSel=e.value;drInit();};}
 
@@ -247,14 +303,29 @@ function drawDr(){
      '<div class="q">'+esc(x.q)+'</div>'+
      (drShow?'<div class="a">'+answerHTML(x,true)+'</div>':'')+'</div>'+
      '<div class="prog"><i style="width:'+((drAt/drQ.length)*100).toFixed(1)+'%"></i></div>'+
-     '<p class="note">'+fa(drAt+1)+' از '+fa(drQ.length)+'</p>'+
-     (drShow?'<div class="row2"><button class="btn w" id="bad">نمی‌دانستم</button><button class="btn" id="good">می‌دانستم</button></div>'
-            :'<button class="btn" id="show">جواب</button>');
+     '<p class="note">'+fa(drAt+1)+' از '+fa(drQ.length)+'</p>';
+  if(!drShow){
+    /* answer in your head first, then say how sure you are — committing before the
+       reveal is what makes "sure and wrong" meaningful */
+    h+='<p class="note" style="margin-top:12px">اول در ذهنتان جواب بدهید، بعد بگویید چقدر مطمئنید.</p>'+
+       '<div class="row2"><button class="btn g" id="unsure">مطمئن نیستم</button>'+
+       '<button class="btn" id="sure">مطمئنم</button></div>';
+  }else{
+    h+='<p class="note" style="margin-top:12px">'+(sure?'گفتید مطمئن بودید. ':'')+
+       'چقدر راحت به یادتان آمد؟</p>'+
+       '<div class="row2"><button class="btn w" id="g0">نمی‌دانستم</button>'+
+       '<button class="btn g" id="g1">سخت بود</button></div>'+
+       '<div class="row2"><button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>';
+  }
   V().innerHTML=h;bindHead();
-  const s=el('show'); if(s)s.onclick=()=>{drShow=true;drawDr();};
-  const go=ok=>{grade(key(i),ok);ST.stat[x.id]=ST.stat[x.id]||{o:0,x:0};ST.stat[x.id][ok?'o':'x']++;save();
-    drRes.push(ok);drAt++;drShow=false;drawDr();};
-  const g=el('good'),b=el('bad'); if(g)g.onclick=()=>go(true); if(b)b.onclick=()=>go(false);
+  const rev=c=>{sure=c;drShow=true;drawDr();};
+  const su=el('sure'),un=el('unsure');
+  if(su)su.onclick=()=>rev(true); if(un)un.onclick=()=>rev(false);
+  const go=q=>{LEARN.grade(ST,key(i),q,sure);
+    ST.stat[x.id]=ST.stat[x.id]||{o:0,x:0};ST.stat[x.id][q===LEARN.Q.AGAIN?'x':'o']++;save();
+    drRes.push(q!==LEARN.Q.AGAIN);drAt++;drShow=false;sure=false;drawDr();};
+  [['g0',LEARN.Q.AGAIN],['g1',LEARN.Q.HARD],['g2',LEARN.Q.GOOD],['g3',LEARN.Q.EASY]]
+    .forEach(([id,q])=>{const b=el(id); if(b)b.onclick=()=>go(q);});
 }
 
 /* ---------- 2. browse ---------- */
@@ -295,19 +366,26 @@ function srInit(){
 
 /* ---------- 4. weak ---------- */
 function wkInit(){
-  const rows=QS.map((x,i)=>({x,i,s:ST.stat[x.id]||{o:0,x:0}})).filter(r=>r.s.x>0)
-    .sort((a,b)=>(b.s.x-b.s.o)-(a.s.x-a.s.o)||b.s.x-a.s.x);
-  let h='<div class="card"><h2>ضعیف‌ها</h2><p class="note" style="margin:0">'+
-    (rows.length?'به ترتیب بیشترین «نمی‌دانستم». متن کامل هر پاسخ زیرش آمده.'
-      :'هنوز چیزی ثبت نشده. چند دوره تمرین بزنید.')+'</p></div>';
-  rows.slice(0,20).forEach(r=>{
-    h+='<div class="card"><h2>'+esc(r.x.id)+' · <span style="color:var(--warn)">'+fa(r.s.x)+' نمی‌دانستم</span> / '+fa(r.s.o)+' می‌دانستم</h2>'+
-      '<h4 style="margin:0 0 6px;font-size:14px">'+esc(r.x.q)+'</h4>'+answerHTML(r.x,true)+'</div>';});
-  if(rows.length)h+='<button class="btn g" id="wr">پاک کردن آمار</button>';
+  const p=QS.map((x,i)=>i);
+  const cw=p.filter(i=>LEARN.confWrong(ST,key(i))>0).sort((a,b)=>LEARN.confWrong(ST,key(b))-LEARN.confWrong(ST,key(a)));
+  const lh=p.filter(i=>LEARN.isLeech(ST,key(i))&&LEARN.confWrong(ST,key(i))===0)
+            .sort((a,b)=>LEARN.st(ST,key(b)).l-LEARN.st(ST,key(a)).l);
+  const sm=LEARN.summary(ST,p.map(i=>key(i)));
+  let h='<div class="card"><h2>نقاط ضعف</h2>'+
+    '<div class="boxes"><div>آمادهٔ مرور<b>'+fa(sm.due)+'</b></div>'+
+    '<div>مطمئن و غلط<b>'+fa(sm.cw)+'</b></div><div>پرسش سخت<b>'+fa(sm.leech)+'</b></div></div>'+
+    '<p class="note">جایی که مطمئن بودید و غلط شد، یک باور غلط است نه فراموشی — اول همان‌ها.</p></div>';
+  const card=(i,badge)=>'<div class="card"><h2>'+esc(QS[i].id)+' · '+esc(QS[i].ch)+
+    ' <span style="color:var(--warn)">'+badge+'</span></h2>'+
+    '<h4 style="margin:0 0 6px;font-size:14px">'+esc(QS[i].q)+'</h4>'+answerHTML(QS[i],true)+'</div>';
+  if(cw.length){h+='<div class="card"><h2>مطمئن بودید و غلط شد — '+fa(cw.length)+'</h2></div>';
+    cw.slice(0,15).forEach(i=>h+=card(i,fa(LEARN.confWrong(ST,key(i)))+' بار'));}
+  if(lh.length){h+='<div class="card"><h2>پرسش‌های سخت — '+fa(lh.length)+'</h2>'+
+      '<p class="note" style="margin:0">چهار بار یا بیشتر لغزیده‌اند؛ فاصله‌شان کندتر رشد می‌کند.</p></div>';
+    lh.slice(0,15).forEach(i=>h+=card(i,fa(LEARN.st(ST,key(i)).l)+' لغزش'));}
+  if(!cw.length&&!lh.length)h+='<div class="card"><p class="note" style="margin:0">هنوز چیزی ثبت نشده.</p></div>';
   V().innerHTML=h;
-  const w=el('wr'); if(w)w.onclick=()=>{ST.stat={};save();wkInit();};
 }
-
 function render(){({dr:drInit,br:brInit,sr:srInit,wk:wkInit})[view]();bindFull();}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
