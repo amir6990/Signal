@@ -1,5 +1,5 @@
 /* Cache the page shell so the app keeps working with no network. */
-const C = 'ipo-v4';
+const C = 'ipo-v5';
 const SHELL = ['./', './index.html', './data.js', './icon-180.png', './icon-192.png', './icon-512.png', './app.webmanifest'];
 
 self.addEventListener('install', e => {

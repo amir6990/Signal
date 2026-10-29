@@ -145,6 +145,7 @@ tr.hi td{background:var(--wash);font-weight:700}
 
   <div class="seg" id="nav" role="group">
     <button data-v="dr" aria-pressed="true">تمرین</button>
+    <button data-v="fc" aria-pressed="false">فلش‌کارت</button>
     <button data-v="br" aria-pressed="false">مرور فصل‌ها</button>
     <button data-v="sr" aria-pressed="false">جستجو</button>
     <button data-v="wk" aria-pressed="false">ضعیف‌ها</button>
@@ -386,7 +387,61 @@ function wkInit(){
   if(!cw.length&&!lh.length)h+='<div class="card"><p class="note" style="margin:0">هنوز چیزی ثبت نشده.</p></div>';
   V().innerHTML=h;
 }
-function render(){({dr:drInit,br:brInit,sr:srInit,wk:wkInit})[view]();bindFull();}
+
+/* ---------- flashcards: the same questions, without the scoring ----------
+   The تمرین tab commits you to a confidence judgement and feeds the schedule.
+   This one does not: it walks a chapter in the guide's own order so you can read
+   it as cards, and only the graded switch touches the spacing data. */
+let fcCh='all', fcGraded=false, fcQ=[], fcAt=0, fcFlip=false;
+const fcKey=i=>'f:'+QS[i].id;
+function fcPool(){return QS.map((x,i)=>i).filter(i=>fcCh==='all'||QS[i].ch===fcCh);}
+function fcInit(){
+  let it=fcPool();
+  if(fcGraded)it=shuf(it.filter(i=>LEARN.due(ST,fcKey(i))));
+  fcQ=it; fcAt=0; fcFlip=false; drawFc();
+}
+function drawFc(){
+  let h='<div class="card"><h2>فلش‌کارت</h2><select id="fch">'+
+    '<option value="all">همهٔ فصل‌ها — '+fa(QS.length)+'</option>'+
+    CH.map(c=>'<option value="'+esc(c)+'"'+(c===fcCh?' selected':'')+'>'+esc(c)+' — '+fa(QS.filter(x=>x.ch===c).length)+'</option>').join('')+
+    '</select><div class="seg sm" id="fg" role="group" style="margin-top:9px">'+
+      '<button data-g="0" aria-pressed="'+(!fcGraded)+'">مرور آزاد</button>'+
+      '<button data-g="1" aria-pressed="'+fcGraded+'">با زمان‌بندی</button></div>'+
+    '<p class="note">'+(fcGraded?'کارت‌ها طبق فاصلهٔ مرور برمی‌گردند.'
+      :'ترتیب سند، بدون نمره‌دهی — برای خواندن یک فصل به‌صورت کارت. چیزی ثبت نمی‌شود.')+'</p></div>';
+  if(!fcQ.length){
+    h+='<div class="res"><h2>کارتی نیست</h2><div class="flag">'+
+      (fcGraded?'این فصل فعلاً مرور شده.':'این فصل خالی است.')+'</div></div>';
+    V().innerHTML=h;bindFc();return;
+  }
+  const i=fcQ[Math.min(fcAt,fcQ.length-1)], x=QS[i];
+  h+='<div class="fc"><span class="tag">'+esc(x.ch)+' · '+esc(x.id)+'</span>'+
+     (x.qctx?'<p class="note" style="margin:0 0 5px">زمینه: '+esc(x.qctx)+'</p>':'')+
+     '<div class="q">'+esc(x.q)+'</div>'+
+     (fcFlip?'<div class="a">'+answerHTML(x,true)+'</div>':'')+'</div>'+
+     '<div class="prog"><i style="width:'+(((fcAt+1)/fcQ.length)*100).toFixed(1)+'%"></i></div>'+
+     '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQ.length)+'</p>';
+  if(!fcFlip)h+='<button class="btn" id="flip">جواب</button>'+
+    '<div class="row2"><button class="btn g" id="prev2">قبلی</button><button class="btn g" id="next2">بعدی</button></div>';
+  else if(fcGraded)h+='<div class="row2"><button class="btn w" id="g0">دوباره</button>'+
+    '<button class="btn g" id="g1">سخت بود</button></div><div class="row2">'+
+    '<button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>';
+  else h+='<div class="row2"><button class="btn g" id="prev">قبلی</button><button class="btn" id="next">بعدی</button></div>';
+  V().innerHTML=h;bindFc();bindFull();
+  const f=el('flip'); if(f)f.onclick=()=>{fcFlip=true;drawFc();};
+  const step=d=>{fcAt=(fcAt+d+fcQ.length)%fcQ.length;fcFlip=false;drawFc();};
+  ['prev','prev2'].forEach(id=>{const b=el(id); if(b)b.onclick=()=>step(-1);});
+  ['next','next2'].forEach(id=>{const b=el(id); if(b)b.onclick=()=>step(1);});
+  [['g0',LEARN.Q.AGAIN],['g1',LEARN.Q.HARD],['g2',LEARN.Q.GOOD],['g3',LEARN.Q.EASY]].forEach(([id,q])=>{
+    const b=el(id); if(b)b.onclick=()=>{LEARN.grade(ST,fcKey(i),q,false);save();
+      fcAt++;fcFlip=false;if(fcAt>=fcQ.length)fcInit();else drawFc();};});
+}
+function bindFc(){
+  const e=el('fch'); if(e)e.onchange=()=>{fcCh=e.value;fcInit();};
+  V().querySelectorAll('#fg button').forEach(b=>b.onclick=()=>{fcGraded=b.dataset.g==='1';fcInit();});
+}
+
+function render(){({dr:drInit,fc:fcInit,br:brInit,sr:srInit,wk:wkInit})[view]();bindFull();}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-pressed','false'));
   b.setAttribute('aria-pressed','true');view=b.dataset.v;render();});

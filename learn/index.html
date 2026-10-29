@@ -129,6 +129,61 @@ tr.hi td{background:var(--wash);font-weight:700}
 
 <script src="content.js"></script>
 <script>
+/* Shared scheduling and calibration engine.
+   Replaces fixed Leitner boxes with a graded, ease-adjusted interval, adds lapse
+   tracking so a chronically failed card is treated differently from a new one, and
+   records confidence alongside correctness so "sure and wrong" can be surfaced —
+   that pairing is where a misconception lives, and a box count cannot show it. */
+const LEARN=(function(){
+  const DAY=864e5;
+  const Q={AGAIN:0,HARD:1,GOOD:2,EASY:3};
+  const LEECH=4;                 /* lapses before a card is called out */
+  const EASE0=2.3, EMIN=1.3, EMAX=2.9;
+
+  function st(S,k){
+    S.c=S.c||{};
+    return S.c[k]||(S.c[k]={n:0,i:0,e:EASE0,d:0,l:0,cw:0,ok:0,no:0});
+  }
+  function due(S,k){return st(S,k).d<=Date.now();}
+  function dueIn(S,k){return st(S,k).d;}
+  function isLeech(S,k){return st(S,k).l>=LEECH;}
+  function confWrong(S,k){return st(S,k).cw;}
+
+  /* q: 0 again, 1 hard, 2 good, 3 easy. conf: true if the learner said they were sure. */
+  function grade(S,k,q,conf){
+    const c=st(S,k);
+    c.n++;
+    if(q===Q.AGAIN){
+      c.l++; c.ok=c.ok; c.no=(c.no||0)+1;
+      if(conf)c.cw=(c.cw||0)+1;          /* sure, and wrong */
+      c.e=Math.max(EMIN,c.e-0.2);
+      c.i=0;                              /* relearn today */
+      c.d=Date.now();
+    }else{
+      c.ok=(c.ok||0)+1;
+      c.e=Math.min(EMAX,c.e+(q===Q.EASY?0.12:q===Q.HARD?-0.14:0.02));
+      /* a card that has lapsed repeatedly re-grows more slowly */
+      const brake=c.l>=LEECH?0.6:1;
+      if(c.i===0)c.i=q===Q.EASY?2:1;
+      else if(c.i===1)c.i=q===Q.HARD?2:(q===Q.EASY?5:3);
+      else c.i=Math.max(c.i+1,Math.round(c.i*c.e*brake*(q===Q.HARD?0.6:1)));
+      c.i=Math.min(c.i,400);
+      c.d=Date.now()+c.i*DAY;
+    }
+    return c;
+  }
+  /* a coarse bucket, only for the progress strip */
+  function bucket(S,k){const i=st(S,k).i;
+    return i===0?0:i<=1?1:i<=3?2:i<=10?3:4;}
+  function summary(S,keys){
+    const b=[0,0,0,0,0]; let leech=0,cw=0,dueN=0;
+    keys.forEach(k=>{b[bucket(S,k)]++; if(isLeech(S,k))leech++; if(confWrong(S,k))cw++; if(due(S,k))dueN++;});
+    return {b,leech,cw,due:dueN};
+  }
+  return {Q,DAY,st,due,dueIn,isLeech,confWrong,grade,bucket,summary,LEECH};
+})();
+
+
 const FA='۰۱۲۳۴۵۶۷۸۹', fa=s=>String(s).replace(/\d/g,d=>FA[d]);
 const el=id=>document.getElementById(id);
 const V=()=>el('view');
@@ -140,13 +195,10 @@ const DAY=864e5;
 let ST={box:{},due:{},quiz:{best:0,runs:0},seq:{}};
 try{const r=JSON.parse(localStorage.getItem(KEY)||'null'); if(r)ST=Object.assign(ST,r);}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ST));}catch(e){}};
-const IVL=[0,1,3,7,21];                 /* days per box */
-const boxOf=i=>ST.box[i]||0;
-const dueNow=i=>(ST.due[i]||0)<=Date.now();
-const grade=(i,ok)=>{
-  const b=ok?Math.min(4,boxOf(i)+1):0;
-  ST.box[i]=b; ST.due[i]=Date.now()+IVL[b]*DAY; save();
-};
+ST.c=ST.c||{};
+const boxOf=i=>LEARN.bucket(ST,'k'+i);
+const dueNow=i=>LEARN.due(ST,'k'+i);
+const grade=(i,q)=>{LEARN.grade(ST,'k'+i,q,false);save();};
 const dueList=g=>CARDS.map((c,i)=>i).filter(i=>(g==='all'||CARDS[i][0]===g)&&dueNow(i));
 
 /* ---------- 1. ordering drill ---------- */
@@ -203,10 +255,15 @@ function drawSeq(){
 }
 
 /* ---------- 2. flashcards ---------- */
-let fcGroup='all', fcQueue=[], fcAt=0, fcShown=false;
+let fcGroup='all', fcQueue=[], fcAt=0, fcShown=false, fcGraded=true;
 function fcInit(){
-  fcQueue=dueList(fcGroup);
-  for(let i=fcQueue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[fcQueue[i],fcQueue[j]]=[fcQueue[j],fcQueue[i]];}
+  if(fcGraded){
+    fcQueue=dueList(fcGroup);
+    for(let i=fcQueue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[fcQueue[i],fcQueue[j]]=[fcQueue[j],fcQueue[i]];}
+  }else{
+    /* document order, nothing written to the schedule */
+    fcQueue=CARDS.map((c,i)=>i).filter(i=>fcGroup==='all'||CARDS[i][0]===fcGroup);
+  }
   fcAt=0; fcShown=false; drawFc();
 }
 function drawFc(){
@@ -218,7 +275,12 @@ function drawFc(){
     '</select>'+
     '<div class="boxes">'+['تازه','۱ روز','۳ روز','۷ روز','۲۱ روز']
       .map((n,i)=>'<div>'+n+'<b>'+fa(counts[i])+'</b></div>').join('')+'</div>'+
-    '<p class="note">هر کارت که بدانید یک پله بالا می‌رود و دیرتر برمی‌گردد. ندانستید، برمی‌گردد سر خط.</p></div>';
+    '<div class="seg sm" id="fgm" role="group" style="margin-top:9px">'+
+      '<button data-g="0" aria-pressed="'+(!fcGraded)+'">مرور آزاد</button>'+
+      '<button data-g="1" aria-pressed="'+fcGraded+'">با زمان‌بندی</button></div>'+
+    '<p class="note">'+(fcGraded
+      ? 'هرچه راحت‌تر به یاد بیاورید، دیرتر برمی‌گردد. کارتی که چهار بار بلغزد به‌عنوان کارت سخت علامت می‌خورد.'
+      : 'ترتیب سند، بدون نمره‌دهی — برای یادگیری اول بار یا مرور قبل از جلسه.')+'</p></div>';
 
   if(!fcQueue.length){
     const nxt=Math.min(...CARDS.map((c,i)=>ST.due[i]||0).filter(t=>t>Date.now()));
@@ -234,18 +296,27 @@ function drawFc(){
      '<div class="q">'+c[1]+'</div>'+(fcShown?'<div class="a">'+c[2]+'</div>':'')+'</div>'+
      '<div class="prog"><i style="width:'+((fcAt/fcQueue.length)*100).toFixed(1)+'%"></i></div>'+
      '<p class="note">'+fa(fcAt+1)+' از '+fa(fcQueue.length)+'</p>';
-  h+= fcShown
-    ? '<div class="row2"><button class="btn w" id="bad">نمی‌دانستم</button><button class="btn" id="good">می‌دانستم</button></div>'
-    : '<button class="btn" id="show">جواب</button>';
+  h+= !fcShown
+    ? '<button class="btn" id="show">جواب</button>'+
+      (fcGraded?'':'<div class="row2"><button class="btn g" id="prev2">قبلی</button><button class="btn g" id="next2">بعدی</button></div>')
+    : fcGraded
+    ? '<div class="row2"><button class="btn w" id="g0">نمی‌دانستم</button><button class="btn g" id="g1">سخت بود</button></div>'+
+      '<div class="row2"><button class="btn g" id="g2">خوب</button><button class="btn" id="g3">آسان</button></div>'
+    : '<div class="row2"><button class="btn g" id="prev">قبلی</button><button class="btn" id="next">بعدی</button></div>';
   V().innerHTML=h; bindFg();
   const s=el('show'); if(s)s.onclick=()=>{fcShown=true;drawFc();};
-  const nx=ok=>{grade(i,ok); fcAt++; fcShown=false;
-    if(fcAt>=fcQueue.length){fcInit();}else drawFc();};
-  const g=el('good'), b=el('bad');
-  if(g)g.onclick=()=>nx(true); if(b)b.onclick=()=>nx(false);
+  const step=d=>{fcAt=(fcAt+d+fcQueue.length)%fcQueue.length;fcShown=false;drawFc();};
+  ['prev','prev2'].forEach(id=>{const b2=el(id); if(b2)b2.onclick=()=>step(-1);});
+  ['next','next2'].forEach(id=>{const b2=el(id); if(b2)b2.onclick=()=>step(1);});
+  [['g0',LEARN.Q.AGAIN],['g1',LEARN.Q.HARD],['g2',LEARN.Q.GOOD],['g3',LEARN.Q.EASY]].forEach(([id,q])=>{
+    const b2=el(id); if(b2)b2.onclick=()=>{grade(i,q);fcAt++;fcShown=false;
+      if(fcAt>=fcQueue.length)fcInit();else drawFc();};});
 }
 const dueAll=g=>CARDS.map((c,i)=>i).filter(i=>CARDS[i][0]===g);
-function bindFg(){const f=el('fg'); if(f)f.onchange=()=>{fcGroup=f.value;fcInit();};}
+function bindFg(){
+  const f=el('fg'); if(f)f.onchange=()=>{fcGroup=f.value;fcInit();};
+  V().querySelectorAll('#fgm button').forEach(b=>b.onclick=()=>{fcGraded=b.dataset.g==='1';fcInit();});
+}
 
 /* ---------- 3. quiz ---------- */
 let qOrder=[], qAt=0, qScore=0, qPicked=-1, qOpts=[];
