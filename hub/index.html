@@ -19997,7 +19997,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       src: 'Araci, D. (2019) FinBERT, arXiv:1908.10063؛ Liu et al. (2019) RoBERTa, arXiv:1907.11692', evidence: 'FinBERT در هاب اجرا نمی‌شود؛ احساسات از ورودی شما یا Claude است.', weak: 'وابسته به کیفیت ورودی خبر.', iran: 'اخبار کدال و مصوبات (نرخ خوراک، قیمت‌گذاری) اثر بزرگ دارند.' },
     { id: 'voltarget', fa: 'هدف‌گذاری نوسان و اندازهٔ مبتنی بر رژیم', en: 'Volatility targeting & regime sizing', fam: 'risk', role: 'size', st: 'live', assets: 'همه',
       logic: 'وزن = نوسان هدف ÷ نوسان EWMA دارایی (با سقف)؛ در رژیم پرنوسان نیم و در بحران صفر.', horizon: '—', regimes: 'همه',
-      src: 'Moreira & Muir (2017) «Volatility-Managed Portfolios», JF؛ RiskMetrics (1996)', evidence: 'شواهد قوی برای بهبود نسبت شارپ.', weak: '—', iran: 'دامنهٔ نوسان روزانه نوسان مشاهده‌شده را محدود می‌کند.' },
+      src: 'Moreira & Muir (2017) «Volatility-Managed Portfolios», JF؛ RiskMetrics (1996)', evidence: 'محل اختلاف: مقالهٔ اصلی بهبود نسبت شارپ را نشان داد، اما Cederburg و همکاران (2020, JFE) در خارج از نمونه برتری نظام‌مندی نیافتند.', weak: '—', iran: 'دامنهٔ نوسان روزانه نوسان مشاهده‌شده را محدود می‌کند.' },
     { id: 'kelly', fa: 'کلی و درصد ثابت ریسک', en: 'Kelly & fixed-fractional sizing', fam: 'risk', role: 'size', st: 'live', assets: 'همه',
       logic: 'ریسک هر معامله = درصد ثابت سرمایه × ضریب قوت سیگنال؛ کلی از آمار بک‌تست محاسبه و نیم‌کلی سقف مرجع است.', horizon: '—', regimes: 'همه',
       src: 'Kelly, J. L. (1956) Bell System Technical Journal؛ Vince, R. (1990) Portfolio Management Formulas', evidence: 'کلی کامل با خطای برآورد خطرناک است؛ نیم‌کلی رایج است.', weak: '—', iran: '—' },
@@ -20011,7 +20011,65 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       logic: 'در هاب مدیریت موقعیت با قواعد صریح (سربه‌سر، حد ضرر متحرک، خروج زمانی) انجام می‌شود؛ RL آموزش داده نشده است.', horizon: '—', regimes: '—',
       src: 'Nevmyvaka, Feng & Kearns (2006) «Reinforcement Learning for Optimized Trade Execution», ICML', evidence: 'نیازمند شبیه‌ساز دفتر سفارش.', weak: '—', iran: '—' }
   ];
-  Hub.tradeBank = { M: M, FAM: FAM, ST: ST, get: function (id) { return M.filter(function (m) { return m.id === id; })[0]; }, REVIEWED: '۱۴۰۵/۰۸' };
+  /* ---------- literature grading (reviewed 2026-11 with a paper search; `ver` = the references were found in that search) ----------
+   * A strong: replicated in peer-reviewed work across markets · B mixed or indirect · C mostly negative or rejected
+   * X no peer-reviewed study checked or found in this review (not the same as "shown not to work") · N not a direction model */
+  var REFS = ['Moskowitz, T. J., Ooi, Y. H., & Pedersen, L. H. (2012). Time series momentum. Journal of Financial Economics.',
+    'Park, C.-H., & Irwin, S. H. (2007). What do we know about the profitability of technical analysis? Journal of Economic Surveys.',
+    'Sullivan, R., Timmermann, A., & White, H. (1999). Data-snooping, technical trading rule performance, and the bootstrap. Journal of Finance.',
+    'Rink, K. (2023). The predictive ability of technical trading rules: an empirical analysis of developed and emerging equity markets. Financial Markets and Portfolio Management.',
+    'Batchelor, R., & Ramyar, R. (2006). Magic numbers in the Dow.',
+    'Kitkanasiri, C., et al. (2025). Market efficiency and technical trading: an empirical study of MACD and RSI indicators in major Asian stock indices. ABAC Journal.',
+    'Mohd Nor, S., et al. (2017). The profitability of MACD and RSI trading rules in the Australian stock market. Investment Management & Financial Innovations.',
+    'Marshall, B. R., et al. (2006). Candlestick technical trading strategies: can they create value for investors?',
+    'Marshall, B. R., et al. (2008). Are candlestick technical trading strategies profitable in the Japanese equity market? Review of Quantitative Finance and Accounting.',
+    'Goo, Y., et al. (2017). The application of Japanese candlestick trading strategies in Taiwan. Investment Management & Financial Innovations.',
+    'Che-Ngoc, H., et al. (2022). Profitability of Ichimoku-based trading rule in Vietnam stock market in the context of the COVID-19 outbreak. Computational Economics.',
+    'Lutey, M., et al. (2022). Ichimoku Cloud forecasting returns in the U.S. Global Business Finance Review.',
+    'Gatev, E., Goetzmann, W., & Rouwenhorst, K. G. Pairs trading: performance of a relative-value arbitrage rule. Review of Financial Studies.',
+    'Asness, C. S., Moskowitz, T. J., & Pedersen, L. H. (2013). Value and momentum everywhere. Journal of Finance.',
+    'Wiest, T. (2022). Momentum: what do we know 30 years after Jegadeesh and Titman’s seminal paper? Financial Markets and Portfolio Management.',
+    'Kaniel, R., et al. (2008). Individual investor trading and stock returns. Journal of Finance.',
+    'Boehmer, E., et al. (2020). Tracking retail investor activity. Journal of Finance.',
+    'Barber, B., et al. (2008). Do retail trades move markets? Review of Financial Studies.',
+    'Gu, S., Kelly, B., & Xiu, D. Empirical asset pricing via machine learning. Review of Financial Studies.',
+    'Leippold, M., et al. (2021). Machine learning in the Chinese stock market. Journal of Financial Economics.',
+    'Moreira, A., & Muir, T. (2017). Volatility-managed portfolios. Journal of Finance.',
+    'Cederburg, S., et al. (2020). On the performance of volatility-managed portfolios. Journal of Financial Economics.',
+    'Georgopoulou, A., et al. (2017). The trend is your friend: time-series momentum strategies across equity and commodity markets. Review of Finance.'];
+  var GRADE = { A: 'قوی', B: 'مختلط', C: 'ضعیف یا ردشده', X: 'بدون مطالعهٔ بررسی‌شده', N: 'مدل جهت نیست' };
+  var EV = {
+    trend: { g: 'B', ver: true, r: [2, 3, 4], t: 'قواعد میانگین متحرک در مرور ۹۵ مطالعه بیشتر نتیجهٔ مثبت داشته‌اند، اما با ایراد داده‌کاوی؛ در آزمون‌های جدیدتر، برتری در خارج از نمونه و پس از هزینه پایدار نبوده است.' },
+    macd: { g: 'C', ver: true, r: [6, 7], t: 'در ده بازار آسیایی MACD بیشتر مواقع از خرید و نگه‌داری بهتر نبود؛ در استرالیا هم عملکرد MACD ضعیف گزارش شده است.' },
+    adx: { g: 'X', ver: false, r: [], t: 'در این بازبینی مطالعهٔ معتبری دربارهٔ ADX بررسی نشد. در موتور بیشتر نقش فیلتر رژیم دارد.' },
+    ichimoku: { g: 'B', ver: true, r: [11, 12], t: 'چند مطالعه (ویتنام؛ آمریکا، کانادا، آلمان، بریتانیا) نتیجهٔ مثبت گزارش کرده‌اند، ولی کم‌شمارند و در نشریه‌های کم‌استناد؛ کنترل داده‌کاوی در آن‌ها روشن نیست.' },
+    mtf: { g: 'X', ver: false, r: [], t: 'آزمون مستقلی برای هم‌راستایی چند بازهٔ زمانی بررسی نشد.' },
+    evidence: { g: 'A', ver: true, r: [1, 23], t: 'مومنتوم سری زمانی: پایداری بازده ۱ تا ۱۲ ماهه در ۵۸ قرارداد آتی سهام، ارز، کالا و اوراق، و تأیید در داده‌های ۱۹۶۹ تا ۲۰۱۵.' },
+    rsi: { g: 'B', ver: true, r: [6, 7], t: 'در بازارهای آسیایی RSI بیشتر مواقع بهتر از خرید و نگه‌داری نبود؛ در استرالیا مقداری سودآوری گزارش شده است.' },
+    boll: { g: 'X', ver: false, r: [], t: 'در این بازبینی مطالعهٔ معتبری دربارهٔ باندهای بولینگر بررسی نشد.' },
+    stoch: { g: 'X', ver: false, r: [], t: 'در این بازبینی مطالعهٔ معتبری دربارهٔ استوکاستیک بررسی نشد.' },
+    hybrid: { g: 'A', ver: true, r: [14, 15], t: 'مومنتوم (برندگان گذشته بهتر از بازندگان) در طبقات دارایی و کشورهای مختلف تکرار شده است. بخش «بازگشت کوتاه‌مدت» این مدل در این بازبینی جداگانه تأیید نشد.' },
+    candles: { g: 'C', ver: true, r: [8, 9, 10], t: 'برای سهام داوجونز و بازار ژاپن (۱۹۷۵ تا ۲۰۰۴) ارزشی برای الگوهای شمعی یافت نشد؛ یک مطالعه در تایوان نتیجهٔ مثبت دارد.' },
+    smc: { g: 'X', ver: false, r: [], t: 'مفهوم معامله‌گران است؛ مطالعهٔ دانشگاهی معتبری سراغ ندارم.' },
+    fib: { g: 'C', ver: true, r: [5], t: 'در شاخص داوجونز، نسبت طول و مدت روندها بیش از حد تصادف دور نسبت‌های فیبوناچی جمع نمی‌شود.' },
+    vp: { g: 'X', ver: false, r: [], t: 'در این بازبینی مطالعهٔ معتبری دربارهٔ نمایهٔ حجم بررسی نشد.' },
+    flow: { g: 'B', ver: true, r: [16, 17, 18], t: 'در آمریکا خالص خرید سرمایه‌گذاران حقیقی بازده کوتاه‌مدت بعدی را پیش‌بینی می‌کند، اما جهت اثر به افق بستگی دارد (هفتگی هم‌جهت، سالانه معکوس). برای دادهٔ حقیقی/حقوقی ایران مطالعه‌ای بررسی نشد.' },
+    tse: { g: 'X', ver: false, r: [], t: 'قواعد کاربرگ خود شماست؛ مطالعهٔ منتشرشده ندارد. اعتبارش فقط از بک‌تست روی دادهٔ شما می‌آید.' },
+    gfx: { g: 'X', ver: false, r: [], t: 'قواعد کاربرگ‌های طلا و ارز خود شماست؛ مطالعهٔ منتشرشده ندارد.' },
+    channel: { g: 'B', ver: true, r: [1, 2], t: 'آزمون مستقیمی برای کانال رگرسیونی نیافتم؛ پشتوانهٔ غیرمستقیم: برگشت جزئی بازده در افق‌های بلندتر.' },
+    wdiv: { g: 'B', ver: true, r: [6], t: 'برای RSI شواهد مختلط است؛ دربارهٔ خودِ واگرایی مطالعهٔ معتبری نیافتم.' },
+    factor: { g: 'A', ver: true, r: [14], t: 'عامل مومنتوم در سهام، شاخص‌ها، ارز، کالا و اوراق تکرار شده است. عامل‌های نوسان پایین و کیفیت در این بازبینی جداگانه تأیید نشدند.' },
+    pairs: { g: 'A', ver: true, r: [13], t: 'معاملهٔ جفتی در دادهٔ روزانهٔ آمریکا (۱۹۶۲ تا ۲۰۰۲) بازده مازاد سالانه تا حدود ۱۱٪ داشته که از برآورد محتاطانهٔ هزینه‌ها بیشتر بوده است.' },
+    cross: { g: 'X', ver: false, r: [], t: 'رابطه روی دادهٔ خود شما برآورد می‌شود؛ مطالعه‌ای برای ایران بررسی نشد.' },
+    temporal: { g: 'X', ver: false, r: [], t: 'اثرهای تقویمی در این بازبینی با جست‌وجو تأیید نشدند.' },
+    mlrank: { g: 'A', ver: true, r: [19, 20], t: 'یادگیری ماشین در دادهٔ بزرگ آمریکا و چین برتری خارج از نمونه داشته است. با ۷۶ نماد و حدود یک سال داده، توان آماری این‌جا بسیار کمتر است.' },
+    sentiment: { g: 'X', ver: false, r: [], t: 'در این بازبینی مطالعه‌ای دربارهٔ احساسات خبری بررسی نشد.' },
+    voltarget: { g: 'B', ver: true, r: [21, 22], t: 'کاهش ریسک در نوسان بالا در مقالهٔ اصلی نسبت شارپ را بالا برد، اما بررسی ۱۰۳ راهبرد نشان داد در خارج از نمونه به‌طور نظام‌مند بهتر از پرتفوی مدیریت‌نشده نیست. محل اختلاف است.' },
+    kelly: { g: 'N', ver: false, r: [], t: 'قاعدهٔ اندازه‌گذاری نظری است؛ در این بازبینی جداگانه بررسی نشد.' },
+    options: { g: 'N', ver: false, r: [], t: 'مدل قیمت‌گذاری است، نه رأی جهت؛ در این بازبینی جداگانه بررسی نشد.' }
+  };
+  var MULT = { A: 1, B: 0.8, C: 0.5, X: 0.6 };   // default evidence multipliers: an assumption of this tool, editable in the models tab
+  Hub.tradeBank = { EV: EV, EVREFS: REFS, GRADE: GRADE, MULT: MULT, M: M, FAM: FAM, ST: ST, get: function (id) { return M.filter(function (m) { return m.id === id; })[0]; }, REVIEWED: '۱۴۰۵/۰۸' };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeBank;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -20465,6 +20523,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function weights(E, rg) {
     var w = {}; Object.keys(BASEW).forEach(function (m) { if ((E.off || {})[m]) return; var b = isF(Number((E.w || {})[m])) ? Number(E.w[m]) : BASEW[m], f = FAMOF[m];
       if (f === 'trend') b *= rg === 'up' || rg === 'down' ? 1.3 : rg === 'range' ? 0.6 : 1; if (f === 'osc' && m !== 'hybrid') b *= rg === 'range' ? 1.3 : rg === 'up' || rg === 'down' ? 0.6 : rg === 'crisis' ? 0.4 : 1;
+      if (E.ev && E.ev.on && E.ev.m && isF(E.ev.m[m])) b *= E.ev.m[m];   // literature prior (models tab): weaker published evidence → lower weight
       if (rg === 'hv') b *= 0.8; var lw = E.learn && E.learn.wr && E.learn.wr[RGRP[rg] || 'other']; if (lw && isF(lw[m])) b *= lw[m];   // multipliers learned from closed trades (bounded 0.5–1.5)
       w[m] = b; });
     return w;
@@ -22008,6 +22067,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function ensure(S) {
     var d = TE.defaults(); if (!S.e) S.e = d;
     S.e.acct = Object.assign({}, d.acct, S.e.acct || {}); S.e.classes = Object.assign({}, d.classes, S.e.classes || {});
+    if (!S.e.ev || typeof S.e.ev !== 'object') S.e.ev = { on: false, k: {} }; if (!S.e.ev.k) S.e.ev.k = {};
+    (function () { var Bk = Hub.tradeBank, m = {}; if (!Bk || !Bk.EV) return; Object.keys(TE.BASEW).forEach(function (id) { var e = Bk.EV[id]; if (!e || Bk.MULT[e.g] == null) return; var k = S.e.ev.k[e.g]; m[id] = k !== '' && k != null && isFinite(Number(k)) ? Number(k) : Bk.MULT[e.g]; }); S.e.ev.m = m; })();
     ['news', 'positions'].forEach(function (k) { if (!Array.isArray(S.e[k])) S.e[k] = []; }); ['w', 'off'].forEach(function (k) { if (!S.e[k] || typeof S.e[k] !== 'object') S.e[k] = {}; });
     ['mode', 'market', 'minConf', 'strongConf'].forEach(function (k) { if (S.e[k] == null) S.e[k] = d[k]; });
     S.e.learn = Object.assign({ wr: {}, block: {}, riskMult: 1, log: [], auto: false }, S.e.learn || {});
@@ -22240,21 +22301,36 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   /* ---------- 6 · models bank ---------- */
   function modelsTab(ctx) {
     var S = ctx.S, E = ensure(S), Bk = TB(), bt = BT && BT.rules ? BT.rules.reduce(function (o, r) { o[r.m] = r; return o; }, {}) : {};
+    if (!E.ev) E.ev = { on: false, k: {} }; if (!E.ev.k) E.ev.k = {}; var K = function (g) { return isFinite(Number(E.ev.k[g])) && E.ev.k[g] !== '' && E.ev.k[g] != null ? Number(E.ev.k[g]) : Bk.MULT[g]; };
+    E.ev.m = {}; Object.keys(TE.BASEW).forEach(function (id) { var e = Bk.EV[id]; if (e && Bk.MULT[e.g] != null) E.ev.m[id] = K(e.g); });
+    var cmp = h('div', { 'aria-live': 'polite' }), tg = h('input', { type: 'checkbox', 'aria-label': 'اعمال اعتبار علمی در وزن‌ها' }); tg.checked = !!E.ev.on; tg.addEventListener('change', function () { E.ev.on = tg.checked; ctx.rerender(); });
+    var kin = ['A', 'B', 'C', 'X'].map(function (g) { var i = h('input', { class: 'cell-in', type: 'text', inputmode: 'decimal', style: 'width:56px', 'aria-label': 'ضریب ' + Bk.GRADE[g], value: String(K(g)) }); i.addEventListener('change', function () { var v = Number(i.value); if (!isFinite(v) || v < 0 || v > 2) { U.toast('ضریب باید بین ۰ و ۲ باشد.', 'warn'); return; } E.ev.k[g] = v; ctx.rerender(); }); return h('label', { class: 'chk-l', 'data-notr': '1' }, [document.createTextNode(Bk.GRADE[g] + ' × '), i]); });
+    var cmpBtn = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'مقایسهٔ بک‌تست: با و بدون وزن‌دهی علمی', onclick: function () { cmpBtn.disabled = true; cmp.textContent = 'در حال اجرا (دو بک‌تست)…'; setTimeout(function () { try {
+      var was = E.ev.on; E.ev.on = false; var a = TE.backtest(E); E.ev.on = true; var b = TE.backtest(E); E.ev.on = was; U.clear(cmp);
+      cmp.appendChild(table(['حالت', 'معاملات خارج از نمونه', 'نرخ برد', 'میانگین R', 'ضریب سود', 'حداکثر افت'], [['وزن‌های فعلی، بدون اعتبار علمی', a.OOS], ['با ضریب اعتبار علمی', b.OOS]].map(function (x) { var o = x[1]; return [x[0], fa(o.n || 0, 0), o.n ? pct(o.hit, 0) : '—', o.n ? fa(o.avgR, 2) + 'R' : '—', o.n && isFinite(o.pf) ? fa(o.pf, 2) : '—', o.n ? fa(o.mdd, 1) + 'R' : '—']; })));
+      cmp.appendChild(h('p', { class: 'small muted', 'data-notr': '1', text: (ctx.R.X.sample ? 'روی دادهٔ نمونه اجرا شد و بی‌معناست. ' : '') + (Math.min(a.OOS.n || 0, b.OOS.n || 0) < 30 ? 'کمتر از ۳۰ معاملهٔ خارج از نمونه: تفاوت دو ردیف از نظر آماری قابل اتکا نیست. ' : '') + 'این مقایسه فقط می‌گوید روی دادهٔ شما کدام بهتر بوده؛ انتخاب بر پایهٔ همین یک عدد خودش نوعی بیش‌برازش است.' })); } catch (e) { cmp.textContent = 'ناموفق: ' + e.message; } cmpBtn.disabled = false; }, 40); } });
     var rows = Bk.M.map(function (m) {
       var inBase = TE.BASEW[m.id] != null, w = h('input', { class: 'cell-in', type: 'text', inputmode: 'decimal', style: 'width:60px', 'aria-label': 'وزن ' + m.fa, value: inBase ? String(E.w[m.id] != null ? E.w[m.id] : TE.BASEW[m.id]) : '', disabled: !inBase });
       w.addEventListener('change', function () { var v = Number(w.value); if (!isFinite(v) || v < 0) { U.toast('وزن باید عدد نامنفی باشد.', 'warn'); return; } E.w[m.id] = v; ctx.rerender(); });
       var cb = h('input', { type: 'checkbox', 'aria-label': 'فعال ' + m.fa, disabled: !inBase }); cb.checked = inBase && !E.off[m.id]; cb.addEventListener('change', function () { E.off[m.id] = !cb.checked; ctx.rerender(); });
       var ev = bt[m.id], evT = ev ? (ev.oos.n ? 'خارج از نمونه: ' + fa(ev.oos.n, 0) + ' معامله، میانگین ' + fa(ev.oos.avgR, 2) + 'R' + (ev.ok ? ' ✓' : ' ✗') : 'معامله‌ای نبود') : (m.id === 'mlrank' ? ctx.R.X.ml.why : '');
-      var det = h('details', null, [h('summary', { text: m.fa }), list(['منطق: ' + m.logic, 'افق: ' + m.horizon + ' · رژیم مناسب: ' + m.regimes + ' · دارایی: ' + m.assets, 'منبع: ' + m.src, 'شواهد: ' + m.evidence, 'نقطهٔ ضعف: ' + m.weak, 'ملاحظهٔ ایران: ' + m.iran])]);
-      return [det, Bk.FAM[m.fam], { dir: 'رأی جهت', lvl: 'سطوح', size: 'اندازه', filter: 'فیلتر' }[m.role] || m.role, Bk.ST[m.st], inBase ? w : (m.id === 'options' ? 'کارت جداگانه' : m.st === 'dev' ? '—' : 'در اندازه‌گذاری'), inBase ? cb : '—', evT || '—'];
+      var e0 = Bk.EV[m.id], grade = e0 ? Bk.GRADE[e0.g] + (e0.ver ? '' : (e0.g === 'X' || e0.g === 'N' ? '' : ' (تأییدنشده)')) : m.st === 'dev' ? 'توسعه‌ای' : '—', gcls = e0 ? { A: 'fit-rec', B: 'fit-cond', C: 'fit-no', X: 'sev-info', N: 'sev-info' }[e0.g] : 'sev-info';
+      var det = h('details', null, [h('summary', { text: m.fa }), list((e0 ? ['اعتبار علمی (' + Bk.GRADE[e0.g] + '): ' + e0.t + (e0.r.length ? ' [' + e0.r.map(function (n) { return fa(n, 0); }).join('، ') + ']' : '')] : []).concat(['منطق: ' + m.logic, 'افق: ' + m.horizon + ' · رژیم مناسب: ' + m.regimes + ' · دارایی: ' + m.assets, 'منبع: ' + m.src, 'شواهد: ' + m.evidence, 'نقطهٔ ضعف: ' + m.weak, 'ملاحظهٔ ایران: ' + m.iran]))]);
+      return [det, h('span', { class: 'sev ' + gcls, 'data-notr': '1', text: grade }), Bk.FAM[m.fam], { dir: 'رأی جهت', lvl: 'سطوح', size: 'اندازه', filter: 'فیلتر' }[m.role] || m.role, Bk.ST[m.st], inBase ? w : (m.id === 'options' ? 'کارت جداگانه' : m.st === 'dev' ? '—' : 'در اندازه‌گذاری'), inBase ? cb : '—', evT || '—'];
     });
-    return ctx.group([ctx.panel('بانک مدل‌ها (' + fa(Bk.M.length, 0) + ' مدل)', [h('p', { class: 'f-help', text: 'وزن‌ها پیش‌فرض‌های ثابت هستند (بهینه‌سازی نشده‌اند تا بیش‌برازش رخ ندهد). در رژیم روندی وزن مدل‌های روند ×۱٫۳ و نوسان‌گرها ×۰٫۶ و در رژیم رنج برعکس؛ در رژیم پرنوسان همه ×۰٫۸. مدل یادگیری ماشین فقط وقتی رأی می‌دهد که AUC خارج از نمونه ≥ ۰٫۵۵ باشد. مدل‌های «توسعه‌ای» در امتیاز نیستند. ستون شواهد پس از اجرای بک‌تست پر می‌شود.' }),
-      table(['مدل (برای جزئیات باز کنید)', 'خانواده', 'نقش', 'وضعیت', 'وزن', 'فعال', 'شواهد روی دادهٔ شما'], rows),
+    var cnt = { A: 0, B: 0, C: 0, X: 0 }; Object.keys(TE.BASEW).forEach(function (id) { var e = Bk.EV[id]; if (e && cnt[e.g] != null) cnt[e.g]++; });
+    var evPanel = ctx.panel('اعتبار علمی مدل‌ها', [h('p', { class: 'f-help', 'data-notr': '1', text: 'هر مدل رأی‌دهنده یک درجهٔ پشتوانهٔ پژوهشی دارد (بازبینی آبان ۱۴۰۵ با جست‌وجوی مقاله‌ها): قوی ' + fa(cnt.A, 0) + ' مدل، مختلط ' + fa(cnt.B, 0) + '، ضعیف یا ردشده ' + fa(cnt.C, 0) + '، بدون مطالعهٔ بررسی‌شده ' + fa(cnt.X, 0) + '. «بدون مطالعهٔ بررسی‌شده» یعنی در این بازبینی مطالعهٔ معتبری برایش ندیدم، نه این‌که ثابت شده کار نمی‌کند. شرح و منبع هر مدل با باز کردن ردیفش دیده می‌شود. ستون «شواهد روی دادهٔ شما» سنجش دوم است و از بک‌تست می‌آید.' }),
+      h('label', { class: 'chk-l', 'data-notr': '1' }, [tg, document.createTextNode(' اعتبار علمی در وزن مدل‌ها اعمال شود (وزن هر مدل × ضریب درجه‌اش)')]),
+      h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, kin), h('p', { class: 'small muted', 'data-notr': '1', text: 'ضریب‌ها فرض این ابزارند، نه یافتهٔ علمی؛ می‌توانید تغییرشان دهید. سیستم یادگیری همچنان جداگانه وزن‌ها را با نتیجهٔ معاملات خودتان تعدیل می‌کند. وضعیت فعلی: ' + (E.ev.on ? 'اعمال می‌شود.' : 'اعمال نمی‌شود (فقط نمایش).') }),
+      h('div', { class: 'row-ctl' }, [cmpBtn]), cmp,
+      h('details', null, [h('summary', { 'data-notr': '1', text: 'فهرست منابع (' + fa(Bk.EVREFS.length, 0) + ')' }), h('ol', { class: 'studio-l' }, Bk.EVREFS.map(function (x) { return h('li', { 'data-notr': '1', dir: 'ltr', style: 'text-align:left', text: x }); }))])]);
+    return ctx.group([evPanel, ctx.panel('بانک مدل‌ها (' + fa(Bk.M.length, 0) + ' مدل)', [h('p', { class: 'f-help', text: 'وزن‌ها پیش‌فرض‌های ثابت هستند (بهینه‌سازی نشده‌اند تا بیش‌برازش رخ ندهد). در رژیم روندی وزن مدل‌های روند ×۱٫۳ و نوسان‌گرها ×۰٫۶ و در رژیم رنج برعکس؛ در رژیم پرنوسان همه ×۰٫۸. مدل یادگیری ماشین فقط وقتی رأی می‌دهد که AUC خارج از نمونه ≥ ۰٫۵۵ باشد. مدل‌های «توسعه‌ای» در امتیاز نیستند. ستون شواهد پس از اجرای بک‌تست پر می‌شود.' }),
+      table(['مدل (برای جزئیات باز کنید)', 'اعتبار علمی', 'خانواده', 'نقش', 'وضعیت', 'وزن', 'فعال', 'شواهد روی دادهٔ شما'], rows),
       h('div', { class: 'row-ctl' }, [h('button', { class: 'btn ghost', type: 'button', text: 'بازگشت به وزن‌های پیش‌فرض', onclick: function () { E.w = {}; E.off = {}; ctx.rerender(); } }), h('span', { class: 'muted small', text: 'بازبینی منابع: ' + Bk.REVIEWED })])])]);
   }
 
   /* ---------- 7 · back-test ---------- */
-  function btKey(E) { return JSON.stringify([E.w, E.off, E.acct.costPct, E.acct.limitPct, E.minConf, E.classes]) + '|' + ['hub.sigstocks.v1', 'hub.sig-gold.v1', 'hub.sig-fx.v1'].map(function (k) { var s = U.store.get(k, null); return s && s.meta ? s.meta.asOf : ''; }).join(); }
+  function btKey(E) { return JSON.stringify([E.ev && E.ev.on ? E.ev.m : 0, E.w, E.off, E.acct.costPct, E.acct.limitPct, E.minConf, E.classes]) + '|' + ['hub.sigstocks.v1', 'hub.sig-gold.v1', 'hub.sig-fx.v1'].map(function (k) { var s = U.store.get(k, null); return s && s.meta ? s.meta.asOf : ''; }).join(); }
   function srow(name, s) { return [name, fa(s.n || 0, 0), s.n ? pct(s.hit, 0) : '—', s.n ? fa(s.avgR, 2) + 'R' : '—', s.n && isFinite(s.pf) ? fa(s.pf, 2) : '—', s.n ? fa(s.mdd, 1) + 'R' : '—', s.n ? fa(s.days, 0) : '—', s.n && isFinite(s.kelly) ? pct(s.kelly, 0) : '—']; }
   function btTab(ctx) {
     var S = ctx.S, E = ensure(S), out = h('div'), stale = BT && BTkey !== btKey(E);
@@ -22317,6 +22393,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       h('h3', { text: '۴. پایش موقعیت‌ها' }), X.mon.length ? list(X.mon.map(function (m) { return m.p.asset + ': ' + m.act; })) : h('p', { class: 'muted', text: 'موقعیتی ثبت نشده است.' }),
       h('h3', { text: '۵. ریسک' }), list(['VaR تاریخی ۹۵٪ یک‌روزه: ' + fa(X.risk.var95, 0) + ' ریال'].concat(X.risk.stress.map(function (s) { return s.name + ': ' + fa(s.pnl, 0) + ' ریال'; }))),
       h('h3', { text: '۶. اعتبار داده و مدل' }), list(fresh.concat([BT ? 'بک‌تست خارج از نمونه: ' + fa(BT.OOS.n, 0) + ' معامله، میانگین ' + fa(BT.OOS.avgR, 2) + 'R، نرخ برد ' + pct(BT.OOS.hit, 0) : 'بک‌تست هنوز اجرا نشده است (زبانهٔ بک‌تست).'])),
+      h('h3', { text: 'اعتبار علمی مدل‌های رأی‌دهنده' }), (function () { var Bk2 = TB(), by = { A: [], B: [], C: [], X: [] }; Object.keys(TE.BASEW).forEach(function (id) { var e = Bk2.EV[id], m = Bk2.get(id); if (e && by[e.g] && !(E.off || {})[id]) by[e.g].push(m ? m.fa : id); });
+        return list(['A', 'B', 'C', 'X'].map(function (g) { return Bk2.GRADE[g] + ' (' + fa(by[g].length, 0) + '): ' + (by[g].join('؛ ') || '—'); }).concat([E.ev && E.ev.on ? 'ضریب اعتبار علمی در وزن‌ها اعمال شده است.' : 'ضریب اعتبار علمی در وزن‌ها اعمال نشده است (زبانهٔ بانک مدل‌ها).', 'منابع هر درجه: زبانهٔ «بانک مدل‌ها».'])); })(),
       h('h3', { text: '۷. محدودیت‌ها' }), list(['فقط دادهٔ روزانه؛ تایم‌فریم ۴ ساعته و درون‌روز در دسترس نیست (مدل چند بازهٔ زمانی با روزانه/هفتگی/ماهانه کار می‌کند).', 'دامنهٔ نوسان، کارمزد و مالیات فرض‌اند؛ از مقررات روز بورس بررسی کنید.', 'مدل‌های FinBERT، XGBoost/LSTM و یادگیری تقویتی توسعه‌ای‌اند و در امتیاز نیستند.', 'اطمینان یک امتیاز قاعده‌محور است، نه احتمال؛ کالیبراسیون آن در بک‌تست نشان داده می‌شود.', 'این گزارش توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.'])]);
     var pr = h('button', { class: 'btn primary', type: 'button', text: 'چاپ / ذخیره به PDF', onclick: function () { document.body.classList.add('printing-report'); setTimeout(function () { root.print(); document.body.classList.remove('printing-report'); }, 50); } });
     var cp = h('button', { class: 'btn', type: 'button', text: 'کپی پرامپت میز معاملات چندعاملی (Claude)', onclick: function () { var p = aiPrompt(X, E); if (navigator.clipboard) navigator.clipboard.writeText(p).then(function () { U.toast('پرامپت کپی شد.', 'good'); }, function () { ta.value = p; }); else ta.value = p; } });
@@ -22496,11 +22574,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111227) */
+/* PWA: offline cache + app updates (version 202611111237) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111227';
+  window.HUB_APP_VERSION = '202611111237';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
