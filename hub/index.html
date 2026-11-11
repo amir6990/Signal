@@ -4971,7 +4971,32 @@ else if (typeof exports === 'object')
   }
   function status() { return sampler().then(function () { return via; }); }
   function test() { P = null; return sampler().then(function (x) { if (!x) throw new Error('No AI connection: add an API key (or a local model address).'); return x.json('Return {"ok":true,"model":"<your model name>"}', { modelTier: 'default' }); }); }
-  Hub.ai = { settings: settings, save: save, sampler: sampler, status: status, test: test, parseJSON: parseJSON };
+  /* Live web search: the Anthropic Messages API with its server-side web search tool (web_search_20250305), called with the user's own key.
+   * The search runs on Anthropic's servers, so the browser's cross-site limits do not apply. Returns the answer text together with every page the
+   * search actually returned ({url, title, page_age}) and every citation ({url, title, cited_text}); callers must show only links that are in those lists.
+   * Not available inside the claude.ai artifact (no key there) or with a non-Anthropic provider. Billed per search by Anthropic. */
+  function search(prompt, opts) {
+    opts = opts || {}; var s = settings();
+    if (!s.apiKey || (s.provider === 'openai' && !/api\.anthropic\.com/.test(s.baseUrl || ''))) { var e0 = new Error('no_key'); e0.code = 'no_key'; return Promise.reject(e0); }
+    var url = String(s.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '') + '/v1/messages', tool = { type: 'web_search_20250305', name: 'web_search', max_uses: opts.maxUses || 6 };
+    if (opts.allowed && opts.allowed.length) tool.allowed_domains = opts.allowed; else if (opts.blocked && opts.blocked.length) tool.blocked_domains = opts.blocked;
+    var msgs = [{ role: 'user', content: prompt }], out = { text: '', results: [], cites: [], searches: 0, errors: [] };
+    var step = function (n) {
+      return fetch(url, { method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json', 'x-api-key': s.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: opts.modelTier === 'complex' ? s.complexModel || s.model : s.model, max_tokens: Number(s.maxTokens) || 16000, messages: msgs, tools: [tool] }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok) { var e = new Error('Anthropic API ' + r.status + ': ' + ((j.error && j.error.message) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; throw e; }
+          (j.content || []).forEach(function (c) {
+            if (c.type === 'text') { out.text += c.text; (c.citations || []).forEach(function (q) { if (q.url) out.cites.push({ url: q.url, title: q.title || '', cited_text: q.cited_text || '' }); }); }
+            else if (c.type === 'web_search_tool_result') { if (Array.isArray(c.content)) c.content.forEach(function (q) { if (q.type === 'web_search_result' && q.url) out.results.push({ url: q.url, title: q.title || '', page_age: q.page_age || '' }); }); else if (c.content && c.content.error_code) out.errors.push(c.content.error_code); } });
+          out.searches += (j.usage && j.usage.server_tool_use && j.usage.server_tool_use.web_search_requests) || 0;
+          if (j.stop_reason === 'pause_turn' && n < 4) { msgs.push({ role: 'assistant', content: j.content }); return step(n + 1); }   // a long search turn is resumed by sending it back unchanged
+          out.truncated = j.stop_reason === 'max_tokens'; out.model = j.model; return out; }); },
+        function (e) { if (e && e.name === 'AbortError') throw e; var x = new Error('Could not reach the Anthropic API (' + (e && e.message || e) + ').'); x.code = 'network'; throw x; });
+    };
+    return step(0);
+  }
+  Hub.ai = { settings: settings, save: save, sampler: sampler, status: status, test: test, parseJSON: parseJSON, search: search };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/localai.js */
@@ -7421,12 +7446,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var Hub = root.Hub = root.Hub || {};
   function esc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function html(B) { return B.map(function (b) { var li = function (a) { return a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); };
-    return b.t === 'h1' ? '<h1>' + esc(b.x) + '</h1>' : /^h[234]$/.test(b.t) ? '<' + b.t + '>' + esc(b.x) + '</' + b.t + '>' : b.t === 'ul' ? '<ul>' + li(b.x) + '</ul>' : b.t === 'ol' ? '<ol>' + li(b.x) + '</ol>' : b.t === 'table' ? '<table><thead><tr>' + b.head.map(function (x) { return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + b.rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>' : '<p class="' + b.t + '">' + esc(b.x) + '</p>'; }).join('\n'); }
+    return b.t === 'h1' ? '<h1>' + esc(b.x) + '</h1>' : /^h[234]$/.test(b.t) ? '<' + b.t + '>' + esc(b.x) + '</' + b.t + '>' : b.t === 'ul' ? '<ul>' + li(b.x) + '</ul>' : b.t === 'ol' ? '<ol>' + li(b.x) + '</ol>' : b.t === 'links' ? '<ul>' + b.x.map(function (q) { return '<li>' + esc(q.text) + ' — <a href="' + esc(q.url) + '">' + esc(q.url) + '</a></li>'; }).join('') + '</ul>' : b.t === 'table' ? '<table><thead><tr>' + b.head.map(function (x) { return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + b.rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>' : '<p class="' + b.t + '">' + esc(b.x) + '</p>'; }).join('\n'); }
   function doc(B) { return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>' + esc(B[0] && B[0].x) + '</title><style>body{font-family:Vazirmatn,Tahoma,Arial,sans-serif;direction:rtl;text-align:right;line-height:1.9;max-width:900px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:22px;border-bottom:2px solid #b8860b;padding-bottom:8px}h2{font-size:17px;margin-top:26px;color:#7a5a00}h3{font-size:15px;margin-top:18px}h4{font-size:14px;margin:14px 0 4px}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}th,td{border:1px solid #bbb;padding:5px 7px;vertical-align:top;text-align:right}th{background:#f1ead8}p.lead{font-size:15px;font-weight:600;background:#faf5e6;padding:10px 12px;border-right:4px solid #b8860b}p.meta,p.small{color:#555;font-size:12.5px}p.warn{color:#a40000;font-weight:600}p.gap{color:#7a3b00;background:#fff4e5;padding:8px 10px;border-right:4px solid #d98a00}li{margin-bottom:5px}@page{size:A4;margin:14mm}@media print{body{margin:0;max-width:none;font-size:11.5px}table{font-size:10px}tr{page-break-inside:avoid}h2,h3,h4{page-break-after:avoid}}</style></head><body>' + html(B) + '</body></html>'; }
-  function text(B) { return B.map(function (b) { return b.t === 'h1' ? b.x + '\n' + '='.repeat(30) : /^h[234]$/.test(b.t) ? '\n' + b.x : b.t === 'ul' || b.t === 'ol' ? b.x.map(function (x, i) { return (b.t === 'ol' ? (i + 1) + '. ' : '• ') + x; }).join('\n') : b.t === 'table' ? [b.head.join(' | ')].concat(b.rows.map(function (r) { return r.join(' | '); })).join('\n') : b.x; }).join('\n'); }
+  function text(B) { return B.map(function (b) { return b.t === 'h1' ? b.x + '\n' + '='.repeat(30) : /^h[234]$/.test(b.t) ? '\n' + b.x : b.t === 'ul' || b.t === 'ol' ? b.x.map(function (x, i) { return (b.t === 'ol' ? (i + 1) + '. ' : '• ') + x; }).join('\n') : b.t === 'links' ? b.x.map(function (q) { return '• ' + q.text + ' — ' + q.url; }).join('\n') : b.t === 'table' ? [b.head.join(' | ')].concat(b.rows.map(function (r) { return r.join(' | '); })).join('\n') : b.x; }).join('\n'); }
   function dom(B) { var U = Hub.util, h = U.h, body = h('div', { class: 'report-body lv-report', 'data-notr': '1' });
     B.forEach(function (b) { var li = function (a) { return a.map(function (x) { return h('li', { text: x }); }); };
-      body.appendChild(b.t === 'h1' ? h('h2', { class: 'rep-title', text: b.x }) : b.t === 'h2' ? h('h3', { text: b.x }) : b.t === 'h3' ? h('h4', { text: b.x }) : b.t === 'h4' ? h('h5', { text: b.x }) : b.t === 'ul' ? h('ul', { class: 'studio-l' }, li(b.x)) : b.t === 'ol' ? h('ol', { class: 'studio-l' }, li(b.x))
+      body.appendChild(b.t === 'h1' ? h('h2', { class: 'rep-title', text: b.x }) : b.t === 'h2' ? h('h3', { text: b.x }) : b.t === 'h3' ? h('h4', { text: b.x }) : b.t === 'h4' ? h('h5', { text: b.x }) : b.t === 'ul' ? h('ul', { class: 'studio-l' }, li(b.x)) : b.t === 'ol' ? h('ol', { class: 'studio-l' }, li(b.x)) : b.t === 'links' ? h('ul', { class: 'studio-l' }, b.x.map(function (q) { return h('li', null, [document.createTextNode(q.text + ' — '), h('a', { href: q.url, target: '_blank', rel: 'noopener noreferrer', dir: 'ltr', text: q.url })]); }))
         : b.t === 'table' ? h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, b.head.map(function (t) { return h('th', { class: 'lbl', text: t }); }))]), h('tbody', null, b.rows.map(function (r) { return h('tr', null, r.map(function (c) { return h('td', { class: 'small', style: 'white-space:normal', text: c == null ? '' : String(c) }); })); }))])])
         : h('p', { class: b.t === 'lead' ? 'rep-lead' : b.t === 'warn' ? 'neg' : b.t === 'gap' ? 'rep-gap' : b.t === 'meta' || b.t === 'small' ? 'small muted' : '', text: b.x })); });
     return body; }
@@ -22393,6 +22418,11 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     entered.filter(function (r) { return !r.source || !r.date; }).forEach(function (r) { gaps.push('منبع یا تاریخ انتشار «' + r.name + '» نوشته نشده است.'); });
     if (miss.length) gaps.push('آمار رسمی واردنشده: ' + miss.map(function (r) { return r.name; }).join('، ') + '.');
     var der = []; if (isFinite(X.gap)) der.push('شکاف نرخ ارز آزاد و رسمی: ' + pct(X.gap) + '.'); if (isFinite(X.realRate)) der.push('نرخ سود واقعی بین‌بانکی (پس از تورم نقطه‌به‌نقطه): ' + pct(X.realRate, 1) + '.'); if (der.length) B.push({ t: 'ul', x: der });
+    // fresh developments from the live web search (same topic only)
+    var N = S.news && S.news.topic === S.topic && S.news.items && S.news.items.length ? S.news : null;
+    if (N) { B.push({ t: 'h3', x: 'تحولات تازه (جست‌وجوی وب در ' + new Date(N.at).toLocaleString('fa-IR') + ')' });
+      B.push({ t: 'table', head: ['رویداد', 'تاریخ رویداد', 'وضعیت', 'آنچه منابع می‌گویند', 'اثر مستقیم و زنجیره‌ای (تحلیل هوش مصنوعی)', 'اقدام (تحلیل هوش مصنوعی)', 'منبع'], rows: N.items.map(function (ev) { return [ev.title, ev.event_date || 'نامشخص', KIND[ev.kind][0] + ' · ' + (ev.hosts.length >= 2 ? fa(ev.hosts.length, 0) + ' منبع مستقل' : 'یک منبع'), ev.facts, [ev.direct, ev.indirect].filter(Boolean).join(' / '), ev.action, ev.hosts.join('، ')]; }) });
+      if (Date.now() - N.at > 864e5) B.push({ t: 'warn', x: 'این جست‌وجو بیش از ۲۴ ساعت پیش انجام شده است؛ برای گزارش به‌روز دوباره جست‌وجو کنید.' }); }
     // 4 drivers
     B.push({ t: 'h2', x: '۴. عوامل محرک و روابط بین متغیرها' });
     if (X.corr && X.corr.length) { B.push({ t: 'table', head: ['بازار', 'همبستگی بازده هفتگی با ' + f.name, 'تعداد هفته'], rows: X.corr.slice(0, 8).map(function (c) { return [c.name, fa(c.r, 2), fa(c.n, 0)]; }) });
@@ -22430,12 +22460,54 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       'نسبت‌های پایش: ' + ((X.pairs || []).map(function (p) { return p.name + ' (' + fa(p.z.z, 1) + 'σ)'; }).join('؛ ') || '—') + '.', 'آمارهایی که با انتشار بعدی باید به‌روز شوند: ' + (entered.map(function (r) { return r.name; }).join('، ') || 'هیچ آماری وارد نشده') + '.',
       (function () { var c = X.R.cal.filter(function (q) { return q.rank >= 1; })[0]; return c ? 'نزدیک‌ترین تاریخ کلیدی تقویم زمانی: ' + IM.calDate(c) + ' (اهمیت ' + IM.RANK[c.rank][0] + '؛ یادآور بازبینی، نه پیش‌بینی).' : 'تاریخ کلیدی هم‌زمانی در تقویم زمانی نیست.'; })()] });
     B.push({ t: 'h3', x: 'آنچه با اطلاعات فعلی قابل تکمیل نیست' });
-    gaps.push('اخبار، سیاست‌گذاری و تحولات ژئوپلیتیک: این ابزار به آن‌ها دسترسی ندارد؛ برای گزارش مبتنی بر جست‌وجوی روز، همین موضوع را در گفت‌وگو درخواست کنید.');
+    if (!N) gaps.push('اخبار، سیاست‌گذاری و تحولات ژئوپلیتیک: برای این موضوع جست‌وجوی وب انجام نشده است (زبانهٔ «اخبار و تحولات»).');
     B.push({ t: 'ul', x: gaps.filter(function (v, i, a) { return a.indexOf(v) === i; }) });
     // 8 sources
     B.push({ t: 'h2', x: '۸. منابع و مستندات' });
     B.push({ t: 'ul', x: ['قیمت‌ها و شاخص‌ها: ' + (X.live ? 'TSETMC (cdn.tsetmc.com) و TGJU (api.tgju.org)، آخرین داده ' + sh(f.date) : 'دادهٔ نمونهٔ ساختگی') + '.'].concat(entered.map(function (r) { return r.name + ': ' + (r.source || 'منبع نوشته نشده') + (r.period ? '، دورهٔ ' + r.period : '') + (r.date ? '، انتشار ' + r.date : '') + ' (ورودی کاربر).'; })).concat(['روش‌ها و پشتوانهٔ پژوهشی هر یک: زبانهٔ «راهنمای مدل‌ها و اعتبار علمی» در بخش تحلیل مالی اقتصاد ایران.']) });
+    if (N) { B.push({ t: 'h3', x: 'منابع تحولات تازه' }); B.push({ t: 'links', x: [].concat.apply([], N.items.map(function (ev) { return ev.urls.map(function (u) { return { text: ev.title, url: u }; }); })) }); }
     return B;
+  }
+  /* ---------- live web search (Anthropic API web search tool, the user's own key) ---------- */
+  function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+  function okSet(res) { var set = {}; (res.results || []).concat(res.cites || []).forEach(function (q) { set[String(q.url).replace(/\/+$/, '')] = q; }); return set; }
+  function searchErr(e) { return e && e.code === 'no_key' ? 'کلید API وارد نشده است. در «منابع داده و کلیدها» کلید Anthropic را وارد کنید (داخل صفحهٔ claude.ai این قابلیت کار نمی‌کند؛ فایل برنامه یا نسخهٔ گوشی را باز کنید).' : e && e.code === 'network' ? 'به سرور Anthropic نرسید. این سرویس از اینترنت داخل ایران در دسترس نیست؛ با فیلترشکن یا نشانی درگاه خودتان (Base URL) امتحان کنید. ' + (e.message || '') : 'ناموفق: ' + (e && e.message || e); }
+  function fetchNews(S, X) {
+    var T = X.T, f = X.focal, today = new Date().toISOString().slice(0, 10);
+    var prompt = 'Today is ' + today + '. You are the news and policy desk of an investment research unit. Topic: «' + (S.title || T[1]) + '»' + (f ? '; focus market: ' + f.name : '') + '. Search the web (Persian and English) for the most important developments of roughly the last 14 days that bear on this topic: economic and market news, monetary / fiscal / FX policy decisions (prefer the official text), sanctions and geopolitics, and the international drivers (Fed, dollar index, Treasury yields, oil, gold) where relevant. Prefer official bodies and major wire services; check important items against a second independent source.\n' +
+      'Then reply with JSON only: {"events":[{"title":"","facts":"only what the sources state, with their numbers and dates","event_date":"YYYY-MM-DD or empty","published":"YYYY-MM-DD or empty","urls":["exact URLs from your search results"],"kind":"official|media|unconfirmed","direct":"variables directly affected","indirect":"second-round effects","exposed":"markets and industries most exposed","priced_in":"what the sources say about prior pricing, or نامشخص","opportunity":"","threat":"","action":"one concrete action or «اقدامی لازم نیست»"}]}. Write every text field in Persian. At most 8 events, most important first. Never include an event without a URL that appeared in your search results. Never invent a number, date, quote or cause; where the sources do not say, write «نامشخص». If you find nothing relevant, return {"events":[]}.';
+    return Hub.ai.search(prompt, { maxUses: 8, modelTier: 'complex' }).then(function (res) {
+      var ok = okSet(res), j = Hub.ai.parseJSON(res.text), kept = [], dropped = 0;
+      (j.events || []).forEach(function (ev) { var urls = (ev.urls || []).map(function (u) { return String(u).replace(/\/+$/, ''); }).filter(function (u) { return ok[u]; }); if (!urls.length || !ev.title) { dropped++; return; }
+        var ds = urls.map(host).filter(function (v, i, a) { return v && a.indexOf(v) === i; }); kept.push({ title: String(ev.title), facts: String(ev.facts || ''), event_date: String(ev.event_date || ''), published: String(ev.published || ''), urls: urls.slice(0, 4), hosts: ds, kind: ev.kind === 'official' ? 'official' : ev.kind === 'unconfirmed' ? 'unconfirmed' : 'media', direct: String(ev.direct || ''), indirect: String(ev.indirect || ''), exposed: String(ev.exposed || ''), priced_in: String(ev.priced_in || 'نامشخص'), opportunity: String(ev.opportunity || ''), threat: String(ev.threat || ''), action: String(ev.action || '') }); });
+      S.news = { at: Date.now(), topic: S.topic, title: S.title || T[1], items: kept, dropped: dropped, searches: res.searches, errors: res.errors, model: res.model }; return S.news; });
+  }
+  function fetchStats(S) {
+    var today = new Date().toISOString().slice(0, 10), rows = S.macro.filter(function (r) { return r.name; });
+    var prompt = 'Today is ' + today + '. Search the web for the LATEST officially published value of each indicator below (Iran: Statistical Centre of Iran, Central Bank of Iran, official outlets quoting them; US: Federal Reserve, FRED, US Treasury). Reply with JSON only: {"stats":[{"k":"key","value":number,"period":"the statistical period, in Persian","source":"publishing body","date":"publication date","url":"exact URL from your search results","quote":"the sentence or figure as written in the source"}]}. Percentages as percent numbers (83.5, not 0.835). Skip an indicator if you cannot find a sourced value; never estimate. Indicators: ' + rows.map(function (r) { return r.k + ' = ' + r.name; }).join('; ') + '.';
+    return Hub.ai.search(prompt, { maxUses: 10, modelTier: 'complex' }).then(function (res) { var ok = okSet(res), j = Hub.ai.parseJSON(res.text), out = [];
+      (j.stats || []).forEach(function (q) { var u = String(q.url || '').replace(/\/+$/, ''), row = S.macro.filter(function (r) { return r.k === q.k; })[0]; if (!row || !ok[u] || !isFinite(Number(q.value))) return; out.push({ k: q.k, name: row.name, value: Number(q.value), period: String(q.period || ''), source: String(q.source || host(u)), date: String(q.date || ''), url: u, quote: String(q.quote || ''), ok: false }); });
+      S._stats = out; S._statsAt = Date.now(); return out; });
+  }
+  var KIND = { official: ['رسمی', 'fit-rec'], media: ['گزارش رسانه', 'sev-info'], unconfirmed: ['تأییدنشده', 'fit-no'] };
+  function newsTab(ctx) {
+    var S = ctx.S, X = ctx.R, st = h('div', { class: 'studio-status', 'aria-live': 'polite' }), N = S.news, box = h('div'), sbox = h('div');
+    var go = h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'جست‌وجوی تحولات تازه برای «' + (S.title || X.T[1]) + '»', onclick: function () { go.disabled = true; st.className = 'studio-status'; st.textContent = 'در حال جست‌وجوی وب و تحلیل رویدادها (ممکن است تا یک دقیقه طول بکشد)…'; fetchNews(S, X).then(function (n) { U.toast(fa(n.items.length, 0) + ' رویداد با منبع پیدا شد.', 'good'); ctx.rerender(); }, function (e) { go.disabled = false; st.className = 'studio-status warn-t'; st.textContent = searchErr(e); }); } });
+    var gs = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'جست‌وجوی آخرین آمار رسمی', onclick: function () { gs.disabled = true; st.className = 'studio-status'; st.textContent = 'در حال جست‌وجوی آمار رسمی…'; fetchStats(S).then(function (o) { st.textContent = fa(o.length, 0) + ' عدد با منبع پیدا شد؛ هر کدام را با باز کردن لینک تطبیق دهید و بعد تیک بزنید.'; ctx.rerender(); }, function (e) { gs.disabled = false; st.className = 'studio-status warn-t'; st.textContent = searchErr(e); }); } });
+    if (N && N.items) { box.appendChild(P_('آخرین جست‌وجو: ' + new Date(N.at).toLocaleString('fa-IR') + ' · موضوع: ' + N.title + ' · ' + fa(N.searches || 0, 0) + ' جست‌وجو' + (N.dropped ? ' · ' + fa(N.dropped, 0) + ' مورد کنار گذاشته شد چون لینکش در نتایج جست‌وجو نبود' : '') + (Date.now() - N.at > 864e5 ? ' · بیش از ۲۴ ساعت گذشته؛ دوباره جست‌وجو کنید.' : ''), 'small muted'));
+      N.items.forEach(function (ev, i) { var dt = h('details', { class: 'lv-card' }, [h('summary', { 'data-notr': '1' }, [h('strong', { text: ev.title }), document.createTextNode(' — '), h('span', { class: 'sev ' + KIND[ev.kind][1], text: KIND[ev.kind][0] }), document.createTextNode(' · ' + (ev.hosts.length >= 2 ? fa(ev.hosts.length, 0) + ' منبع مستقل' : 'یک منبع') + (ev.event_date ? ' · رویداد ' + ev.event_date : '') + (ev.published ? ' · انتشار ' + ev.published : ''))]),
+        h('ul', { class: 'studio-l' }, [['آنچه منابع می‌گویند', ev.facts], ['اثر مستقیم', ev.direct], ['اثر زنجیره‌ای', ev.indirect], ['بیشترین مواجهه', ev.exposed], ['آیا بازار از قبل لحاظ کرده', ev.priced_in], ['فرصت', ev.opportunity], ['تهدید', ev.threat], ['اقدام', ev.action]].filter(function (q) { return q[1]; }).map(function (q, k) { return h('li', { 'data-notr': '1', text: q[0] + (k ? ' (تحلیل هوش مصنوعی)' : '') + ': ' + q[1] }); })),
+        h('p', { class: 'small', 'data-notr': '1' }, [document.createTextNode('منابع: ')].concat([].concat.apply([], ev.urls.map(function (u, k) { return [k ? document.createTextNode(' · ') : null, h('a', { href: u, target: '_blank', rel: 'noopener noreferrer', dir: 'ltr', text: host(u) })].filter(Boolean); }))))]); if (i < 2) dt.setAttribute('open', ''); box.appendChild(dt); });
+      if (!N.items.length) box.appendChild(P_('رویداد مرتبطی با منبع معتبر پیدا نشد.', 'muted')); }
+    var stt = S._stats || [];
+    if (stt.length) { var tb = h('tbody', null, stt.map(function (q) { var cb = h('input', { type: 'checkbox', 'aria-label': 'تأیید ' + q.name }); cb.checked = !!q.ok; cb.addEventListener('change', function () { q.ok = cb.checked; });
+        return h('tr', null, [h('td', null, [cb]), h('td', { 'data-notr': '1', text: q.name }), h('td', { 'data-notr': '1', text: fa(q.value, 1) }), h('td', { class: 'small', 'data-notr': '1', text: q.period || '—' }), h('td', { class: 'small', 'data-notr': '1', style: 'white-space:normal', text: (q.source || '—') + (q.date ? ' · ' + q.date : '') }), h('td', { class: 'small', 'data-notr': '1', style: 'white-space:normal', text: q.quote ? '«' + q.quote + '»' : '—' }), h('td', null, [h('a', { href: q.url, target: '_blank', rel: 'noopener noreferrer', dir: 'ltr', text: host(q.url) })])]); }));
+      sbox.appendChild(h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, ['تأیید', 'شاخص', 'مقدار', 'دوره', 'منبع و تاریخ', 'عبارت منبع (به نقل هوش مصنوعی)', 'لینک'].map(function (x) { return h('th', { class: 'lbl', 'data-notr': '1', text: x }); }))]), tb])]));
+      sbox.appendChild(h('div', { class: 'row-ctl' }, [h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'ثبت موارد تأییدشده در «آمار رسمی»', onclick: function () { var n = 0; stt.forEach(function (q) { if (!q.ok) return; var r = S.macro.filter(function (m) { return m.k === q.k; })[0]; if (!r) return; r.value = q.value; r.period = q.period; r.source = q.source + ' — ' + q.url; r.date = q.date; n++; }); S._stats = stt.filter(function (q) { return !q.ok; }); U.toast(fa(n, 0) + ' عدد ثبت شد.', 'good'); ctx.rerender(); } })]));
+      sbox.appendChild(P_('هیچ عددی خودکار ثبت نمی‌شود. «عبارت منبع» را هوش مصنوعی نقل کرده و ممکن است دقیق نباشد؛ لینک را باز کنید، عدد را با متن اصلی تطبیق دهید و بعد تیک بزنید.', 'small warn-t')); }
+    return ctx.group([ctx.panel('جست‌وجوی فعال وب', [P_('با این دکمه‌ها برنامه خودش وب را جست‌وجو می‌کند: جست‌وجو روی سرور Anthropic انجام می‌شود (ابزار جست‌وجوی وب در API) و با کلید خود شما. فقط رویدادهایی نشان داده می‌شوند که لینکشان واقعاً در نتایج جست‌وجو آمده باشد؛ بقیه کنار گذاشته می‌شوند. «آنچه منابع می‌گویند» خلاصهٔ منبع است و بقیهٔ ردیف‌ها تحلیل هوش مصنوعی‌اند.'),
+      P_('نیازها: کلید API در «منابع داده و کلیدها» · هزینه با Anthropic (طبق مستندات: ۱۰ دلار برای هر ۱۰۰۰ جست‌وجو به‌علاوهٔ توکن) · سرور Anthropic از اینترنت داخل ایران در دسترس نیست، پس برای این دکمه فیلترشکن یا درگاه لازم است (و برای دریافت دادهٔ بورس، فیلترشکن باید خاموش باشد).', 'small muted'),
+      h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, [go, gs]), st]), N && N.items ? ctx.panel('تحولات تازه و تحلیل رویدادمحور', [h('div', { class: 'stack' }, [box])]) : null, stt.length ? ctx.panel('آمار رسمی پیداشده (برای تأیید شما)', [sbox]) : null]);
   }
   function words(B) { return Hub.report.text(B).split(/\s+/).filter(Boolean).length; }
   function P_(t, cls) { return h('p', { class: cls || 'f-help', 'data-notr': '1', text: t }); }
@@ -22469,7 +22541,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   function guideTab(ctx) {
     var sec = function (t, a) { return ctx.panel(t, [h('ul', { class: 'studio-l' }, a.map(function (x) { return h('li', { 'data-notr': '1', text: x }); }))]); };
-    return ctx.group([sec('این بخش چه می‌کند و چه نمی‌کند', ['می‌کند: از دادهٔ بازارهای همین برنامه و آمار رسمی واردشدهٔ شما، هر بار از نو گزارشی در هشت بخش می‌سازد که به راهکار ختم می‌شود.', 'نمی‌کند: جست‌وجوی اخبار، خواندن گزارش بانک مرکزی یا فدرال رزرو، و تحلیل علّی متغیرهای کلان. این‌ها در مرورگر و بدون منبع داده شدنی نیست. برای گزارش مبتنی بر جست‌وجوی روز و منابع رسمی، موضوع را در گفت‌وگو با Claude در همین پروژه درخواست کنید.',
+    return ctx.group([sec('این بخش چه می‌کند و چه نمی‌کند', ['می‌کند: از دادهٔ بازارهای همین برنامه و آمار رسمی واردشدهٔ شما، هر بار از نو گزارشی در هشت بخش می‌سازد که به راهکار ختم می‌شود.', 'جست‌وجوی وب: زبانهٔ «اخبار و تحولات» با کلید API خود شما وب را جست‌وجو می‌کند و رویدادها و آمار رسمی را با لینک منبع می‌آورد. بدون کلید، این بخش کار نمی‌کند.', 'نمی‌کند: تحلیل علّی متغیرهای کلان با سری زمانی. مرورگر نمی‌تواند مستقیم صفحهٔ سایت‌های دیگر را بخواند (محدودیت امنیتی cross-origin)؛ برای همین جست‌وجو روی سرور انجام می‌شود.',
         'هر جا داده نباشد، گزارش می‌نویسد «قابل تکمیل نیست» و می‌گوید چه چیزی کم است.']),
       sec('روش هر بخش', ['وضعیت موجود: خوانش کانال و RSI در سه افق، شتاب (بازده ۳ ماههٔ سالانه‌شده در برابر ۱۲ ماه)، بازده واقعی با تورمی که وارد کرده‌اید.', 'روابط: همبستگی بازده هفتگی دو سال اخیر؛ همبستگی علت را نشان نمی‌دهد.',
         'سناریوها: در تاریخچهٔ همین سری، بعد از هر باری که خوانش مدل مثل امروز بوده، بازده افق بعدی چند بار بالاتر از «میانگین + نیم انحراف معیار»، چند بار پایین‌تر از «میانگین − نیم انحراف معیار» و چند بار بین این دو بوده است. این فراوانی‌ها «احتمال» گزارش می‌شوند، با تعداد نمونه.',
@@ -22485,7 +22557,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     kpis: function (ctx) { var X = ctx.R, f = X.focal; return [['Focus market', function () { return f ? fa(f.last) : '—'; }, function () { return f ? f.name + ' · ' + sh(f.date) : 'داده نیست'; }], ['Model lean', function () { return f && f.plan && f.plan.lean ? IM.LEAN[f.plan.lean][0] : '—'; }, function () { return f && f.h.m.ok ? IM.READ[f.h.m.read][0] : ''; }],
       ['Most frequent scenario', function () { var sc = X.sc; if (!sc || !sc.ok) return '—'; var k = ['up', 'mid', 'dn'].sort(function (a, b) { return sc.p[b] - sc.p[a]; })[0]; return SN[k] + ' ' + fa(sc.p[k] * 100, 0) + '٪'; }, function () { return X.sc && X.sc.ok ? fa(X.sc.n, 0) + ' مورد تاریخی' : 'قابل برآورد نیست'; }],
       ['Logged forecasts', function () { return fa(ctx.S.log.length, 0); }, function () { return fa(ctx.S.log.filter(function (x) { return x.graded; }).length, 0) + ' سنجیده‌شده'; }]]; },
-    tabs: [{ group: 'Outputs', items: [['report', 'گزارش به‌روز', reportTab], ['learn', 'سنجش پیش‌بینی‌ها', learnTab], ['guide', 'روش و محدودیت‌ها', guideTab]] }, { group: 'Inputs', items: [['macro', 'آمار رسمی', macroTab]] }]
+    tabs: [{ group: 'Outputs', items: [['report', 'گزارش به‌روز', reportTab], ['news', 'اخبار و تحولات (جست‌وجوی وب)', newsTab], ['learn', 'سنجش پیش‌بینی‌ها', learnTab], ['guide', 'روش و محدودیت‌ها', guideTab]] }, { group: 'Inputs', items: [['macro', 'آمار رسمی', macroTab]] }]
   });
 })(window);
 
@@ -23021,11 +23093,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111818) */
+/* PWA: offline cache + app updates (version 202611111837) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111818';
+  window.HUB_APP_VERSION = '202611111837';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
