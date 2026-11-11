@@ -1,0 +1,100 @@
+{
+ "discover": {
+  "https://rahavard365.com/asset/1": [
+   "/api/:path*",
+   "/api/v2/darino",
+   "/api/v2/darino/",
+   "/api/v2/darino/:path*",
+   "https://fonts.googleapis.com/css"
+  ],
+  "https://www.sahamyab.com/": [
+   "/api/login",
+   "/api/logout",
+   "/api/proxy",
+   "/api/v1",
+   "/api/v2",
+   "https://api.sahamyab.com",
+   "https://iid.googleapis.com"
+  ],
+  "https://www.tablokhani.com/": [],
+  "https://www.bourseeye.com/": [
+   "/api/auth/logout",
+   "/api/marketing/posts/${e.kind}/images/${t}/${a}?${i.toString()}",
+   "/api/proxy",
+   "https://api.bourseeye.com",
+   "https://api.bourseeye.com/ads/home_hero/4/click",
+   "https://api.bourseeye.com/ads/media/41afdeeb1adc8d1e96d208c227242323.webp"
+  ],
+  "https://www.nabzebourse.com/": [
+   "https://www.youtube.com/iframe_api"
+  ],
+  "https://ra100.ir/": [
+   "/api/funds/compare?date=${encodeURIComponent(e)}&view=compact",
+   "/api/funds/list?date=${encodeURIComponent(e)}",
+   "/api/tsetmc",
+   "/api/tsetmc-quality-cache",
+   "/api/tsetmc-quality-cache?insCode=${encodeURIComponent(e)}"
+  ]
+ },
+ "tries": [
+  {
+   "status": 200,
+   "acao": null,
+   "ctype": "application/json",
+   "size": 390502,
+   "body": "{\"data\":[{\"type_id\":\"1\",\"type\":\"سهام\",\"entity_id\":\"453\",\"entity_type\":\"exchange.asset\",\"trade_symbol\":\"فولاد\",\"name\":\"فولاد مبارکه اصفهان\",\"short_name\":\"فولاد مبارکه اصفهان\",\"exchange\":\"بورس تهران\",\"unlisted_item\":false},{\"type_id\":\"7\",\"type\":\"حق تقدم\",\"entity_id\":\"1045\",\"entity_type\":\"exchange.asset\",\"trade_symbol\":\"فولادح\",\"name\":\"فولاد مبارکه اصفهان (حق تقدم)\",\"short_name\":\"فولاد مبارکه اصفهان ",
+   "secs": 1.7,
+   "url": "https://rahavard365.com/api/v2/search?keyword=%D9%81%D9%88%D9%84%D8%A7%D8%AF"
+  },
+  {
+   "status": 422,
+   "acao": null,
+   "body": "{\"errors\":[{\"code\":\"field_validation\",\"message\":\"Key: 'History.from' Error:Field validation for 'from' failed on the 'required' tag\",\"parameters\":[\"\"],\"fields\":[\"from\"]},{\"code\":\"field_validation\",\"message\":\"Key: 'History.to' Error:Field validation for 'to' failed on the 'required' tag\",\"parameters\":[\"\"],\"fields\":[\"to\"]}]}\n",
+   "secs": 0.7,
+   "url": "https://rahavard365.com/api/v2/chart/bars?countback=10&symbol=exchange.asset:1:real_close&resolution=D"
+  },
+  {
+   "status": 200,
+   "acao": "*",
+   "ctype": "application/json",
+   "size": 808,
+   "body": "{\"result\":[{\"status\":\"A\",\"qStatus\":\"B\",\"index_affect\":9352.58,\"index_affect_rank\":2,\"alerts\":null,\"PE\":7.1428571429,\"sectorPE\":11.75,\"profit7Days\":17.58,\"profit30Days\":18.42,\"profit91Days\":112.17,\"profit182Days\":94.19,\"profit365Days\":113.73,\"profitAllDays\":164900,\"monthProfitRank\":239,\"monthProfitRankGroup\":18,\"marketValueRank\":5,\"marketValueRankGroup\":2,\"tradeVolumeRank\":9,\"tradeVolumeRankGroup\":",
+   "secs": 1.1,
+   "url": "https://www.sahamyab.com/api/proxy/symbol/getSymbolExtData?v=0.1&code=%D9%81%D9%88%D9%84%D8%A7%D8%AF&stockWatch=1"
+  },
+  {
+   "status": 200,
+   "acao": "*",
+   "ctype": "application/json",
+   "size": 345,
+   "body": "{\"result\":[{\"id\":\"IRO1FOLD0001\",\"insCode\":\"46348559193224090\",\"name\":\"فولاد\",\"nameNormalized\":\"فولاد\",\"corpName\":\"فولاد مبارکه اصفهان\",\"market\":\"1\",\"sectionName\":\"فلزات اساسی\",\"subSectionName\":\"تولید آهن و فولاد پایه\",\"status\":\"A\",\"board\":\"1\",\"marketCode\":\"NO\",\"indx\":null}],\"success\":true}",
+   "secs": 1.0,
+   "url": "https://www.sahamyab.com/api/proxy/symbol/getSymbolExtData?code=%D9%81%D9%88%D9%84%D8%A7%D8%AF"
+  },
+  {
+   "status": 200,
+   "acao": "*",
+   "ctype": "application/json",
+   "size": 16,
+   "body": "{\"success\":true}",
+   "secs": 1.0,
+   "url": "https://www.sahamyab.com/api/proxy/symbol/getChartdata?v=0.1&code=%D9%81%D9%88%D9%84%D8%A7%D8%AF"
+  },
+  {
+   "status": 200,
+   "acao": "*",
+   "ctype": "application/json",
+   "size": 16,
+   "body": "{\"success\":true}",
+   "secs": 1.0,
+   "url": "https://www.sahamyab.com/api/proxy/symbol/getChartData?code=%D9%81%D9%88%D9%84%D8%A7%D8%AF&type=day"
+  },
+  {
+   "status": 500,
+   "acao": "https://www.sahamyab.com",
+   "body": "{\"errorCode\":\"1002\",\"errorTitle\":\"خطای ناشناخته\",\"success\":false}",
+   "secs": 1.0,
+   "url": "https://www.sahamyab.com/guest/api/symbol/history?symbol=%D9%81%D9%88%D9%84%D8%A7%D8%AF"
+  }
+ ]
+}
