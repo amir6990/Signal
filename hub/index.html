@@ -4018,6 +4018,13 @@ else if (typeof exports === 'object')
 "Next key date": "تاریخ کلیدی بعدی",
 "Above FLD": "قیمت بالاتر است",
 "Below FLD": "قیمت پایین‌تر است",
+"Economic & financial intelligence: solution reports": "هوش اقتصادی و مالی: گزارش راهکارمحور",
+"On-demand analytical reports on Iran's markets and economy in eight parts, ending in prioritised solutions: current state, drivers, three scenarios with historical frequencies, actions with success and stop conditions, a beyond-consensus view when evidence supports it, and a log that grades earlier forecasts.": "گزارش تحلیلی در هر زمان دربارهٔ بازارها و اقتصاد ایران در هشت بخش که به راهکار اولویت‌بندی‌شده ختم می‌شود: وضعیت موجود، عوامل محرک، سه سناریو با فراوانی تاریخی، اقدام با شاخص موفقیت و شرط توقف، دیدگاه فراتر از اجماع در صورت وجود شواهد، و سنجش پیش‌بینی‌های قبلی.",
+"Iran economy · Intelligence": "اقتصاد ایران · هوش اقتصادی",
+"Focus market": "بازار محور",
+"Model lean": "تمایل مدل",
+"Most frequent scenario": "پرتکرارترین سناریو",
+"Logged forecasts": "پیش‌بینی‌های ثبت‌شده",
 };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -9428,7 +9435,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var PLACE = { 'strategy-engine': 'strategy', company: 'statements', auditor: 'statements', valsummary: 'valuation', dcf: 'valuation', comps: 'valuation', precedents: 'valuation', wacc: 'valuation', 'rm-valuation': 'valuation',
     financing: 'financing', fundraise: 'financing', 'rm-capital': 'financing', 'rm-finmgmt': 'financing', 'debt-capacity': 'bonds', 'bond-issue': 'bonds', bond: 'bonds', 'bond-suite': 'bonds',
     ipo: 'ipo', 'ipo-suite': 'ipo', 'rm-governance': 'ipo', 'ma-suite': 'ib', accretion: 'ib', 'acq-pricing': 'ib', 'target-screen': 'ib', 'buyer-universe': 'ib', 'bid-compare': 'ib',
-    lbo: 'pe', 'pe-suite': 'pe', 'trading-engine': 'trading', 'long-view': 'iran' };
+    lbo: 'pe', 'pe-suite': 'pe', 'trading-engine': 'trading', 'long-view': 'iran', 'efi': 'iran' };
   var OLD = { audit: 'statements', finmgmt: 'financing', finance: 'financing', buyside: 'ib', sellside: 'ib', signals: 'trading' };
   // tools shown inside another page (the strategy engine or a suite): reachable, but not listed twice
   var STRAT_IN = { 'strategy-studio': 'studio', 'rm-strategy': 'rm', 'five-forces': 'ff', kernel: 'kn', 'blue-ocean': 'bo', 'playing-to-win': 'pw' };
@@ -22272,6 +22279,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ctx.panel('سری‌ها', [P('کلیدهای TGJU همان نشانی صفحهٔ هر شاخص در tgju.org است (مثلاً price_dollar_rl). کلیدهای بیت‌کوین (crypto-bitcoin) و نفت برنت (oil_brent) را نتوانستم از این‌جا بیازمایم؛ اگر دریافت نشدند، کلید درست را از نشانی صفحهٔ همان شاخص بردارید و این‌جا اصلاح کنید. «ارزی» یعنی قیمت به دلار است و با تورم ریالی مقایسه نمی‌شود.'), lst]),
       ctx.panel('پنجره‌ها و تنظیمات', [o]), ctx.panel('تورم (ورودی شما)', [P('این اعداد خودکار دریافت نمی‌شوند. از گزارش ماهانهٔ مرکز آمار ایران وارد کنید.'), m])]);
   }
+  Hub.iranMarkets = { KEY: KEY, run: run, series: series, ensure: ensure, sample: sample, READ: READ, LEAN: LEAN, HZ: HZ, ZONE: ZONE, family: family, calDate: calDate, RANK: RANK };
   SG.feeds.push({ id: 'long-view', title: 'Iran markets: three-horizon history', storeKey: KEY, sample: sample, fetch: fetchAll, size: function (S) { return S.assets.filter(function (a) { return a.active !== false; }).length + ' سری'; }, src: 'TSETMC + TGJU' });
   TK.define({
     id: 'long-view', title: 'Iran economy: financial market analysis', sections: ['iran'], priority: 1, version: 1, storeKey: KEY,
@@ -22300,6 +22308,184 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['Next key date', function () { var c = ctx.R.cal.filter(function (x) { return x.rank >= 1; })[0]; return c ? J.jstr(c.from) : '—'; }, function () { var c = ctx.R.cal.filter(function (x) { return x.rank >= 1; })[0]; return c ? fa(Math.max(0, c.in), 0) + ' روز دیگر · اهمیت ' + RANK[c.rank][0] : 'تحلیل زمانی'; }]]; },
     tabs: [{ group: 'Outputs', items: [['outlook', 'نمای کلی و یادداشت بازار', overviewTab], ['hz', 'کوتاه‌مدت، میان‌مدت، بلندمدت', horizonTab], ['chart', 'نمودار کانال و RSI', chartTab], ['time', 'تحلیل زمانی و تاریخ‌های کلیدی', timeTab], ['report', 'گزارش و راه‌حل', reportTab], ['guide', 'راهنمای مدل‌ها و اعتبار علمی', guideTab]] },
       { group: 'Inputs', items: [['data', 'داده و تنظیمات', dataTab], ['t-sig-temporal', 'تحلیل زمانی تفصیلی (یک سری)', TK.embedTab('sig-temporal', 'همان ابزار مستقل تحلیل زمانی برای یک سری دلخواه، با نقاط محوری و تنظیمات دستی.')]] }]
+  });
+})(window);
+
+/* js/models/efi.js */
+/* =====================================================================
+ * ECONOMIC & FINANCIAL INTELLIGENCE — on-demand, solution-oriented reports.
+ * Every press of "build" starts from the data as it is now (the Iran markets series of this hub plus the
+ * official statistics the user entered with their source and date) and writes the report in the fixed
+ * eight-part order: title · executive summary · current state · drivers · scenarios · solutions ·
+ * conclusion and indicators to watch · sources. Earlier reports are kept only to compare and to grade forecasts.
+ * Rules: nothing is stated that is not in the data; a part that cannot be completed says what is missing;
+ * correlation is reported as correlation; scenario probabilities are historical frequencies with their sample size,
+ * or "not estimable"; a different-from-consensus view appears only when a measured anomaly supports it;
+ * "do nothing" is stated when no rule calls for action.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub; if (!root.document || !Hub.toolkit || !Hub.longView || !Hub.iranMarkets || !Hub.report) return;
+  var U = Hub.util, h = U.h, G = Hub.grid, TK = Hub.toolkit, LV = Hub.longView, IM = Hub.iranMarkets, J = Hub.jalali, KEY = 'hub.efi.v1';
+  function fa(x, d) { if (typeof x !== 'number' || !isFinite(x)) return '—'; var s = Math.abs(x) >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d == null ? (Math.abs(x) >= 100 ? 0 : 2) : d); return s.replace(/,/g, '٬').replace(/\./g, '٫').replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }); }
+  function pct(x, d) { return typeof x === 'number' && isFinite(x) ? (x > 0 ? '+' : '') + fa(x * 100, d == null ? 0 : d) + '٪' : '—'; }
+  function sh(g) { var s = String(g || ''); return s.length === 8 ? J.jstr(J.g2d(+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8))) : s; }
+  function num(v) { return v === null || v === undefined || v === '' ? NaN : Number(v); }
+  var TOPICS = [['equity', 'بازار سهام ایران', 'شاخص کل بورس'], ['fx', 'بازار ارز و شکاف نرخ‌ها', 'دلار آزاد تهران'], ['gold', 'طلا و سکه', 'سکه امامی'], ['infl', 'تورم، نقدینگی و قدرت خرید', 'دلار آزاد تهران'], ['rates', 'نرخ بهره و بازار پول', 'شاخص کل بورس'], ['global', 'بازارهای جهانی (طلا، نفت، بیت‌کوین)', 'انس جهانی طلا'], ['custom', 'موضوع دلخواه', '']];
+  var MACRO = [['infl_pp', 'تورم نقطه‌به‌نقطه', '٪'], ['infl_12', 'تورم سالانه (میانگین ۱۲ ماه)', '٪'], ['infl_m', 'تورم ماهانه', '٪'], ['m2', 'رشد نقدینگی (نقطه‌به‌نقطه)', '٪'], ['mb', 'رشد پایهٔ پولی (نقطه‌به‌نقطه)', '٪'], ['ibr', 'نرخ سود بازار بین‌بانکی', '٪'], ['bond', 'بازده اوراق خزانه (اخزا)', '٪'], ['fx_off', 'نرخ ارز رسمی / مرکز مبادله (ریال)', 'ریال'], ['deficit', 'کسری بودجه (دوره)', ''], ['gdp', 'رشد اقتصادی', '٪'], ['fed', 'نرخ بهرهٔ فدرال رزرو (سقف بازه)', '٪'], ['us10', 'بازده اوراق ۱۰سالهٔ آمریکا', '٪'], ['dxy', 'شاخص دلار (DXY)', '']];
+  var PAIRS = [['تتر (USDT)', 'دلار آزاد تهران', 'نسبت تتر به دلار آزاد'], ['سکه امامی', 'طلای ۱۸ عیار', 'نسبت سکه به طلای ۱۸ عیار'], ['شاخص کل بورس', 'دلار آزاد تهران', 'شاخص کل به دلار'], ['شاخص هم‌وزن بورس', 'شاخص کل بورس', 'نسبت شاخص هم‌وزن به شاخص کل'], ['طلای ۱۸ عیار', 'دلار آزاد تهران', 'نسبت طلای ۱۸ عیار به دلار']];
+  function sample() { return { version: 1, tool: 'efi', meta: { title: 'EFI', asOf: '', source: '' }, settings: { lang: 'auto' }, sources: {}, topic: 'equity', title: '', focal: '', h: 13, macro: MACRO.map(function (m) { return { k: m[0], name: m[1], unit: m[2], value: null, period: '', source: '', date: '' }; }), view: '', log: [], ai: '' }; }
+  function ensure(S) { if (!Array.isArray(S.macro)) S.macro = sample().macro; MACRO.forEach(function (m) { if (!S.macro.some(function (r) { return r.k === m[0]; })) S.macro.push({ k: m[0], name: m[1], unit: m[2], value: null, period: '', source: '', date: '' }); }); if (!Array.isArray(S.log)) S.log = []; if (!(S.h > 0)) S.h = 13; if (!S.topic) S.topic = 'equity'; return S; }
+  function wk(d) { return Math.floor((LV.jdnOf(d) + 2) / 7); }
+  function rets(W, n) { var o = {}; for (var i = Math.max(1, W.length - n); i < W.length; i++) if (W[i - 1].close > 0 && W[i].close > 0) o[wk(W[i].date)] = Math.log(W[i].close / W[i - 1].close); return o; }
+  function corr(a, b) { var ks = Object.keys(a).filter(function (k) { return b[k] != null; }), n = ks.length; if (n < 30) return { n: n, r: NaN }; var ma = 0, mb = 0; ks.forEach(function (k) { ma += a[k] / n; mb += b[k] / n; }); var sab = 0, sa = 0, sb = 0; ks.forEach(function (k) { sab += (a[k] - ma) * (b[k] - mb); sa += (a[k] - ma) * (a[k] - ma); sb += (b[k] - mb) * (b[k] - mb); }); return { n: n, r: sa > 0 && sb > 0 ? sab / Math.sqrt(sa * sb) : NaN }; }
+  function ratioZ(A, B) { var mb = {}; B.forEach(function (r) { mb[wk(r.date)] = r.close; }); var v = []; A.slice(-60).forEach(function (r) { var b = mb[wk(r.date)]; if (b > 0 && r.close > 0) v.push(r.close / b); }); if (v.length < 30) return null; var x = v.slice(-52), m = x.reduce(function (s, q) { return s + q; }, 0) / x.length, sd = Math.sqrt(x.reduce(function (s, q) { return s + (q - m) * (q - m); }, 0) / x.length); return { n: x.length, last: x[x.length - 1], mean: m, z: sd > 0 ? (x[x.length - 1] - m) / sd : NaN, dev: x[x.length - 1] / m - 1 }; }
+  // historical frequency of what followed the same reading: forward h-week log return above +0.5 sd / below −0.5 sd / between
+  function scen(W, win, hN) {
+    var n = W.length, all = [], by = {}; if (n < win + hN + 30) return { ok: false, why: 'تاریخچهٔ هفتگی برای برآورد کافی نیست (' + fa(n, 0) + ' هفته)' };
+    for (var t = win; t + hN < n; t++) { var A = LV.analyse(W.slice(Math.max(0, t - win - 20), t + 1), { bars: 'd', win: win, f: [1, hN] }); if (!A.ok) continue; var r = Math.log(W[t + hN].close / W[t].close); all.push(r); (by[A.read] = by[A.read] || []).push(r); }
+    if (all.length < 30) return { ok: false, why: 'نمونهٔ کافی نیست' };
+    var m = all.reduce(function (s, q) { return s + q; }, 0) / all.length, sd = Math.sqrt(all.reduce(function (s, q) { return s + (q - m) * (q - m); }, 0) / all.length);
+    var cur = LV.analyse(W, { bars: 'd', win: win, f: [1, hN] }), set = cur.ok && by[cur.read] && by[cur.read].length >= 20 ? by[cur.read] : all, cond = set !== all, med = function (a) { if (!a.length) return NaN; var b = a.slice().sort(function (p, q) { return p - q; }); return b[Math.floor(b.length / 2)]; };
+    var up = set.filter(function (q) { return q > m + 0.5 * sd; }), dn = set.filter(function (q) { return q < m - 0.5 * sd; }), mid = set.filter(function (q) { return q <= m + 0.5 * sd && q >= m - 0.5 * sd; });
+    return { ok: true, n: set.length, cond: cond, read: cur.ok ? cur.read : null, hiT: Math.exp(m + 0.5 * sd) - 1, loT: Math.exp(m - 0.5 * sd) - 1, p: { up: up.length / set.length, mid: mid.length / set.length, dn: dn.length / set.length }, r: { up: Math.exp(med(up)) - 1, mid: Math.exp(med(mid)) - 1, dn: Math.exp(med(dn)) - 1 }, overlap: true };
+  }
+  function run(S) {
+    ensure(S); var MS = Hub.util.store.get(IM.KEY, null), live = MS && MS.meta && !/synthetic|Illustrative/i.test(MS.meta.source || ''), M = MS ? JSON.parse(JSON.stringify(MS)) : IM.sample(), R = IM.run(M);
+    var T = TOPICS.filter(function (t) { return t[0] === S.topic; })[0] || TOPICS[0], rows = R.rows.filter(function (a) { return a.ok; }), focal = rows.filter(function (a) { return a.name === (S.focal || T[2]); })[0] || rows[0];
+    var out = { M: M, R: R, T: T, rows: rows, focal: focal, live: !!live, asOf: MS && MS.meta && MS.meta.asOf, at: Date.now() };
+    if (!focal) return Object.assign(out, { checks: [{ level: 'warning', msg: 'دادهٔ بازارها موجود نیست؛ در «تحلیل مالی اقتصاد ایران» دریافت کنید.' }] });
+    var W = IM.series(M, focal.name).w, fr = rets(W, 104); out.corr = rows.filter(function (a) { return a.name !== focal.name; }).map(function (a) { var c = corr(fr, rets(IM.series(M, a.name).w, 104)); return { name: a.name, r: c.r, n: c.n }; }).filter(function (c) { return isFinite(c.r); }).sort(function (a, b) { return Math.abs(b.r) - Math.abs(a.r); });
+    out.sc = scen(W, Number(M.opt && M.opt.mWin) || 78, Math.round(S.h));
+    out.pairs = PAIRS.map(function (p) { var A = IM.series(M, p[0]).w, B = IM.series(M, p[1]).w; if (!A.length || !B.length) return null; var z = ratioZ(A, B); return z ? { name: p[2], a: p[0], b: p[1], z: z } : null; }).filter(Boolean);
+    var mv = {}; S.macro.forEach(function (r) { mv[r.k] = r; }); out.mv = mv; var dol = rows.filter(function (a) { return a.name === 'دلار آزاد تهران'; })[0];
+    out.gap = dol && isFinite(num(mv.fx_off.value)) && num(mv.fx_off.value) > 0 ? dol.last / num(mv.fx_off.value) - 1 : NaN;
+    out.realRate = isFinite(num(mv.ibr.value)) && isFinite(num(mv.infl_pp.value)) ? (1 + num(mv.ibr.value) / 100) / (1 + num(mv.infl_pp.value) / 100) - 1 : NaN;
+    // grade earlier forecasts whose horizon has passed
+    S.log.forEach(function (L) { if (L.graded) return; var A0 = IM.series(M, L.focal).w; if (!A0.length) return; var tg = LV.jdnOf(L.date) + L.h * 7, k = 0; while (k < A0.length && LV.jdnOf(A0[k].date) < tg) k++; if (k >= A0.length) return; var act = A0[k].close, r = act / L.last - 1; L.graded = { actual: act, date: A0[k].date, ret: r, bucket: r > L.hiT ? 'up' : r < L.loT ? 'dn' : 'mid', err: L.base ? act / L.base - 1 : NaN }; });
+    out.checks = live ? [] : [{ level: 'warning', msg: 'دادهٔ بازارها نمونه (ساختگی) است؛ گزارش واقعی نیست.' }];
+    return out;
+  }
+  var SN = { up: 'خوش‌بینانه', mid: 'پایه', dn: 'بدبینانه' };
+  function build(S, X) {
+    var B = [], T = X.T, f = X.focal, mv = X.mv || {}, gaps = [], now = new Date(), title = S.title || (T[0] === 'custom' ? 'گزارش تحلیلی' : 'گزارش ' + T[1]);
+    B.push({ t: 'h1', x: title + (f ? ' — محور: ' + f.name : '') });
+    B.push({ t: 'meta', x: 'زمان تهیه: ' + now.toLocaleDateString('fa-IR') + ' ساعت ' + now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) + ' · آخرین دادهٔ بازار: ' + (f ? sh(f.date) : '—') + ' (' + (X.live ? 'TSETMC و TGJU' : 'دادهٔ نمونه') + ') · آمار رسمی: واردشدهٔ کاربر با منبع و تاریخ هر ردیف' });
+    if (!X.live) B.push({ t: 'warn', x: 'دادهٔ بازارها نمونه (ساختگی) است. این متن فقط قالب گزارش را نشان می‌دهد و اعدادش واقعی نیست.' });
+    if (!f) { B.push({ t: 'gap', x: 'این گزارش به دلیل کمبود اطلاعات قابل تکمیل نیست: هیچ سری بازاری در دسترس نیست. در بخش «تحلیل مالی اقتصاد ایران» داده را دریافت کنید.' }); return B; }
+    var m = f.h.m, s0 = f.h.s, l = f.h.l, P = f.plan || {}, sc = X.sc, others = X.rows.filter(function (a) { return a.name !== f.name; }), entered = S.macro.filter(function (r) { return isFinite(num(r.value)); }), miss = S.macro.filter(function (r) { return !isFinite(num(r.value)); });
+    var act = X.rows.filter(function (a) { return a.plan && a.plan.up && a.plan.lean !== 'flat'; }), anom = (X.pairs || []).filter(function (p) { return Math.abs(p.z.z) >= 2; });
+    var prev = S.log.filter(function (L) { return L.topic === S.topic && L.focal === f.name; }).slice(-1)[0];
+    // 2 executive summary
+    B.push({ t: 'h2', x: '۲. خلاصهٔ مدیریتی' });
+    B.push({ t: 'lead', x: f.name + ' در ' + fa(f.last) + ' است؛ بازده ۱ ماه ' + pct(f.ret.m1) + '، ۳ ماه ' + pct(f.ret.m3) + ' و ۱ سال ' + pct(f.ret.y1) + '. خوانش مدل در افق میان‌مدت: ' + (m.ok ? IM.READ[m.read][0] + ' (جایگاه ' + fa(m.pos * 100, 0) + '٪ کانال)' : 'قابل محاسبه نیست') + '. ' +
+      (P.lean ? 'تمایل مدل: ' + IM.LEAN[P.lean][0] + '. ' : '') + (P.lean === 'flat' || !P.lean ? 'پیشنهاد اصلی: اقدام تازه‌ای لازم نیست؛ حفظ وضعیت و پایش دو سطح تأیید منطقی‌تر است.' : 'پیشنهاد اصلی: ' + (P.act || '').replace(/^اقدام پیشنهادی مدل \([^)]*\): /, '')) });
+    // 3 current state
+    B.push({ t: 'h2', x: '۳. وضعیت موجود و تحلیل داده‌ها' });
+    B.push({ t: 'table', head: ['افق', 'خوانش', 'جایگاه در کانال', 'RSI', 'واگرایی', 'شیب سالانهٔ کانال', 'اعتبار کانال'], rows: IM.HZ.map(function (H) { var x = f.h[H.id]; return x.ok ? [H.name, IM.READ[x.read][0], fa(x.pos * 100, 0) + '٪', fa(x.rsi, 0), x.dv.bear ? 'منفی' : x.dv.bull ? 'مثبت' : '—', pct(x.ch.growth), x.quality] : [H.name, 'قابل محاسبه نیست', '—', '—', '—', '—', '—']; }) });
+    var acc = isFinite(f.ret.m3) && isFinite(f.ret.y1) ? Math.pow(1 + f.ret.m3, 4) - 1 : NaN;
+    B.push({ t: 'ul', x: [isFinite(acc) ? 'شتاب: بازده ۳ ماه اخیر اگر سالانه شود ' + pct(acc) + ' است، در برابر ' + pct(f.ret.y1) + ' در ۱۲ ماه؛ یعنی حرکت ' + (acc > f.ret.y1 * 1.2 ? 'تندتر از' : acc < f.ret.y1 * 0.8 ? 'کندتر از' : 'هم‌سرعت با') + ' میانگین سال گذشته است.' : 'شتاب: بازده ۳ ماه یا ۱ سال در دسترس نیست.',
+      'بازده یک‌ساله در کنار سایر بازارها: ' + X.rows.filter(function (a) { return isFinite(a.ret.y1); }).sort(function (a, b) { return b.ret.y1 - a.ret.y1; }).map(function (a) { return a.name + ' ' + pct(a.ret.y1); }).join('؛ ') + '.',
+      isFinite(num(mv.infl_pp && mv.infl_pp.value)) && !f.usd && isFinite(f.ret.y1) ? 'بازده واقعی یک‌ساله (پس از تورم نقطه‌به‌نقطهٔ ' + fa(num(mv.infl_pp.value), 1) + '٪): ' + pct((1 + f.ret.y1) / (1 + num(mv.infl_pp.value) / 100) - 1) + '.' : 'بازده واقعی: ' + (f.usd ? 'این سری ارزی است و با تورم ریالی مقایسه نمی‌شود.' : 'قابل محاسبه نیست؛ تورم نقطه‌به‌نقطه وارد نشده است.')] });
+    B.push({ t: 'h3', x: 'آمار رسمی واردشده' });
+    if (entered.length) B.push({ t: 'table', head: ['شاخص', 'مقدار', 'دوره', 'منبع', 'تاریخ انتشار'], rows: entered.map(function (r) { return [r.name, fa(num(r.value), 1) + (r.unit === '٪' ? '٪' : ''), r.period || 'نوشته نشده', r.source || 'نوشته نشده', r.date || 'نوشته نشده']; }) });
+    else B.push({ t: 'gap', x: 'این بخش به دلیل کمبود اطلاعات قابل تکمیل نیست: هیچ آمار رسمی (تورم، نقدینگی، نرخ بهره، بودجه) وارد نشده است.' });
+    entered.filter(function (r) { return !r.source || !r.date; }).forEach(function (r) { gaps.push('منبع یا تاریخ انتشار «' + r.name + '» نوشته نشده است.'); });
+    if (miss.length) gaps.push('آمار رسمی واردنشده: ' + miss.map(function (r) { return r.name; }).join('، ') + '.');
+    var der = []; if (isFinite(X.gap)) der.push('شکاف نرخ ارز آزاد و رسمی: ' + pct(X.gap) + '.'); if (isFinite(X.realRate)) der.push('نرخ سود واقعی بین‌بانکی (پس از تورم نقطه‌به‌نقطه): ' + pct(X.realRate, 1) + '.'); if (der.length) B.push({ t: 'ul', x: der });
+    // 4 drivers
+    B.push({ t: 'h2', x: '۴. عوامل محرک و روابط بین متغیرها' });
+    if (X.corr && X.corr.length) { B.push({ t: 'table', head: ['بازار', 'همبستگی بازده هفتگی با ' + f.name, 'تعداد هفته'], rows: X.corr.slice(0, 8).map(function (c) { return [c.name, fa(c.r, 2), fa(c.n, 0)]; }) });
+      B.push({ t: 'small', x: 'همبستگی دو سال اخیر است و رابطهٔ علت و معلولی را نشان نمی‌دهد. تعیین علت نیازمند آمار رسمی سری‌زمانی (نقدینگی، نرخ بهره، بودجه) است که در این ابزار به‌صورت سری وارد نشده است.' }); }
+    else B.push({ t: 'gap', x: 'این بخش به دلیل کمبود اطلاعات قابل تکمیل نیست: تاریخچهٔ مشترک کافی (دست‌کم ۳۰ هفته) بین ' + f.name + ' و سایر بازارها وجود ندارد.' });
+    gaps.push('تحلیل علّی عوامل محرک: سری زمانی متغیرهای کلان در دسترس ابزار نیست؛ فقط همبستگی بازارها گزارش شده است.');
+    // 5 scenarios
+    B.push({ t: 'h2', x: '۵. چشم‌انداز و سناریوهای ' + fa(S.h, 0) + ' هفتهٔ آینده' });
+    if (sc && sc.ok) { B.push({ t: 'table', head: ['سناریو', 'تعریف', 'فراوانی تاریخی', 'بازده میانهٔ آن حالت', 'سطح متناظر', 'اقدام'], rows: ['up', 'mid', 'dn'].map(function (k) { return [SN[k], k === 'up' ? 'بازده بالاتر از ' + pct(sc.hiT) : k === 'dn' ? 'بازده پایین‌تر از ' + pct(sc.loT) : 'بین این دو', fa(sc.p[k] * 100, 0) + '٪', pct(sc.r[k]), isFinite(sc.r[k]) ? fa(f.last * (1 + sc.r[k])) : '—', k === 'up' ? (P.up || '—') : k === 'dn' ? (P.dn || '—') : (P.flat || '—')]; }) });
+      B.push({ t: 'small', x: 'فراوانی‌ها از تاریخچهٔ خود این سری است: ' + fa(sc.n, 0) + ' مورد گذشته' + (sc.cond ? ' که خوانش مدل همین «' + IM.READ[sc.read][0] + '» بود' : ' (همهٔ حالت‌ها؛ برای خوانش فعلی نمونهٔ جدا کافی نبود)') + '. دوره‌ها هم‌پوشان‌اند، پس نمونهٔ مستقل کمتر از این عدد است. فراوانی گذشته پیش‌بینی قطعی آینده نیست.' });
+      B.push({ t: 'ul', x: ['آنچه سناریوی پایه را عوض می‌کند: بسته‌شدن بالای ' + fa(P.lv && P.lv.hi10) + ' یا زیر ' + fa(P.lv && P.lv.lo10) + ' (بالاترین و پایین‌ترین بسته‌شدن ۱۰ روز اخیر)' + (m.ok ? '؛ رسیدن به سقف کانال میان‌مدت ' + fa(m.up) + ' یا کف آن ' + fa(m.lo) : '') + '.'] }); }
+    else { B.push({ t: 'gap', x: 'احتمال سناریوها قابل برآورد نیست: ' + (sc ? sc.why : 'داده نیست') + '.' }); gaps.push('احتمال سناریوها: ' + (sc ? sc.why : 'داده نیست') + '.'); }
+    // 6 solutions
+    B.push({ t: 'h2', x: '۶. راهکارهای عملیاتی' });
+    var sol = function (a, i) { var p2 = a.plan, mm = a.h.m; B.push({ t: 'h4', x: fa(i + 1, 0) + '. ' + a.name + ' — ' + IM.LEAN[p2.lean][0] });
+      B.push({ t: 'ul', x: ['اقدام: ' + (p2.act || '').replace(/^اقدام پیشنهادی مدل \([^)]*\): /, ''), 'منطق: ' + (p2.why.join('؛ ') || '—') + '.', 'پیش‌شرط: ' + (p2.lean === 'up' ? 'بسته‌شدن روزانه بالای ' + fa(p2.lv.hi10) : 'پیش‌شرطی ندارد؛ از همین حالا قابل اجراست') + '.', 'افق: میان‌مدت (تا حدود ' + fa(S.h, 0) + ' هفته).',
+        'ریسک و محدودیت: ' + (p2.risk || '').replace(/^مدیریت ریسک: /, ''), 'شاخص موفقیت: ' + (p2.lean === 'dn' ? 'ماندن قیمت زیر ' + fa(p2.lv.hi10) + ' و رسیدن به ' + (p2.dnT[0] ? fa(p2.dnT[0]) : 'خط میانی کانال') : 'ماندن قیمت بالای ' + fa(p2.lv.lo10) + ' و رسیدن به ' + (p2.upT[0] ? fa(p2.upT[0]) : 'سقف کانال')) + '.',
+        'شرط توقف یا بازنگری: ' + (p2.lean === 'dn' ? 'بسته‌شدن بالای ' + fa(p2.lv.hi10) : 'بسته‌شدن زیر ' + fa(p2.stopL)) + (mm.ok && mm.quality === 'ضعیف' ? '؛ اعتبار کانال این بازار ضعیف است، پس سطوح با احتیاط خوانده شود' : '') + '.'] }); };
+    var fAct = act.filter(function (a) { return a.name === f.name; }), oth = act.filter(function (a) { return a.name !== f.name; }).slice(0, 2), ord = fAct.concat(oth);
+    if (fAct.length) { B.push({ t: 'p', x: 'اولویت نخست بازار محور گزارش است؛ بازارهای دیگر فقط وقتی آمده‌اند که قاعده‌های مدل در آن‌ها جهت مشخص دارد.' }); fAct.forEach(sol); }
+    else B.push({ t: 'p', x: 'برای ' + f.name + ' قاعده‌های مدل جهت مشخصی نمی‌دهد. اقدام نکردن و حفظ وضعیت موجود گزینهٔ منطقی‌تر است؛ فقط دو سطح تأیید (' + fa(P.lv && P.lv.hi10) + ' و ' + fa(P.lv && P.lv.lo10) + ') پایش شود.' });
+    if (oth.length) { B.push({ t: 'h3', x: 'بازارهای دیگری که قاعده‌ها در آن‌ها جهت دارند' }); oth.forEach(function (a, i) { sol(a, i + fAct.length); }); }
+    if (false) B.push({ t: 'p', x: 'در هیچ‌یک از بازارها قاعده‌های مدل جهت مشخصی نمی‌دهد. اقدام نکردن و حفظ وضعیت موجود گزینهٔ منطقی‌تر است؛ فقط سطوح تأیید ' + f.name + ' (' + fa(P.lv && P.lv.hi10) + ' و ' + fa(P.lv && P.lv.lo10) + ') پایش شود.' });
+    B.push({ t: 'h3', x: 'فراتر از اجماع بازار' });
+    if (anom.length) anom.forEach(function (p) { B.push({ t: 'ul', x: [p.name + ' اکنون ' + pct(p.z.dev, 1) + ' از میانگین ۵۲ هفتهٔ خودش فاصله دارد (' + fa(p.z.z, 1) + ' انحراف معیار، ' + fa(p.z.n, 0) + ' هفته). ایدهٔ جایگزین: به‌جای موضع جهت‌دار، جابه‌جایی بخشی از وزن از «' + (p.z.z > 0 ? p.a : p.b) + '» به «' + (p.z.z > 0 ? p.b : p.a) + '». منطق: فاصلهٔ نسبی غیرعادی است. پیش‌شرط: نقدشوندگی و امکان معامله در هر دو. ریسک: نسبت می‌تواند مدت طولانی دور از میانگین بماند یا میانگین تازه‌ای بسازد؛ این الگو روی این داده بک‌تست نشده است. شاخص پایش: همین نسبت. شرط توقف: بازتر شدن فاصله تا ۳ انحراف معیار.'] }); });
+    else B.push({ t: 'p', x: 'شواهد کافی برای دیدگاهی متفاوت از وضع موجود نیست: هیچ‌یک از نسبت‌های بین‌بازاری (' + ((X.pairs || []).map(function (p) { return p.name; }).join('، ') || 'داده‌ای نیست') + ') بیش از ۲ انحراف معیار از میانگین یک‌سالهٔ خود فاصله ندارد.' });
+    if (S.view) { B.push({ t: 'h3', x: 'نظر تحلیلگر' }); String(S.view).split('\n').filter(Boolean).forEach(function (x) { B.push({ t: 'p', x: x }); }); }
+    // comparison with the previous report on the same topic
+    if (prev) { B.push({ t: 'h3', x: 'مقایسه با گزارش قبلی (' + new Date(prev.at).toLocaleDateString('fa-IR') + ')' });
+      B.push({ t: 'ul', x: ['قیمت: از ' + fa(prev.last) + ' به ' + fa(f.last) + ' (' + pct(f.last / prev.last - 1) + ').', 'خوانش میان‌مدت: از «' + (IM.READ[prev.read] ? IM.READ[prev.read][0] : '—') + '» به «' + (m.ok ? IM.READ[m.read][0] : '—') + '»' + (prev.read === (m.ok && m.read) ? ' (بدون تغییر).' : ' (تغییر کرده؛ راهکار قبلی دیگر مبنا نیست).'), 'تمایل مدل: از «' + (IM.LEAN[prev.lean] ? IM.LEAN[prev.lean][0] : '—') + '» به «' + (P.lean ? IM.LEAN[P.lean][0] : '—') + '».',
+        prev.graded ? 'نتیجهٔ پیش‌بینی قبلی: سناریوی «' + SN[prev.graded.bucket] + '» رخ داد (بازده ' + pct(prev.graded.ret) + ')؛ خطای سطح پایه ' + pct(prev.graded.err, 1) + '.' : 'افق پیش‌بینی قبلی هنوز نرسیده است.'] }); }
+    // 7 conclusion and watch list
+    B.push({ t: 'h2', x: '۷. جمع‌بندی و شاخص‌های پایش' });
+    B.push({ t: 'ul', x: ['اقدام اولویت‌دار: ' + (fAct.length ? f.name + ' — ' + IM.LEAN[f.plan.lean][0] : 'حفظ وضعیت موجود در ' + f.name) + (oth.length ? '؛ در کنار آن ' + oth.map(function (a) { return a.name + ' (' + IM.LEAN[a.plan.lean][0] + ')'; }).join(' و ') : '') + '.', 'سطوح پایش ' + f.name + ': ' + fa(P.lv && P.lv.hi10) + ' و ' + fa(P.lv && P.lv.lo10) + (m.ok ? '؛ خطوط کانال میان‌مدت ' + fa(m.up) + ' / ' + fa(m.mid) + ' / ' + fa(m.lo) : '') + '.',
+      'نسبت‌های پایش: ' + ((X.pairs || []).map(function (p) { return p.name + ' (' + fa(p.z.z, 1) + 'σ)'; }).join('؛ ') || '—') + '.', 'آمارهایی که با انتشار بعدی باید به‌روز شوند: ' + (entered.map(function (r) { return r.name; }).join('، ') || 'هیچ آماری وارد نشده') + '.',
+      (function () { var c = X.R.cal.filter(function (q) { return q.rank >= 1; })[0]; return c ? 'نزدیک‌ترین تاریخ کلیدی تقویم زمانی: ' + IM.calDate(c) + ' (اهمیت ' + IM.RANK[c.rank][0] + '؛ یادآور بازبینی، نه پیش‌بینی).' : 'تاریخ کلیدی هم‌زمانی در تقویم زمانی نیست.'; })()] });
+    B.push({ t: 'h3', x: 'آنچه با اطلاعات فعلی قابل تکمیل نیست' });
+    gaps.push('اخبار، سیاست‌گذاری و تحولات ژئوپلیتیک: این ابزار به آن‌ها دسترسی ندارد؛ برای گزارش مبتنی بر جست‌وجوی روز، همین موضوع را در گفت‌وگو درخواست کنید.');
+    B.push({ t: 'ul', x: gaps.filter(function (v, i, a) { return a.indexOf(v) === i; }) });
+    // 8 sources
+    B.push({ t: 'h2', x: '۸. منابع و مستندات' });
+    B.push({ t: 'ul', x: ['قیمت‌ها و شاخص‌ها: ' + (X.live ? 'TSETMC (cdn.tsetmc.com) و TGJU (api.tgju.org)، آخرین داده ' + sh(f.date) : 'دادهٔ نمونهٔ ساختگی') + '.'].concat(entered.map(function (r) { return r.name + ': ' + (r.source || 'منبع نوشته نشده') + (r.period ? '، دورهٔ ' + r.period : '') + (r.date ? '، انتشار ' + r.date : '') + ' (ورودی کاربر).'; })).concat(['روش‌ها و پشتوانهٔ پژوهشی هر یک: زبانهٔ «راهنمای مدل‌ها و اعتبار علمی» در بخش تحلیل مالی اقتصاد ایران.']) });
+    return B;
+  }
+  function words(B) { return Hub.report.text(B).split(/\s+/).filter(Boolean).length; }
+  function P_(t, cls) { return h('p', { class: cls || 'f-help', 'data-notr': '1', text: t }); }
+  function reportTab(ctx) {
+    var S = ctx.S, X = ctx.R, B = build(S, X), f = X.focal, st = h('div', { class: 'studio-status', 'aria-live': 'polite' }), aiBox = h('div');
+    var ask = G.form({ id: 'efi-q', onChange: ctx.rerender, fields: [{ key: 'tp', label: 'موضوع گزارش', options: TOPICS.map(function (t) { return [t[0], t[1]]; }), get: function () { return S.topic; }, set: function (v) { S.topic = v; S.focal = ''; } },
+      { key: 'ti', label: 'عنوان (اختیاری)', type: 'text', get: function () { return S.title || ''; }, set: function (v) { S.title = v; } },
+      { key: 'fo', label: 'بازار محور', options: X.rows.map(function (a) { return [a.name, a.name]; }), get: function () { return f ? f.name : ''; }, set: function (v) { S.focal = v; } }, ctx.field('hh', 'افق سناریو (هفته)', 'h', 'int')] });
+    var view = h('textarea', { class: 'f-area', rows: 3, dir: 'rtl', 'aria-label': 'نظر تحلیلگر', placeholder: 'نظر، فرضیهٔ مخالف یا راهکار خودتان (اختیاری؛ در بخش ۶ می‌آید)' }); view.value = S.view || ''; view.addEventListener('change', function () { S.view = view.value; ctx.rerender(); });
+    var fresh = h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'به‌روزرسانی داده و ساخت گزارش تازه', onclick: function () { var feed = (Hub.signals.feeds || []).filter(function (q) { return q.id === 'long-view'; })[0]; if (!feed) return; fresh.disabled = true; st.textContent = 'در حال دریافت آخرین داده‌ها…';
+      var MS = U.store.get(IM.KEY, null) || IM.sample(); IM.ensure(MS); feed.fetch(MS, function (i, n, nm) { st.textContent = 'دریافت ' + i + ' از ' + n + ': ' + nm; }).then(function (errs) { U.store.set(IM.KEY, MS); U.toast('داده به‌روز شد' + (errs && errs.length ? ' (' + errs.length + ' سری دریافت نشد)' : '') + '.', 'good'); ctx.rerender(); }, function (e) { fresh.disabled = false; st.className = 'studio-status warn-t'; st.textContent = 'دریافت ناموفق: ' + (e && e.message || e) + ' — گزارش با آخرین دادهٔ موجود (' + (f ? sh(f.date) : '—') + ') ساخته شده است.'; }); } });
+    var logB = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'ثبت این گزارش و پیش‌بینی‌اش', onclick: function () { if (!f || !X.live) { U.toast('فقط گزارش با دادهٔ واقعی ثبت می‌شود.', 'warn'); return; } var sc = X.sc || {};
+      S.log.push({ at: Date.now(), topic: S.topic, focal: f.name, last: f.last, date: f.date, h: Math.round(S.h), read: f.h.m.ok ? f.h.m.read : null, lean: f.plan && f.plan.lean, hiT: sc.ok ? sc.hiT : null, loT: sc.ok ? sc.loT : null, p: sc.ok ? sc.p : null, base: sc.ok ? f.last * (1 + sc.r.mid) : null }); if (S.log.length > 300) S.log = S.log.slice(-300); U.toast('ثبت شد؛ پس از ' + fa(S.h, 0) + ' هفته با واقعیت سنجیده می‌شود.', 'good'); ctx.rerender(); } });
+    var aiB = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'روایت تحلیلی با هوش مصنوعی (در صورت اتصال)', onclick: function () { var sp = Hub.ai ? Hub.ai.sampler() : Promise.resolve(null); st.textContent = 'در حال نگارش…';
+      sp.then(function (s) { if (!s) { st.textContent = 'هوش مصنوعی وصل نیست. گزارش قاعده‌محور پایین کامل است؛ برای گزارش مبتنی بر جست‌وجوی روز، موضوع را در گفت‌وگو درخواست کنید.'; return; }
+        var pack = Hub.report.text(B), prompt = 'You are an investment research and strategy analyst writing in Persian. Using ONLY the data pack below, write an analytical report of about 1000 words with these eight parts: title and main issue; executive summary; current state and data; drivers and relationships; outlook with base / optimistic / pessimistic scenarios; operational solutions (for each: exact action, logic, preconditions, horizon, risks, success indicator, stop condition) including a short "فراتر از اجماع بازار" paragraph only if the pack supports it; conclusion and indicators to watch; sources. Hard rules: never state a number, date, source, event or cause that is not in the pack; where the pack says something cannot be completed, say so in the same words; keep correlation separate from causation; if the pack recommends no action, say that doing nothing is the reasonable choice. Plain text, no markdown tables.\n\nDATA PACK:\n' + pack;
+        return (typeof s === 'function' ? s(prompt, { modelTier: 'complex' }).then(function (r) { return r && r.text; }) : s.json(prompt + '\n\nReturn JSON {"text": "..."}', { modelTier: 'complex' }).then(function (j) { return j && j.text; })).then(function (t) { t = String(t || ''); var nm = function (x) { return x.replace(/[۰-۹]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(c); }).replace(/[٬,]/g, ''); }, pk = nm(pack), bad = (nm(t).match(/\d+(?:[.٫]\d+)?/g) || []).filter(function (q) { return q.length >= 3 && pk.indexOf(q.replace('٫', '.')) < 0 && pk.indexOf(q) < 0; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+          S.ai = t; U.clear(aiBox); aiBox.appendChild(h('h4', { 'data-notr': '1', text: 'روایت تحلیلی (نگارش هوش مصنوعی از روی همین بستهٔ داده)' })); if (bad.length) aiBox.appendChild(P_('هشدار: این اعداد در روایت هست ولی در بستهٔ داده نیست و نباید به آن‌ها استناد شود: ' + bad.join('، '), 'neg')); t.split('\n').filter(Boolean).forEach(function (x) { aiBox.appendChild(h('p', { 'data-notr': '1', text: x })); }); st.textContent = bad.length ? 'نگارش شد؛ ' + fa(bad.length, 0) + ' عدد خارج از بستهٔ داده علامت خورد.' : 'نگارش شد؛ همهٔ اعداد در بستهٔ داده هست.'; }); }).catch(function (e) { st.textContent = 'ناموفق: ' + (e && e.message || e); }); } });
+    return ctx.group([ctx.panel('درخواست گزارش', [P_('هر بار که این صفحه باز می‌شود یا دکمهٔ به‌روزرسانی را می‌زنید، گزارش از روی دادهٔ همان لحظه از نو ساخته می‌شود. گزارش‌های ثبت‌شدهٔ قبلی فقط برای مقایسه و سنجش پیش‌بینی به کار می‌روند. آمار رسمی را در زبانهٔ «آمار رسمی» با منبع و تاریخ وارد کنید.'), ask, view, h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, [fresh, logB, aiB]), st]),
+      ctx.panel('گزارش (' + fa(words(B), 0) + ' کلمه)', [Hub.report.buttons(function () { return build(ctx.S, ctx.R); }, 'EFI_Report_' + S.topic), Hub.report.dom(B), aiBox])]);
+  }
+  function macroTab(ctx) {
+    var lst = ctx.list({ id: 'efi-m', path: 'macro', onChange: ctx.rerender, newRow: function () { return { k: 'x' + Date.now(), name: '', unit: '', value: null, period: '', source: '', date: '' }; }, cols: [{ key: 'name', label: 'شاخص', kind: 'text' }, { key: 'value', label: 'مقدار', kind: 'dec', optional: true }, { key: 'unit', label: 'واحد', kind: 'text' }, { key: 'period', label: 'دورهٔ آماری', kind: 'text' }, { key: 'source', label: 'منبع رسمی', kind: 'text' }, { key: 'date', label: 'تاریخ انتشار', kind: 'text' }] });
+    return ctx.group([ctx.panel('آمار رسمی (ورودی شما)', [P_('این ابزار به پایگاه‌های بانک مرکزی، مرکز آمار، فدرال رزرو و مانند آن‌ها وصل نیست. هر عددی که وارد کنید با منبع و تاریخی که می‌نویسید در گزارش می‌آید؛ ردیف خالی به‌عنوان «وارد نشده» گزارش می‌شود و هیچ عددی به‌جای آن ساخته نمی‌شود. درصدها را به عدد درصد وارد کنید (مثلاً ۸۳٫۵).'), lst])]);
+  }
+  function learnTab(ctx) {
+    var S = ctx.S, L = S.log.slice().reverse(), g = S.log.filter(function (x) { return x.graded; }), hit = g.filter(function (x) { return x.p && ['up', 'mid', 'dn'].sort(function (a, b) { return x.p[b] - x.p[a]; })[0] === x.graded.bucket; }).length, mae = g.length ? g.reduce(function (s, x) { return s + (isFinite(x.graded.err) ? Math.abs(x.graded.err) : 0); }, 0) / g.length : NaN;
+    return ctx.group([ctx.panel('سنجش پیش‌بینی‌های ثبت‌شده', [P_('هر گزارش ثبت‌شده سطح پایه و مرز سناریوهایش را نگه می‌دارد. وقتی افقش برسد، با قیمت واقعی سنجیده می‌شود: کدام سناریو رخ داد و خطای سطح پایه چقدر بود.'),
+      P_(g.length ? fa(g.length, 0) + ' پیش‌بینی سنجیده شده: در ' + fa(hit, 0) + ' مورد محتمل‌ترین سناریو رخ داد؛ میانگین قدرمطلق خطای سطح پایه ' + pct(mae, 1).replace('+', '') + '.' + (g.length < 20 ? ' نمونه کم است و نتیجه‌گیری از آن زود است.' : '') : 'هنوز پیش‌بینی سررسیدشده‌ای نیست.', 'small muted'),
+      L.length ? Hub.report.dom([{ t: 'table', head: ['تاریخ گزارش', 'موضوع', 'بازار', 'قیمت آن روز', 'افق (هفته)', 'تمایل', 'سطح پایه', 'نتیجه'], rows: L.map(function (x) { return [new Date(x.at).toLocaleDateString('fa-IR'), (TOPICS.filter(function (t) { return t[0] === x.topic; })[0] || ['', x.topic])[1], x.focal, fa(x.last), fa(x.h, 0), IM.LEAN[x.lean] ? IM.LEAN[x.lean][0] : '—', x.base ? fa(x.base) : '—', x.graded ? SN[x.graded.bucket] + ' · ' + fa(x.graded.actual) + ' (' + pct(x.graded.ret) + ') · خطا ' + pct(x.graded.err, 1) : 'در انتظار سررسید']; }) }]) : P_('گزارشی ثبت نشده است.', 'muted')])]);
+  }
+  function guideTab(ctx) {
+    var sec = function (t, a) { return ctx.panel(t, [h('ul', { class: 'studio-l' }, a.map(function (x) { return h('li', { 'data-notr': '1', text: x }); }))]); };
+    return ctx.group([sec('این بخش چه می‌کند و چه نمی‌کند', ['می‌کند: از دادهٔ بازارهای همین برنامه و آمار رسمی واردشدهٔ شما، هر بار از نو گزارشی در هشت بخش می‌سازد که به راهکار ختم می‌شود.', 'نمی‌کند: جست‌وجوی اخبار، خواندن گزارش بانک مرکزی یا فدرال رزرو، و تحلیل علّی متغیرهای کلان. این‌ها در مرورگر و بدون منبع داده شدنی نیست. برای گزارش مبتنی بر جست‌وجوی روز و منابع رسمی، موضوع را در گفت‌وگو با Claude در همین پروژه درخواست کنید.',
+        'هر جا داده نباشد، گزارش می‌نویسد «قابل تکمیل نیست» و می‌گوید چه چیزی کم است.']),
+      sec('روش هر بخش', ['وضعیت موجود: خوانش کانال و RSI در سه افق، شتاب (بازده ۳ ماههٔ سالانه‌شده در برابر ۱۲ ماه)، بازده واقعی با تورمی که وارد کرده‌اید.', 'روابط: همبستگی بازده هفتگی دو سال اخیر؛ همبستگی علت را نشان نمی‌دهد.',
+        'سناریوها: در تاریخچهٔ همین سری، بعد از هر باری که خوانش مدل مثل امروز بوده، بازده افق بعدی چند بار بالاتر از «میانگین + نیم انحراف معیار»، چند بار پایین‌تر از «میانگین − نیم انحراف معیار» و چند بار بین این دو بوده است. این فراوانی‌ها «احتمال» گزارش می‌شوند، با تعداد نمونه.',
+        'راهکارها: از قاعده‌های تمایل مدل (روند، جایگاه در کانال، واگرایی) با هفت مشخصه: اقدام، منطق، پیش‌شرط، افق، ریسک، شاخص موفقیت، شرط توقف. اگر قاعده‌ای جهت ندهد، «اقدام نکردن» نوشته می‌شود.',
+        'فراتر از اجماع: فقط وقتی یکی از نسبت‌های بین‌بازاری بیش از ۲ انحراف معیار از میانگین یک‌ساله‌اش دور باشد. در غیر این صورت نوشته می‌شود شواهد کافی نیست.',
+        'یادگیری: گزارش ثبت‌شده پس از رسیدن افقش با واقعیت سنجیده می‌شود. اصلاح خودکار قاعده‌ها از روی این سنجش هنوز انجام نمی‌شود؛ نتیجه برای داوری شما نمایش داده می‌شود.'])]);
+  }
+  TK.define({
+    id: 'efi', title: 'Economic & financial intelligence: solution reports', sections: ['iran'], priority: 2, version: 1, storeKey: KEY, noFile: true,
+    summary: 'On-demand analytical reports on Iran\'s markets and economy in eight parts, ending in prioritised solutions: current state, drivers, three scenarios with historical frequencies, actions with success and stop conditions, a beyond-consensus view when evidence supports it, and a log that grades earlier forecasts.',
+    sample: sample, blank: sample, run: run, scenarios: false,
+    eyebrow: function () { return 'Iran economy · Intelligence'; }, heading: function () { return 'هوش اقتصادی و مالی: گزارش راهکارمحور'; }, filename: function () { return 'EFI_Report'; },
+    kpis: function (ctx) { var X = ctx.R, f = X.focal; return [['Focus market', function () { return f ? fa(f.last) : '—'; }, function () { return f ? f.name + ' · ' + sh(f.date) : 'داده نیست'; }], ['Model lean', function () { return f && f.plan && f.plan.lean ? IM.LEAN[f.plan.lean][0] : '—'; }, function () { return f && f.h.m.ok ? IM.READ[f.h.m.read][0] : ''; }],
+      ['Most frequent scenario', function () { var sc = X.sc; if (!sc || !sc.ok) return '—'; var k = ['up', 'mid', 'dn'].sort(function (a, b) { return sc.p[b] - sc.p[a]; })[0]; return SN[k] + ' ' + fa(sc.p[k] * 100, 0) + '٪'; }, function () { return X.sc && X.sc.ok ? fa(X.sc.n, 0) + ' مورد تاریخی' : 'قابل برآورد نیست'; }],
+      ['Logged forecasts', function () { return fa(ctx.S.log.length, 0); }, function () { return fa(ctx.S.log.filter(function (x) { return x.graded; }).length, 0) + ' سنجیده‌شده'; }]]; },
+    tabs: [{ group: 'Outputs', items: [['report', 'گزارش به‌روز', reportTab], ['learn', 'سنجش پیش‌بینی‌ها', learnTab], ['guide', 'روش و محدودیت‌ها', guideTab]] }, { group: 'Inputs', items: [['macro', 'آمار رسمی', macroTab]] }]
   });
 })(window);
 
@@ -22835,11 +23021,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111312) */
+/* PWA: offline cache + app updates (version 202611111818) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111312';
+  window.HUB_APP_VERSION = '202611111818';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
