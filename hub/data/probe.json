@@ -1,0 +1,11 @@
+[
+{"url":"https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/46348559193224090/5","result":"000 0 25.000870","head":""}
+,
+{"url":"https://cdn.tsetmc.com/api/ClientType/GetClientTypeHistory/46348559193224090","result":"000 0 25.001020","head":""}
+,
+{"url":"https://cdn.tsetmc.com/api/Instrument/GetInstrumentOptionMarketWatch/0","result":"000 0 25.001069","head":""}
+,
+{"url":"https://old.tsetmc.com/tsev2/data/instinfofast.aspx?i=46348559193224090&c=27","result":"000 0 25.000587","head":""}
+,
+{"url":"https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl","result":"200 655895 1.299537","head":"{\"draw\":null,\"recordsTotal\":4000,\"recordsFiltered\":4000,\"data\":[[\"2,623,600\",\"2,598,600\",\"2,639,000\",\"2,599,000\",\"<span class=\\\"low\\\" dir=\\\"ltr\\\">40000<\\/span>\""}
+]
