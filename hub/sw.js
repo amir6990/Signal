@@ -1,7 +1,7 @@
-/* service worker — version 202611101935
+/* service worker — version 202611110508
  * app shell: network first (so a new version is picked up as soon as you are online), cache when offline
  * market data (/proxy, other hosts' APIs): network only — the app keeps its last good data itself */
-const V = 'hub-202611101935', SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const V = 'hub-202611110508', SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(V).then(c => c.addAll(SHELL))));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
@@ -9,6 +9,8 @@ self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== 'GET') return;
   if (u.origin === location.origin && u.pathname.indexOf('/proxy') >= 0) return;          // data: always live
+  if (u.origin === location.origin && u.pathname.indexOf('/data/') >= 0)                   // published snapshots: newest when online, last copy offline
+    return e.respondWith(fetch(r).then(res => { const c = res.clone(); caches.open(V).then(k => k.put(u.pathname, c)); return res; }).catch(() => caches.match(u.pathname)));
   if (u.origin === location.origin) {
     if (r.mode === 'navigate' || /\/(index\.html)?$/.test(u.pathname))
       return e.respondWith(fetch(r, { cache: 'no-cache' }).then(res => { const c = res.clone(); caches.open(V).then(k => k.put('index.html', c)); return res; }).catch(() => caches.match('index.html')));

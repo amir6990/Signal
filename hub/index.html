@@ -3947,6 +3947,7 @@ else if (typeof exports === 'object')
 "Order tickets": "دستور معامله",
 "Underlying price (S)": "قیمت پایه (S)",
 "Strike (K)": "قیمت اعمال (K)",
+"Phone sync": "همگام‌سازی با گوشی",
 };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -8542,7 +8543,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function record(entry) {
     entry.time = new Date().toLocaleTimeString();
     log.unshift(entry); if (log.length > 60) log.pop();
-    document.dispatchEvent(new CustomEvent('hub:datalog'));
+    if (root.document) document.dispatchEvent(new CustomEvent('hub:datalog'));
   }
 
   function getJSON(url, source, override) {
@@ -8912,6 +8913,103 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     history: function (sym, market) { return market === 'tse' ? tseProvider.history(sym, 260) : historyGlobal(sym); }
   };
 })(window);
+
+/* js/core/datasync.js */
+/* =====================================================================
+ * DATA SYNC — PC → GitHub → phone.
+ *   TSETMC answers only from inside Iran (tested 2026-11-11: GitHub's US runners time out on every TSETMC
+ *   endpoint while TGJU answers), and Safari on the phone cannot call it directly (CORS). So:
+ *   · the PC in Iran fetches as before (local proxy) and PUBLISHES a snapshot to the GitHub repo that serves the phone app
+ *   · the phone PULLS that snapshot from its own site (same origin: no CORS, no proxy)
+ *   · gold / FX also arrive from a scheduled GitHub Action (TGJU is reachable from abroad), so they refresh without the PC.
+ * Snapshot files (in the site's data/ folder): tse.json (stocks, options, temporal) · tgju.json (gold, FX).
+ * The GitHub token lives only in this browser's storage on the PC and is sent only to api.github.com.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var KEY = 'hub.sync.v1';
+  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1'] };
+  var KEEP = ['set', 'tk', 'settings', 'f'];               // the phone keeps its own settings / filters
+  var DEF = { repo: 'amir6990/Signal', branch: 'claude/iran-stock-signals-excel-guqwon', dir: 'hub/data', token: '', auto: false, autoPull: true, site: 'https://amir6990.github.io/Signal/hub/' };
+  function ls() { try { return root.localStorage; } catch (e) { return null; } }
+  function get(k, d) { var s = ls(); try { var v = s && s.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+  function put(k, v) { var s = ls(); try { s && s.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  function cfg() { return Object.assign({}, DEF, get(KEY, {}) || {}); }
+  function setCfg(c) { put(KEY, Object.assign(cfg(), c)); }
+  function live(S) { return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
+  function ts(S) { return (S && S.meta && S.meta.asOfTs) || 0; }
+  function served() { var L = root.location || {}; return /^https?:$/.test(L.protocol || '') && !/claude|anthropic|localhost|127\.0\.0\.1/.test(L.host || ''); }
+  function round(k, v) { return typeof v === 'number' && isFinite(v) && v % 1 ? +v.toPrecision(7) : v; }
+
+  /* ---------- pull (phone): newer snapshot replaces the local data, keeps local settings ---------- */
+  function fetchSnap(name) {
+    var c = cfg(), urls = served() ? ['data/' + name + '.json'] : [c.site.replace(/\/?$/, '/') + 'data/' + name + '.json'];
+    var go = function (i) { if (i >= urls.length) return Promise.reject(new Error('not found')); return fetch(urls[i] + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).catch(function (e) { if (i + 1 < urls.length) return go(i + 1); throw e; }); };
+    return go(0);
+  }
+  function pull(force) {
+    var out = { updated: [], same: [], errors: [], snaps: {} };
+    return Promise.all(Object.keys(FILES).map(function (name) {
+      return fetchSnap(name).then(function (snap) {
+        out.snaps[name] = { publishedAt: snap.publishedAt, by: snap.by };
+        Object.keys(snap.stores || {}).forEach(function (k) {
+          var S = snap.stores[k], L = get(k, null);
+          if (!live(S)) return;
+          if (!force && live(L) && ts(L) >= ts(S)) { out.same.push(k); return; }
+          var N = Object.assign({}, S); if (L) KEEP.forEach(function (x) { if (L[x] !== undefined) N[x] = L[x]; });
+          put(k, N); out.updated.push(k);
+        });
+      }).catch(function (e) { out.errors.push(name + ': ' + e.message); });
+    })).then(function () { put(KEY + '.last', { at: Date.now(), snaps: out.snaps }); return out; });
+  }
+
+  /* ---------- publish (PC): one commit with tse.json and/or tgju.json via the Git Data API ---------- */
+  function gh(c, path, method, body) {
+    return fetch('https://api.github.com/repos/' + c.repo + path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error('GitHub ' + r.status + ': ' + (j.message || '')); e.status = r.status; throw e; } return j; }); });
+  }
+  function build(names) {
+    var files = [];
+    names.forEach(function (name) {
+      var st = {}; FILES[name].forEach(function (k) { var S = get(k, null); if (live(S)) st[k] = S; });
+      if (Object.keys(st).length) files.push({ name: name, content: JSON.stringify({ version: 1, publishedAt: new Date().toISOString(), by: 'pc', stores: st }, round) });
+    });
+    return files;
+  }
+  function publish(names) {
+    var c = cfg(); names = names || ['tse', 'tgju'];
+    if (!c.token) return Promise.reject(new Error(fa() ? 'توکن GitHub وارد نشده است' : 'no GitHub token'));
+    var files = build(names); if (!files.length) return Promise.reject(new Error(fa() ? 'دادهٔ واقعی برای انتشار نیست؛ اول به‌روزرسانی کنید' : 'no live data to publish'));
+    var ref = '/git/ref/heads/' + c.branch.split('/').map(encodeURIComponent).join('/');
+    var attempt = function (n) {
+      return gh(c, ref).then(function (r) { var head = r.object.sha;
+        return gh(c, '/git/commits/' + head).then(function (cm) {
+          return Promise.all(files.map(function (f) { return gh(c, '/git/blobs', 'POST', { content: f.content, encoding: 'utf-8' }).then(function (b) { return { path: c.dir.replace(/\/$/, '') + '/' + f.name + '.json', mode: '100644', type: 'blob', sha: b.sha }; }); }))
+            .then(function (tree) { return gh(c, '/git/trees', 'POST', { base_tree: cm.tree.sha, tree: tree }); })
+            .then(function (t) { return gh(c, '/git/commits', 'POST', { message: 'data: ' + files.map(function (f) { return f.name; }).join(' + ') + ' snapshot from PC', tree: t.sha, parents: [head] }); })
+            .then(function (nc) { return gh(c, '/git/refs/heads/' + c.branch.split('/').map(encodeURIComponent).join('/'), 'PATCH', { sha: nc.sha }); });
+        }); }).catch(function (e) { if (n < 2 && (e.status === 422 || e.status === 409)) return attempt(n + 1); throw e; });   // someone (the Action) committed in between
+    };
+    return attempt(0).then(function () { var info = { at: Date.now(), files: files.map(function (f) { return f.name + ' (' + Math.round(f.content.length / 1024) + ' KB)'; }) }; put(KEY + '.pub', info); return info; });
+  }
+  function fa() { return Hub.i18n && Hub.i18n.lang() === 'fa'; }
+
+  // auto-publish after a successful refresh on the PC (debounced; only if switched on and a token exists)
+  var timer = null;
+  function afterUpdate() { var c = cfg(), lp = get(KEY + '.pub', null); if (!c.auto || !c.token || served()) return; if (lp && Date.now() - lp.at < 30 * 6e4) return;   // auto: at most every 30 min (each publish is a commit)
+    clearTimeout(timer); timer = setTimeout(function () { publish().then(function () { Hub.util && Hub.util.toast(fa() ? 'داده برای گوشی منتشر شد (حدود ۱ تا ۲ دقیقه تا رسیدن به گوشی).' : 'Published for the phone.', 'good'); }, function (e) { Hub.util && Hub.util.toast((fa() ? 'انتشار برای گوشی ناموفق: ' : 'Publish failed: ') + e.message, 'warn'); }); }, 20000); }
+  if (root.addEventListener) root.addEventListener('hub:data-updated', afterUpdate);
+
+  // on the phone: pull once on opening
+  function boot() {
+    if (!served() || !cfg().autoPull) return;
+    pull(false).then(function (r) { if (r.updated.length) { Hub.util && Hub.util.toast((fa() ? 'دادهٔ جدید از کامپیوتر رسید: ' : 'New data arrived: ') + r.updated.length + (fa() ? ' مجموعه' : ' sets'), 'good'); if (Hub.rerenderAll) Hub.rerenderAll(); } });
+  }
+  if (root.document) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 800); }); else setTimeout(boot, 800); }
+
+  Hub.dataSync = { cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
+})(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/grid.js */
 /* =====================================================================
@@ -19163,6 +19261,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     rows.sort(function (a, b) { return (b.score || -99) - (a.score || -99); });
     return { rows: rows, P: P, checks: S.meta.source && /synthetic/i.test(S.meta.source) ? [{ level: 'info', msg: 'Showing illustrative synthetic data. Press Fetch to load TGJU.' }] : [] };
   }
+  function keysOf(S, always) { return S.ins.filter(function (x) { return x.active !== false && x.key; }).map(function (x) { return x.key; }).concat(always).filter(function (k, i, a) { return a.indexOf(k) === i; }); }
   function tgjuFetch(S, list, progress) {
     var P = setObj(S.set), data = {}, errs = [];
     var step = function (i) { if (i >= list.length) return Promise.resolve(); var k = list[i]; progress && progress(i + 1, list.length, k);
@@ -19417,7 +19516,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   var FEEDS = [];
   Hub.signals = { feeds: FEEDS, safeFetch: safeFetch, summErr: summErr, maxAgeH: maxAgeH, stampData: stampData, dataAge: dataAge, ageText: ageText, adjust: adjust, trendBlock: trendBlock, ewmaVol: ewmaVol, varRatio: varRatio, ichimoku: ichimoku, donchian: donchian, rsi: rsi, levels: levels, bs: bs, impliedVol: impliedVol, synth: synth, parseCSV: parseCSV,
-    stocks: { sample: stocksSample, run: stocksRun, fetch: stocksFetch, WATCH: WATCH, mergeWatch: mergeWatch }, gold: { sample: goldSample, run: goldRun }, fx: { sample: fxSample, run: fxRun }, options: { sample: optSample, run: optRun, fetch: optFetch, shamsi: shamsi, UNDS: OPT_UNDS }, temporal: { sample: tempSample, run: tempRun, fetch: tempFetch } };
+    stocks: { sample: stocksSample, run: stocksRun, fetch: stocksFetch, WATCH: WATCH, mergeWatch: mergeWatch }, gold: { sample: goldSample, run: goldRun, fetch: function (S, pr) { return tgjuFetch(S, keysOf(S, ['ons', 'price_dollar_rl']), pr); } }, fx: { sample: fxSample, run: fxRun, fetch: function (S, pr) { return tgjuFetch(S, keysOf(S, ['price_dollar_rl']), pr); } }, options: { sample: optSample, run: optRun, fetch: optFetch, shamsi: shamsi, UNDS: OPT_UNDS }, temporal: { sample: tempSample, run: tempRun, fetch: tempFetch } };
   var act = function (a) { return a.filter(function (x) { return x.active !== false && (x.symbol || x.key); }).length; };
   FEEDS.push({ id: 'sig-stocks', title: 'Stock Signals (TSE)', storeKey: 'hub.sigstocks.v1', sample: stocksSample, fetch: stocksFetch, size: function (S) { return act(S.watch) + (isFa() ? ' نماد' : ' symbols'); }, src: 'TSETMC + TGJU' });
   FEEDS.push({ id: 'sig-options', title: 'Options Signals (TSE)', storeKey: 'hub.sigoptions.v1', sample: optSample, fetch: optFetch, size: function (S) { return (act(S.contracts) + act(S.chain || [])) + (isFa() ? ' قرارداد' : ' contracts'); }, src: 'TSETMC' });
@@ -19443,7 +19542,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var st = h('p', { class: 'muted', 'aria-live': 'polite' });
     var btn = h('button', { class: 'btn', type: 'button', text: label || 'Fetch live data', onclick: function () {
       btn.disabled = true; st.textContent = 'Fetching…';
-      safeFetch(fn, ctx.S, function (i, n, s) { st.textContent = 'Fetching ' + i + ' / ' + n + ' · ' + s; }).then(function (errs) {
+      safeFetch(fn, ctx.S, function (i, n, s) { st.textContent = 'Fetching ' + i + ' / ' + n + ' · ' + s; }).then(function (errs) { setTimeout(function () { if (Hub.dataSync) Hub.dataSync.notify(); }, 1500);
         btn.disabled = false; ctx.rerender(); U.toast('Data loaded' + (errs && errs.length ? ' · ' + errs.length + ' failed' : ''), errs && errs.length ? 'warn' : 'good');
         if (errs && errs.length) st.textContent = (isFa() ? 'ناموفق: ' : 'Failed: ') + summErr(errs);
       }).catch(function (e) { btn.disabled = false; st.textContent = e.message + ' — if the call is refused, set a proxy on Data sources & keys.'; });
@@ -20815,12 +20914,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 (function (root) {
   'use strict';
   var Hub = root.Hub; if (!root.document || !Hub.toolkit || !Hub.signals) return;
+  Hub.mdSyncTab = function (ctx) { return syncTab(ctx); };
   var U = Hub.util, h = U.h, G = Hub.grid, TK = Hub.toolkit, SG = Hub.signals;
   function F() { return Hub.i18n && Hub.i18n.lang() === 'fa'; }
   function T(en, fa) { return F() ? fa : en; }
   var FAT = { 'sig-stocks': 'سیگنال سهام (بورس تهران)', 'sig-gold': 'سیگنال طلا و سکه', 'sig-fx': 'سیگنال ارز و تتر', 'sig-options': 'سیگنال اختیار معامله', 'sig-temporal': 'تحلیل زمانی (چرخه‌ها)' };
   function load(feed) { var s = U.store.get(feed.storeKey, null); return s && s.version === 1 ? s : feed.sample(); }
-  function save(feed, S) { U.store.set(feed.storeKey, S); }
+  function save(feed, S) { U.store.set(feed.storeKey, S); if (Hub.dataSync) Hub.dataSync.notify(); }
   function status(S) {
     var live = S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source), age = SG.dataAge(S), max = SG.maxAgeH();
     if (!live) return { k: 'none', t: T('Sample data', 'دادهٔ نمونه') };
@@ -20901,6 +21001,36 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         h('p', { class: 'small muted', text: T('Safety: the proxy listens only on this computer (127.0.0.1), forwards only GET requests, and only to TSETMC, TGJU, Codal and the other data hosts the hub uses. A Cloudflare Worker (Data sources & keys) also works where TSETMC accepts its servers’ addresses.', 'امنیت: پروکسی فقط روی همین کامپیوتر (127.0.0.1) گوش می‌دهد، فقط درخواست GET را و فقط به TSETMC، TGJU، کدال و سایر منابع دادهٔ هاب می‌فرستد. Cloudflare Worker (صفحهٔ منابع داده) هم کار می‌کند، اگر TSETMC آدرس سرورهای آن را بپذیرد.') })])]);
   }
 
+  /* ---------- phone sync: PC publishes to GitHub, the phone pulls ---------- */
+  function syncTab(ctx) {
+    var DS = Hub.dataSync, c = DS.cfg(), phone = DS.served(), st = h('div', { class: 'studio-status', 'aria-live': 'polite' }), wrap = h('div');
+    var ago = function (t) { if (!t) return '—'; var m = (Date.now() - new Date(t).getTime()) / 6e4; return m < 60 ? Math.round(m) + ' دقیقه پیش' : m < 2880 ? Math.round(m / 60) + ' ساعت پیش' : Math.round(m / 1440) + ' روز پیش'; };
+    function pullBtn() { return h('button', { class: 'btn primary', type: 'button', text: 'دریافت آخرین داده از کامپیوتر / سرور', onclick: function () { st.textContent = 'در حال دریافت…'; DS.pull(true).then(function (r) { st.textContent = (r.updated.length ? r.updated.length + ' مجموعه داده به‌روز شد.' : 'دادهٔ تازه‌تری نبود.') + (r.errors.length ? ' خطا: ' + r.errors.join('؛ ') : ''); if (r.updated.length && Hub.rerenderAll) setTimeout(Hub.rerenderAll, 300); paint(); }); } }); }
+    function paint() {
+      U.clear(wrap); var L = DS.last(), P = DS.lastPub(), sn = (L && L.snaps) || {};
+      wrap.appendChild(h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('tbody', null, [
+        ['دادهٔ بورس (TSETMC: سهام، اختیار، شاخص)', sn.tse ? 'منتشرشده ' + ago(sn.tse.publishedAt) + ' از ' + (sn.tse.by === 'pc' ? 'کامپیوتر شما' : sn.tse.by) : 'هنوز دریافت نشده'],
+        ['طلا و ارز (TGJU)', sn.tgju ? 'منتشرشده ' + ago(sn.tgju.publishedAt) + ' از ' + (sn.tgju.by === 'github-action' ? 'به‌روزرسانی خودکار GitHub (هر ساعت)' : 'کامپیوتر شما') : 'هنوز دریافت نشده'],
+        ['آخرین انتشار از همین دستگاه', P ? ago(P.at) + ' · ' + P.files.join('، ') : '—']].map(function (r) { return h('tr', null, [h('td', { 'data-notr': '1', text: r[0] }), h('td', { 'data-notr': '1', style: 'white-space:normal', text: r[1] })]); }))])]));
+    }
+    var why = h('p', { class: 'f-help', text: 'سایت بورس (TSETMC) فقط به درخواست‌هایی از داخل ایران جواب می‌دهد (آزمون ۲۰ آبان ۱۴۰۵: از سرورهای خارج روی همهٔ آدرس‌های TSETMC پاسخی نیامد، در حالی که TGJU جواب داد) و Safari آیفون هم اجازهٔ درخواست مستقیم نمی‌دهد. راه‌حل: کامپیوتر شما در ایران داده را می‌گیرد و روی همان سایت GitHub منتشر می‌کند؛ گوشی از سایت خودش می‌خواند. طلا و ارز را یک کار زمان‌بندی‌شده در GitHub هر ساعت خودش به‌روز می‌کند.' });
+    var parts = [why];
+    if (phone) {
+      var ap = h('input', { type: 'checkbox', 'aria-label': 'دریافت خودکار' }); ap.checked = c.autoPull !== false; ap.addEventListener('change', function () { DS.setCfg({ autoPull: ap.checked }); });
+      parts.push(h('div', { class: 'row-ctl' }, [pullBtn(), h('label', { class: 'chk-l' }, [ap, document.createTextNode(' هر بار که برنامه باز می‌شود خودکار دریافت شود')])]), st, wrap);
+      parts.push(h('p', { class: 'small muted', text: 'دکمه‌های «به‌روزرسانی» مستقیم روی گوشی برای طلا و ارز ممکن است کار کنند، اما برای بورس تهران از این‌جا دریافت کنید.' }));
+    } else {
+      var f = function (k, label, type, help) { var i = h('input', { class: 'f-in', type: type || 'text', value: c[k] || '', 'aria-label': label, autocomplete: 'off', style: 'min-width:280px' }); i.addEventListener('change', function () { var o = {}; o[k] = i.value.trim(); DS.setCfg(o); }); return h('label', { class: 'f-row', style: 'display:grid;gap:4px' }, [h('span', { text: label }), i, help ? h('span', { class: 'small muted', text: help }) : null]); };
+      var au = h('input', { type: 'checkbox', 'aria-label': 'انتشار خودکار' }); au.checked = !!c.auto; au.addEventListener('change', function () { DS.setCfg({ auto: au.checked }); });
+      parts.push(h('ol', { class: 'studio-l' }, ['یک بار: در GitHub یک توکن «Fine-grained» بسازید (Settings ← Developer settings ← Personal access tokens ← Fine-grained tokens): فقط مخزن ' + c.repo + '، دسترسی Contents: Read and write. توکن را این‌جا وارد کنید؛ فقط در همین مرورگر کامپیوتر ذخیره می‌شود و فقط به api.github.com فرستاده می‌شود.',
+        'هر بار: پروکسی محلی را اجرا و داده‌ها را به‌روز کنید (معامله‌گری ← اجرا و داده ← به‌روزرسانی همه).', '«انتشار برای گوشی» را بزنید (یا گزینهٔ خودکار را روشن کنید). حدود ۱ تا ۲ دقیقه بعد، گوشی با باز کردن برنامه داده را می‌گیرد.'].map(function (x) { return h('li', { text: x }); })));
+      parts.push(f('token', 'توکن GitHub', 'password', 'برای امنیت: توکن فقط به همین یک مخزن و فقط Contents دسترسی داشته باشد.'), f('repo', 'مخزن', 'text'), f('branch', 'شاخه', 'text'), f('dir', 'پوشه داده در مخزن', 'text', 'باید پوشهٔ data کنار برنامهٔ گوشی باشد (hub/data).'));
+      parts.push(h('div', { class: 'row-ctl' }, [h('button', { class: 'btn primary', type: 'button', text: 'انتشار برای گوشی', onclick: function () { st.textContent = 'در حال انتشار…'; DS.publish().then(function (i) { st.className = 'studio-status good-t'; st.textContent = 'منتشر شد: ' + i.files.join('، ') + '. حدود ۱ تا ۲ دقیقه تا رسیدن به گوشی.'; paint(); }, function (e) { st.className = 'studio-status crit-t'; st.textContent = 'ناموفق: ' + e.message; }); } }),
+        h('label', { class: 'chk-l' }, [au, document.createTextNode(' بعد از هر به‌روزرسانی موفق، خودکار منتشر شود')])]), st, wrap);
+    }
+    paint();
+    return ctx.group([ctx.panel('همگام‌سازی با گوشی', parts)]);
+  }
   function settingsTab(ctx) {
     var f = G.form({ id: 'md-set', onChange: ctx.recompute, fields: [ctx.field('mx', T('Data counts as out of date after (hours)', 'داده پس از چند ساعت کهنه حساب شود'), 'maxAgeH', 'dec'),
       { key: 'au', label: T('Update out-of-date feeds when this page opens', 'به‌روزرسانی خودکار داده‌های کهنه هنگام باز شدن این صفحه'), options: [['no', T('No', 'خیر')], ['yes', T('Yes', 'بله')]], get: function () { return ctx.S.auto ? 'yes' : 'no'; }, set: function (v) { ctx.S.auto = v === 'yes'; } }] });
@@ -20914,7 +21044,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     eyebrow: function () { return 'Trading · data'; }, heading: function () { return T('Market data centre', 'مرکز دادهٔ بازار'); },
     kpis: function (ctx) { return [['Up-to-date feeds', function () { return ctx.R.fresh + ' / ' + ctx.R.all; }, function () { return '≤ ' + SG.maxAgeH() + ' h'; }],
       ['Last route', function () { var r = Hub.data.route(); return r && r.at ? r.name : '—'; }, function () { var r = Hub.data.route(); return r && r.host ? r.host : T('no request yet', 'هنوز درخواستی نیست'); }]]; },
-    tabs: [{ group: 'Data', items: [['feeds', 'Feeds and update', feedsTab], ['access', 'Access and connection', accessTab], ['set', 'Settings', settingsTab]] }] });
+    tabs: [{ group: 'Data', items: [['feeds', 'Feeds and update', feedsTab], ['access', 'Access and connection', accessTab], ['sync', 'Phone sync', syncTab], ['set', 'Settings', settingsTab]] }] });
 })(window);
 
 /* js/models/trading-engine.js */
@@ -20983,8 +21113,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var news = ctx.list({ id: 'te-news', path: 'e.news', onChange: ctx.rerender, newRow: function () { return { asset: '', dir: -0.5, impact: 'med', note: '', fresh: true }; }, cols: [
       { key: 'asset', label: 'نماد (* = همه)', kind: 'text' }, { key: 'dir', label: 'جهت (۱− منفی … ۱+ مثبت)', fmt: 'dec' },
       { key: 'impact', label: 'اثر', kind: 'select', options: function () { return [['low', 'کم'], ['med', 'متوسط'], ['high', 'زیاد (شوک)']]; } }, { key: 'note', label: 'خبر', kind: 'text' }, { key: 'fresh', label: 'تازه (امروز)', kind: 'bool' }] });
-    return ctx.group([modePanel(ctx), ctx.panel('اجرا و تنظیمات', [h('p', { class: 'f-help', text: 'موتور از دادهٔ ذخیره‌شدهٔ ابزارهای سیگنال (سهام، طلا، ارز، اختیار) می‌خواند، ۲۳ مدل رأی‌دهنده را روی هر دارایی اجرا می‌کند و برای هر کدام یک سیگنال استاندارد با ورود، حد ضرر، اهداف، حجم، اطمینان، دلایل و شرایط ابطال می‌دهد. سیگنال بدون مدیریت ریسک صادر نمی‌شود. این ابزار توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.' }),
-      boxes, f]), dataPanel(ctx), ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
+    return ctx.group([modePanel(ctx), Hub.dataSync && Hub.dataSync.served() && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, ctx.panel('اجرا و تنظیمات', [h('p', { class: 'f-help', text: 'موتور از دادهٔ ذخیره‌شدهٔ ابزارهای سیگنال (سهام، طلا، ارز، اختیار) می‌خواند، ۲۳ مدل رأی‌دهنده را روی هر دارایی اجرا می‌کند و برای هر کدام یک سیگنال استاندارد با ورود، حد ضرر، اهداف، حجم، اطمینان، دلایل و شرایط ابطال می‌دهد. سیگنال بدون مدیریت ریسک صادر نمی‌شود. این ابزار توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.' }),
+      boxes, f]), Hub.dataSync && Hub.dataSync.served() ? null : dataPanel(ctx), Hub.dataSync && !Hub.dataSync.served() && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, Hub.dataSync && Hub.dataSync.served() ? dataPanel(ctx) : null, ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
   }
   function dataPanel(ctx) {
     var wrap = h('div'), log = h('div', { 'aria-live': 'polite' }), busy = false, symIn = h('input', { class: 'f-in', type: 'text', placeholder: 'مثلاً: فولاد، شپنا، طلا', 'aria-label': 'نمادهای انتخابی', style: 'min-width:260px' });
@@ -20993,7 +21123,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var St = loadFeed(f), line = h('p', { class: 'small', 'data-notr': '1', text: label + ' … ' }); log.appendChild(line);
       var fn = only ? function (S2, p) { return SG.stocks.fetch(S2, p, only); } : f.fetch;
       SG.safeFetch(fn, St, function (a, b, k) { line.textContent = label + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + k; })
-        .then(function (errs) { U.store.set(f.storeKey, St); line.className = 'small ' + (errs.length ? 'warn-t' : 'good-t'); line.textContent = label + ': به‌روز شد' + (errs.length ? ' · بخشی ناموفق: ' + SG.summErr(errs) : ''); })
+        .then(function (errs) { U.store.set(f.storeKey, St); if (Hub.dataSync) Hub.dataSync.notify(); line.className = 'small ' + (errs.length ? 'warn-t' : 'good-t'); line.textContent = label + ': به‌روز شد' + (errs.length ? ' · بخشی ناموفق: ' + SG.summErr(errs) : ''); })
         .catch(function (e) { line.className = 'small crit-t'; line.textContent = label + ': ناموفق — ' + e.message; })
         .then(function () { busy = false; ctx.rerender(); });
     }
@@ -21362,11 +21492,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611101935) */
+/* PWA: offline cache + app updates (version 202611110508) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611101935';
+  window.HUB_APP_VERSION = '202611110508';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
