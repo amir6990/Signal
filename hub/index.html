@@ -508,6 +508,8 @@ table.sig-t.ticket thead { display: none; }
 .stack, .panel { grid-template-columns: minmax(0, 1fr); }
 .grid-wrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
 @media (max-width: 860px) { html, body { overflow-x: hidden; } .tool, #view { max-width: 100%; } }
+.lv-chart { border: 1px solid var(--line); border-radius: 6px; padding: 6px; background: var(--panel); overflow-x: auto; }
+.lv-chart svg { min-width: 560px; }
 
 </style>
 
@@ -1044,10 +1046,49 @@ else if (typeof exports === 'object')
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
 
   /* ---------- storage (never throws) --------------------------------- */
+  /* Big data sets (76 symbols × a year of bars ≈ 4 MB) do not fit the phone's localStorage (iPhone ≈ 2.5 M characters per site,
+   * shared by every app on the same address). So: a memory copy answers reads, IndexedDB keeps it (hundreds of MB),
+   * and localStorage only keeps the small items. If IndexedDB is not available, it works as before. */
+  var mem = {}, idb = null, readyP = null, SMALL = 60000, warned = false;
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function idbPut(k, s) { if (!idb) return; try { var tx = idb.transaction('kv', 'readwrite'); if (s == null) tx.objectStore('kv').delete(k); else tx.objectStore('kv').put(s, k); } catch (e) { /* ignore */ } }
+  function full() { if (warned) return; warned = true; try { toast((root.Hub.i18n && root.Hub.i18n.lang() === 'fa') ? 'حافظهٔ مرورگر پر است؛ دادهٔ تازه فقط تا بستن برنامه می‌ماند.' : 'Browser storage is full; new data lasts only until the app is closed.', 'warn'); } catch (e) { /* ignore */ } }
   var store = {
-    get: function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
-    del: function (k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
+    get: function (k, d) { try { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) {
+      var s; try { s = JSON.stringify(v); } catch (e) { return false; }
+      mem[k] = s; idbPut(k, s);
+      if (idb && s.length > SMALL) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } return true; }
+      try { localStorage.setItem(k, s); return true; } catch (e) { if (!idb) full(); return !!idb; }
+    },
+    del: function (k) { delete mem[k]; mem[k] = null; idbPut(k, null); try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
+    ready: function () {
+      if (readyP) return readyP;
+      return (readyP = new Promise(function (res) {
+        var done = false, fin = function () { if (!done) { done = true; res(!!idb); } };
+        try {
+          if (!root.indexedDB) return fin();
+          var rq = root.indexedDB.open('hub-store', 1);
+          rq.onupgradeneeded = function () { rq.result.createObjectStore('kv'); };
+          rq.onerror = rq.onblocked = fin;
+          rq.onsuccess = function () {
+            var db = rq.result;
+            try {
+              var os = db.transaction('kv', 'readonly').objectStore('kv'), cur = os.openCursor();
+              cur.onsuccess = function () { var c = cur.result; if (c) { if (!Object.prototype.hasOwnProperty.call(mem, c.key)) mem[c.key] = c.value; c.continue(); } else { idb = db;
+                // move big items that are still in localStorage (older versions) over, and free the space
+                try { for (var i = localStorage.length - 1; i >= 0; i--) { var k = localStorage.key(i); if (!/^hub\./.test(k)) continue; var v = localStorage.getItem(k); if (v && v.length > SMALL) { if (!Object.prototype.hasOwnProperty.call(mem, k)) { mem[k] = v; idbPut(k, v); } localStorage.removeItem(k); } } } catch (e) { /* ignore */ }
+                Object.keys(mem).forEach(function (k) { idbPut(k, mem[k]); });   // anything written before the database opened
+                fin(); } };
+              cur.onerror = fin;
+            } catch (e) { fin(); }
+          };
+          setTimeout(fin, 2500);
+        } catch (e) { fin(); }
+      }));
+    },
+    backend: function () { return idb ? 'IndexedDB' : 'localStorage'; },
+    size: function (k) { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); return v ? v.length : 0; }
   };
 
   /* ---------- toast -------------------------------------------------- */
@@ -3948,6 +3989,13 @@ else if (typeof exports === 'object')
 "Underlying price (S)": "قیمت پایه (S)",
 "Strike (K)": "قیمت اعمال (K)",
 "Phone sync": "همگام‌سازی با گوشی",
+"Long-term view: channels and divergence": "تحلیل بلندمدت: کانال و واگرایی",
+"Trading · Long-term view": "معامله‌گری · تحلیل بلندمدت",
+"Fetch long history (TSETMC, TGJU)": "دریافت تاریخچهٔ بلندمدت (TSETMC، TGJU)",
+"Near channel top": "نزدیک سقف کانال",
+"Near channel bottom": "نزدیک کف کانال",
+"Bearish divergence": "واگرایی منفی",
+"Market commentary from reproducible rules: log-scale trend channel on weekly data, weekly RSI divergence, correction and target levels projected a year ahead, inflation-adjusted returns and a ready-to-edit market note.": "تفسیر بازار با قواعد تکرارپذیر: کانال روند لگاریتمی روی دادهٔ هفتگی، واگرایی RSI هفتگی، سطوح اصلاح و هدف تا یک سال آینده، بازده واقعی پس از تورم و یادداشت بازار آماده برای ویرایش.",
 };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -8546,10 +8594,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (root.document) document.dispatchEvent(new CustomEvent('hub:datalog'));
   }
 
+  // a request that never answers (VPN on, weak line) must not freeze an update: give up after `ms`
+  function tfetch(url, ms) {
+    if (typeof AbortController === 'undefined') return fetch(url, { cache: 'no-store' });
+    var ac = new AbortController(), t = setTimeout(function () { ac.abort(); }, ms || 15000);
+    return fetch(url, { cache: 'no-store', signal: ac.signal }).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); if (e && e.name === 'AbortError') throw new Error('timeout'); throw e; });
+  }
   function getJSON(url, source, override) {
     if (override) url = override;
     var shown = decodeURIComponent(url).replace(/apikey=[^&]+/i, 'apikey=•••');
-    return fetch(url, { cache: 'no-store' }).then(function (r) {
+    return tfetch(url, /OptionMarketWatch|DailyList\/\d+\/[0-9]{4}/.test(url) ? 40000 : 15000).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (j) {
@@ -8729,25 +8783,42 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var loc = root.location || {}; if (!/^https?:$/.test(loc.protocol || '') || /claude|anthropic/.test(loc.host || '')) return (sameP = Promise.resolve(false));
     return (sameP = fetch('proxy/health', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j && j.ok) SAME = 'proxy?url='; return !!SAME; }).catch(function () { return false; }));
   }
-  function routes(hst) { var px = (keys().tseProxy || '').trim(), r = [], g = good[hst]; if (px) r.push(['your proxy', px]); if (SAME) r.push(['server proxy', SAME]); r.push(['direct', '']); if (px.indexOf('127.0.0.1:8787') < 0) r.push(['local proxy', LOCAL]); if (g) r.sort(function (a, b) { return (b[0] === g) - (a[0] === g); }); return r; }
+  var HTTPS = !!(root.location && root.location.protocol === 'https:'), dead = {};
+  function routes(hst) { var px = (keys().tseProxy || '').trim(), r = [], g = good[hst]; if (px) r.push(['your proxy', px]); if (SAME) r.push(['server proxy', SAME]); r.push(['direct', '']); if (px.indexOf('127.0.0.1:8787') < 0 && !HTTPS) r.push(['local proxy', LOCAL]); if (g) r.sort(function (a, b) { return (b[0] === g) - (a[0] === g); }); return r; }
   function wrap(px, url) { return !px ? url : px.indexOf('{url}') >= 0 ? px.replace('{url}', encodeURIComponent(url)) : px + encodeURIComponent(url); }
   function routed(url, source, get) {
     var hst = host(url), list = routes(hst), errs = [];
     function next(i) {
       if (i >= list.length) {
-        var e = new Error(source + ': ' + (Hub.i18n && Hub.i18n.lang() === 'fa' ? 'به سرور نرسید (امتحان‌شده: ' + list.map(function (x) { return x[0]; }).join('، ') + '). پروکسی محلی را اجرا کنید: معامله‌گری ← مرکز دادهٔ بازار ← دسترسی و اتصال.' : 'could not reach the server (tried: ' + list.map(function (x) { return x[0]; }).join(', ') + '). Start the local proxy: Trading → Market data centre → Access.'));
-        e.routes = errs; throw e; }
+        var faL = Hub.i18n && Hub.i18n.lang() === 'fa', tried = list.map(function (x) { return x[0]; }).join(faL ? '، ' : ', ');
+        var e = new Error(source + ': ' + (HTTPS ? (faL ? 'به سرور نرسید (' + (errs[errs.length - 1] || '') + '). این سرور فقط از اینترنت داخل ایران جواب می‌دهد: فیلترشکن را خاموش کنید و دوباره بزنید؛ اگر نشد «تست اتصال» را بزنید.' : 'could not reach the server (' + (errs[errs.length - 1] || '') + '). It answers only from inside Iran: switch the VPN off and retry, or run the connection test.')
+          : (faL ? 'به سرور نرسید (امتحان‌شده: ' + tried + '). پروکسی محلی را اجرا کنید: معامله‌گری ← مرکز دادهٔ بازار ← دسترسی و اتصال.' : 'could not reach the server (tried: ' + tried + '). Start the local proxy: Trading → Market data centre → Access.')));
+        e.routes = errs; e.detail = errs.join(' | '); if (!good[hst]) dead[hst] = { at: Date.now(), msg: e.message, detail: e.detail }; throw e; }
       return get(wrap(list[i][1], url)).then(function (r) { good[hst] = list[i][0]; lastRoute = { name: list[i][0], host: hst, at: Date.now() }; return r; })
         .catch(function (e) { errs.push(list[i][0] + ': ' + String(e && e.message || e).replace(/^[A-Za-z]+: /, '').slice(0, 90)); return next(i + 1); });
     }
+    var dd = dead[hst]; if (dd && Date.now() - dd.at < 45000) { var de = new Error(dd.msg); de.detail = dd.detail; de.fast = true; return Promise.reject(de); }   // the host just failed on every route: do not wait 76 more timeouts
     return detectSame().then(function () { list = routes(hst); return next(0); });
+  }
+  function resetRoutes() { dead = {}; }
+  // connection test: each address is called straight from this page, one by one, and timed
+  function diagnose(onRow) {
+    var T = [['TSETMC · اطلاعات نماد (فولاد)', TSE + 'Instrument/GetInstrumentInfo/46348559193224090'], ['TSETMC · قیمت روزانه', TSE + 'ClosingPrice/GetClosingPriceDailyList/46348559193224090/5'], ['TSETMC · حقیقی/حقوقی', TSE + 'ClientType/GetClientTypeHistory/46348559193224090'],
+      ['TSETMC · شاخص کل', TSE + 'Index/GetIndexB2History/32097828799138957'], ['TSETMC · تابلوی اختیار معامله', TSE + 'Instrument/GetInstrumentOptionMarketWatch/0'], ['TGJU · دلار', 'https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl']];
+    var out = [], go = function (i) {
+      if (i >= T.length) return Promise.resolve(out);
+      var t0 = Date.now(), row = { name: T[i][0], url: T[i][1] };
+      return tfetch(T[i][1], 20000).then(function (r) { row.status = r.status; return r.text(); }).then(function (t) { row.ok = row.status >= 200 && row.status < 300 && t.length > 2; row.bytes = t.length; }, function (e) { row.ok = false; row.err = e && e.message === 'timeout' ? 'timeout (۲۰ ثانیه بی‌پاسخ)' : e instanceof TypeError ? 'رد شد: شبکه یا CORS (' + (e.message || '') + ')' : String(e && e.message || e); })
+        .then(function () { row.ms = Date.now() - t0; out.push(row); onRow && onRow(row, i, T.length); return go(i + 1); });
+    };
+    resetRoutes(); return go(0);
   }
   function viaProxy(url, source) { return routed(url, source, function (full) { return getJSON(full, source); }); }
   function tse(path) { return viaProxy(TSE + path, 'TSETMC'); }
   // raw text through the same proxy prefix (HTML pages, CSV)
   function viaProxyText(url, source) {
     return routed(url, source, function (full) {
-      return fetch(full, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      return tfetch(full, 20000).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(function (t) { record({ source: source, url: url, ok: true }); return t; })
         .catch(function (e) { var m = e instanceof TypeError ? 'blocked (CORS / offline)' : e.message; record({ source: source, url: url, ok: false, msg: m }); throw new Error(m); });
     });
@@ -8908,7 +8979,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     financials: function (sym, years) { return call('financials', [sym, years || 3]); },
     riskFree: function () { return call('riskFree', []); },
     test: function (which) { return which === 'tse' ? tseProvider.quote('فولاد') : providers[which].riskFree(); },
-    tse: tseProvider, tgju: tgju, web: viaProxy, webText: viaProxyText, route: function () { return lastRoute; }, localPing: localPing, LOCAL: LOCAL, serverProxy: function () { return detectSame().then(function () { return SAME; }); },
+    tse: tseProvider, tgju: tgju, web: viaProxy, webText: viaProxyText, route: function () { return lastRoute; }, diagnose: diagnose, resetRoutes: resetRoutes, localPing: localPing, LOCAL: LOCAL, serverProxy: function () { return detectSame().then(function () { return SAME; }); },
     testTgju: function () { return tgju('price_dollar_rl').then(function (r) { if (!r.length) throw new Error('TGJU: empty series'); return r[r.length - 1]; }); },
     history: function (sym, market) { return market === 'tse' ? tseProvider.history(sym, 260) : historyGlobal(sym); }
   };
@@ -8917,11 +8988,11 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 /* js/core/datasync.js */
 /* =====================================================================
  * DATA SYNC — PC → GitHub → phone.
- *   TSETMC answers only from inside Iran (tested 2026-11-11: GitHub's US runners time out on every TSETMC
- *   endpoint while TGJU answers), and Safari on the phone cannot call it directly (CORS). So:
- *   · the PC in Iran fetches as before (local proxy) and PUBLISHES a snapshot to the GitHub repo that serves the phone app
+ *   The phone app calls TSETMC straight from the page first (works on Iranian internet, as the earlier apps on the same site do).
+ *   This sync is the fallback for when the phone cannot reach TSETMC (abroad / VPN on): TSETMC answers only from inside Iran
+ *   (tested 2026-11-11: GitHub's US runners time out on every TSETMC endpoint while TGJU answers).
+ *   · the PC in Iran fetches as before and PUBLISHES a snapshot to the GitHub repo that serves the phone app
  *   · the phone PULLS that snapshot from its own site (same origin: no CORS, no proxy)
- *   · gold / FX also arrive from a scheduled GitHub Action (TGJU is reachable from abroad), so they refresh without the PC.
  * Snapshot files (in the site's data/ folder): tse.json (stocks, options, temporal) · tgju.json (gold, FX).
  * The GitHub token lives only in this browser's storage on the PC and is sent only to api.github.com.
  * ===================================================================== */
@@ -8929,12 +9000,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   'use strict';
   var Hub = root.Hub = root.Hub || {};
   var KEY = 'hub.sync.v1';
-  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1'] };
-  var KEEP = ['set', 'tk', 'settings', 'f'];               // the phone keeps its own settings / filters
+  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1'] };
+  var KEEP = ['set', 'tk', 'settings', 'f', 'sel', 'opt'];               // the phone keeps its own settings / filters
   var DEF = { repo: 'amir6990/Signal', branch: 'claude/iran-stock-signals-excel-guqwon', dir: 'hub/data', token: '', auto: false, autoPull: true, site: 'https://amir6990.github.io/Signal/hub/' };
   function ls() { try { return root.localStorage; } catch (e) { return null; } }
-  function get(k, d) { var s = ls(); try { var v = s && s.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
-  function put(k, v) { var s = ls(); try { s && s.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  // through the hub's store (memory + IndexedDB): the data sets are larger than a phone's localStorage
+  function get(k, d) { if (Hub.util && Hub.util.store) return Hub.util.store.get(k, d); var s = ls(); try { var v = s && s.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+  function put(k, v) { if (Hub.util && Hub.util.store) return Hub.util.store.set(k, v); var s = ls(); try { s && s.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
   function cfg() { return Object.assign({}, DEF, get(KEY, {}) || {}); }
   function setCfg(c) { put(KEY, Object.assign(cfg(), c)); }
   function live(S) { return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
@@ -9004,7 +9076,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   // on the phone: pull once on opening
   function boot() {
     if (!served() || !cfg().autoPull) return;
-    pull(false).then(function (r) { if (r.updated.length) { Hub.util && Hub.util.toast((fa() ? 'دادهٔ جدید از کامپیوتر رسید: ' : 'New data arrived: ') + r.updated.length + (fa() ? ' مجموعه' : ' sets'), 'good'); if (Hub.rerenderAll) Hub.rerenderAll(); } });
+    var rd = Hub.util && Hub.util.store && Hub.util.store.ready ? Hub.util.store.ready() : Promise.resolve();
+    rd.then(function () { return pull(false); }).then(function (r) { if (r.updated.length) { Hub.util && Hub.util.toast((fa() ? 'دادهٔ جدید از کامپیوتر رسید: ' : 'New data arrived: ') + r.updated.length + (fa() ? ' مجموعه' : ' sets'), 'good'); if (Hub.rerenderAll) Hub.rerenderAll(); } });
   }
   if (root.document) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 800); }); else setTimeout(boot, 800); }
 
@@ -9199,7 +9272,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var OLD = { audit: 'statements', finmgmt: 'financing', finance: 'financing', buyside: 'ib', sellside: 'ib', signals: 'trading' };
   // tools shown inside another page (the strategy engine or a suite): reachable, but not listed twice
   var STRAT_IN = { 'strategy-studio': 'studio', 'rm-strategy': 'rm', 'five-forces': 'ff', kernel: 'kn', 'blue-ocean': 'bo', 'playing-to-win': 'pw' };
-  var TRADE_IN = ['market-data', 'sig-stocks', 'sig-gold', 'sig-fx', 'sig-options', 'sig-temporal', 'position', 'rm-trading'];
+  var TRADE_IN = ['long-view', 'market-data', 'sig-stocks', 'sig-gold', 'sig-fx', 'sig-options', 'sig-temporal', 'position', 'rm-trading'];
   // exact duplicates folded into another page (same checklist content)
   var ALIAS = { 'buyside-process': { id: 'ma-suite', tab: 's-ib-process', key: 'hub.ma-suite.v1' }, 'sellside-process': { id: 'ma-suite', tab: 's-ib-process', key: 'hub.ma-suite.v1' } };
   function parentOf(id) {
@@ -9461,7 +9534,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   Hub.register = register; Hub.toolById = byId;
   Hub.SECTIONS = SECTIONS;
-  Hub.start = start;
+  Hub.start = function () { var st = Hub.util.store; if (st && st.ready) st.ready().then(start, start); else start(); };
   Hub.rerenderAll = rerenderAll;
   Hub.secLabel = secLabel;
 })(window);
@@ -19198,6 +19271,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function summErr(errs) { if (!errs || !errs.length) return ''; var u = []; errs.forEach(function (x) { var m = String(x).replace(/^[^:]{1,40}:\s*(?=[A-Z]{3,}|[^\s:]+:)/, ''); if (u.indexOf(m) < 0) u.push(m); }); return u.slice(0, 2).join(' · ') + (errs.length > 1 ? (isFa() ? ' (' + errs.length + ' مورد)' : ' (' + errs.length + ' items)') : ''); }
   function safeFetch(fn, S, progress) {
     var keep = JSON.stringify({ data: S.data, meta: S.meta });
+    if (Hub.data.resetRoutes) Hub.data.resetRoutes();   // a new attempt by the user always really tries again
     return Promise.resolve().then(function () { return fn(S, progress); }).then(function (errs) {
       var got = S.data && Object.keys(S.data).some(function (k) { return k[0] !== '_' && hasContent(S.data[k]); });
       if (!got) { var o = JSON.parse(keep); S.data = o.data; S.meta = o.meta; var e = new Error((errs && errs.length ? summErr(errs) : 'no data returned') + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; }
@@ -19210,13 +19284,15 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var tse = Hub.data.tse, P = setObj(S.set), list = S.watch.filter(function (w) { return w.active !== false && w.symbol && (!only || only.indexOf(w.symbol) >= 0); }), errs = [];
     var smp = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || ''), data = {};
     if (!smp) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });
-    var step = function (i) {
-      if (i >= list.length) return Promise.resolve();
-      var w = list[i]; progress && progress(i + 1, list.length, w.symbol);
+    // five symbols at a time (the earlier one-by-one loop took minutes on a phone line)
+    var nxt = 0, done = 0, one = function () {
+      if (nxt >= list.length) return Promise.resolve();
+      var w = list[nxt++];
       var code = w.insCode ? Promise.resolve(w.insCode) : tse.resolve(w.symbol).then(function (c) { w.insCode = c; return c; });
       return code.then(function (c) { return Promise.all([tse.daily(c, Math.round(P.HistoryDays) || 260), tse.clientType(c).catch(function () { return []; })]); })
-        .then(function (r) { data[w.symbol] = { px: r[0], ct: r[1].slice(-90) }; }).catch(function (e) { errs.push(w.symbol + ': ' + e.message); }).then(function () { return step(i + 1); });
+        .then(function (r) { data[w.symbol] = { px: r[0], ct: r[1].slice(-90) }; }).catch(function (e) { errs.push(w.symbol + ': ' + e.message); }).then(function () { done++; progress && progress(done, list.length, w.symbol); return one(); });
     };
+    var step = function () { var ps = []; for (var k = 0; k < Math.min(5, list.length); k++) ps.push(one()); return Promise.all(ps); };
     return step(0).then(function () { return Promise.all([tse.index('32097828799138957').catch(function () { return []; }), tse.index('67130298613737946').catch(function () { return []; }), Hub.data.tgju('price_dollar_rl').catch(function () { return []; })]); })
       .then(function (r) { if (r[0].length) data._idx = { total: r[0].slice(-265), ew: r[1].slice(-265) }; if (r[2].length) data._usd = r[2].slice(-265); S.data = data; if (errs.length >= list.length && list.length) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; } stampData(S, 'TSETMC + TGJU'); return errs; });
   }
@@ -19538,6 +19614,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var chip = function (s) { return h('span', { class: 'sig-chip ' + SIGCLS(s), text: s }); };
   function settingsTab(ctx) { return ctx.group([ctx.panel('Model settings (from the workbook’s Settings sheet)', [h('p', { class: 'muted', text: 'Weights are structural, not optimised: treat them as hypotheses. Changes apply immediately.' }),
     ctx.list({ id: ctx.S.tool + '-set', path: 'set', cols: [{ key: 'key', label: 'Key', kind: 'text' }, { key: 'value', label: 'Value', fmt: 'num4' }, { key: 'note', label: 'Note', kind: 'text' }] })])]); }
+  Hub.signals.fetchBar = function (ctx, fn, label) { return fetchBar(ctx, fn, label); };
   function fetchBar(ctx, fn, label) {
     var st = h('p', { class: 'muted', 'aria-live': 'polite' });
     var btn = h('button', { class: 'btn', type: 'button', text: label || 'Fetch live data', onclick: function () {
@@ -19796,7 +19873,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
 /* js/data/tradebank.js */
 /* =====================================================================
- * TRADING MODELS BANK — 29 signal / sizing / risk models, one standard profile each.
+ * TRADING MODELS BANK — 31 signal / sizing / risk models, one standard profile each.
  *   st   live = computed from your data in the browser · data = needs data the feeds do not supply yet
  *        dev  = developmental: described, not part of the score (no trained model or data in the hub)
  *   fam  trend · osc (momentum & mean reversion) · struct (price structure & levels) · flow · quant · options · ai · risk
@@ -19860,6 +19937,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     { id: 'gfx', fa: 'امتیاز کاربرگ طلا و ارز شما (روند، حباب، اسپرد تتر)', en: 'Gold / FX workbook composite', fam: 'flow', role: 'dir', st: 'live', assets: 'طلا، سکه، ارز',
       logic: 'امتیاز ۱۰− تا ۱۰+ کاربرگ‌های «سیگنال طلا و سکه» (روند و حباب نسبت به ارزش ذاتی از اونس و دلار) و «سیگنال ارز» (روند و اسپرد تتر به دلار آزاد)، تبدیل به رأی ۱− تا ۱+.', horizon: 'میان‌مدت', regimes: 'همه',
       src: 'قواعد کاربرگ‌های طلا و ارز شما (منطق ارزش ذاتی سکه = اونس × دلار ÷ ۳۱٫۱ × عیار × وزن)', evidence: 'آزمون مستقل منتشرشده ندارد؛ اعتبار آن در زبانهٔ «بک‌تست» روی دادهٔ شما سنجیده می‌شود.', weak: 'حباب سکه می‌تواند مدت‌ها پایدار بماند؛ دادهٔ TGJU قیمت بازار آزاد است، نه قیمت قابل معامله.', iran: 'اسپرد خرید و فروش فیزیکی و مالیات/کارمزد را در نظر بگیرید.' },
+    { id: 'channel', fa: 'کانال روند لگاریتمی (جایگاه قیمت بین کف و سقف کانال)', en: 'Log trend channel position', fam: 'struct', role: 'dir', st: 'live', assets: 'همه',
+      logic: 'خط کمترین مربعات روی لگاریتم بسته‌شدن هفتگی و دو خط موازی که ۹۵٪ قیمت‌ها را در بر می‌گیرند. نزدیک سقف کانال رأی منفی (احتمال اصلاح)، نزدیک کف در کانال صعودی رأی مثبت، وسط کانال رأی ملایم در جهت شیب.', horizon: 'بلندمدت', regimes: 'روندهای پایدار',
+      src: 'تحلیل تکنیکال کلاسیک: خط روند و کانال موازی در مقیاس لگاریتمی؛ این‌جا به‌جای رسم دستی با رگرسیون ساخته می‌شود تا تکرارپذیر باشد.', evidence: 'شواهد دانشگاهی مستقیم برای کانال رسم‌شده محدود است؛ اعتبار آن روی دادهٔ شما در بک‌تست و دفتر یادگیری سنجیده می‌شود.', weak: 'کانال توصیف گذشته است؛ در جهش تورمی یا تغییر رژیم ارزی قیمت می‌تواند مدت‌ها بیرون از کانال بماند. در موتور فقط یک سال داده دارد؛ نسخهٔ چندساله در ابزار «تحلیل بلندمدت» است.', iran: 'برای دلار، سکه و شاخص‌ها مقیاس لگاریتمی ضروری است چون رشد اسمی با تورم نمایی است.' },
+    { id: 'wdiv', fa: 'واگرایی RSI در تایم‌فریم هفتگی', en: 'Weekly RSI divergence', fam: 'osc', role: 'dir', st: 'live', assets: 'همه',
+      logic: 'واگرایی منفی: قیمت هفتگی سقف بالاتر می‌زند اما RSI(14) هفتگی سقف پایین‌تر (و سقف قبلی RSI ≥ ۶۰) ← هشدار تضعیف مومنتوم. واگرایی مثبت برعکس در کف‌ها.', horizon: 'میان‌مدت', regimes: 'انتهای روندها',
+      src: 'Wilder, New Concepts in Technical Trading Systems (1978) — معرفی RSI و واگرایی.', evidence: 'واگرایی هشدار است نه زمان‌سنج؛ در روندهای قوی بارها تکرار می‌شود و قیمت ادامه می‌دهد. وزن پیش‌فرض پایین است و سیستم یادگیری آن را تعدیل می‌کند.', weak: 'تشخیص سقف و کف به پنجره وابسته است؛ با یک سال داده فقط حدود ۵۰ کندل هفتگی هست.', iran: 'در صف‌های پیاپی، RSI هفتگی اشباع می‌ماند و واگرایی دیر شکل می‌گیرد.' },
     { id: 'factor', fa: 'مدل عاملی (مومنتوم، نوسان پایین، نقدشوندگی، ارزش)', en: 'Factor model', fam: 'quant', role: 'dir', st: 'live', assets: 'سهام',
       logic: 'رتبهٔ مقطعی در فهرست دیده‌بان: مومنتوم ۱۲۰ روزه منهای ۵ روز اخیر، نوسان ۶۰ روزهٔ پایین، نقدشوندگی؛ ارزش (P/E) و کیفیت فقط اگر داده موجود باشد.', horizon: 'میان تا بلندمدت', regimes: 'همه',
       src: 'Asness, Moskowitz & Pedersen (2013) «Value and Momentum Everywhere», JF؛ Frazzini & Pedersen (2014) «Betting Against Beta», JFE؛ Asness, Frazzini & Pedersen (2019) «Quality Minus Junk»', evidence: 'عوامل مومنتوم و نوسان پایین شواهد بین‌المللی دارند.', weak: 'فهرست ۷۸ نماد برای رتبهٔ مقطعی کوچک است؛ ارزش و کیفیت نیازمند دادهٔ بنیادی.', iran: 'P/E از TSETMC در این نسخه برای همهٔ نمادها دریافت نمی‌شود.' },
@@ -19901,6 +19984,88 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeBank;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+/* js/core/longview.js */
+/* =====================================================================
+ * LONG VIEW — the "channel + weekly divergence" school of market commentary, made computable.
+ *   1 weekly bars from daily data (week = Saturday…Friday, Tehran convention)
+ *   2 log-scale trend channel: least-squares line through log(weekly close); parallel bands at the residual
+ *     quantiles that contain `cover` of the closes (default 95%) — a drawn channel, but reproducible
+ *   3 weekly RSI(14) and divergence between the last two swing highs (or lows)
+ *   4 a reading: where price sits in the channel, what a correction to the mid / lower line means in price,
+ *     where the upper line will be in 26 and 52 weeks — and how strong the evidence is.
+ * Honest limits: a channel is a description of the past, not a law; divergence is a warning, not a timing tool.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var isF = function (x) { return typeof x === 'number' && isFinite(x); };
+  function jdnOf(g) { var s = String(g), y = +s.slice(0, 4), m = +s.slice(4, 6), d = +s.slice(6, 8), a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3; return d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045; }
+  // back-adjust TSETMC daily rows for capital increases / dividends with "yesterday price"
+  function adjust(rows) {
+    var out = new Array(rows.length), f = 1;
+    for (var i = rows.length - 1; i >= 0; i--) { var r = rows[i]; out[i] = { date: r.date, open: (r.open || r.close) * f, high: (r.high || r.close) * f, low: (r.low || r.close) * f, close: r.close * f };
+      if (i > 0 && r.yclose > 0 && rows[i - 1].close > 0 && Math.abs(r.yclose / rows[i - 1].close - 1) > 0.002) f *= r.yclose / rows[i - 1].close; }
+    return out;
+  }
+  function weekly(rows) {
+    var W = [], cur = null;
+    rows.forEach(function (r) { if (!(r.close > 0)) return; var wk = Math.floor((jdnOf(r.date) + 2) / 7);       // JDN+2 ≡ 0 on Saturday
+      if (!cur || cur.wk !== wk) { cur = { wk: wk, date: r.date, open: r.open || r.close, high: r.high || r.close, low: r.low || r.close, close: r.close }; W.push(cur); }
+      else { cur.high = Math.max(cur.high, r.high || r.close); cur.low = Math.min(cur.low, r.low || r.close); cur.close = r.close; cur.date = r.date; } });
+    return W;
+  }
+  function rsi(c, k) { var o = new Array(c.length).fill(NaN), u = 0, d = 0; for (var i = 1; i < c.length; i++) { var x = c[i] - c[i - 1], up = Math.max(x, 0), dn = Math.max(-x, 0); if (i <= k) { u += up / k; d += dn / k; if (i === k) o[i] = d === 0 ? 100 : 100 - 100 / (1 + u / d); } else { u = (u * (k - 1) + up) / k; d = (d * (k - 1) + dn) / k; o[i] = d === 0 ? 100 : 100 - 100 / (1 + u / d); } } return o; }
+  function channel(W, from, to, cover) {
+    var n = to - from + 1; if (n < 20) return null; var sx = 0, sy = 0, sxx = 0, sxy = 0, i, y;
+    for (i = from; i <= to; i++) { y = Math.log(W[i].close); sx += i; sy += y; sxx += i * i; sxy += i * y; }
+    var b = (n * sxy - sx * sy) / (n * sxx - sx * sx), a = (sy - b * sx) / n, res = [], ss = 0, st = 0, my = sy / n;
+    for (i = from; i <= to; i++) { y = Math.log(W[i].close); var e = y - (a + b * i); res.push(e); ss += e * e; st += (y - my) * (y - my); }
+    var srt = res.slice().sort(function (p, q) { return p - q; }), q = (1 - (cover || 0.95)) / 2, lo = srt[Math.floor(q * (n - 1))], hi = srt[Math.ceil((1 - q) * (n - 1))], half = Math.max(Math.abs(lo), Math.abs(hi));
+    return { a: a, b: b, half: half, sd: Math.sqrt(ss / (n - 2)), r2: st > 0 ? 1 - ss / st : 0, from: from, to: to, n: n, at: function (i2, k) { return Math.exp(a + b * i2 + (k || 0) * half); }, growth: Math.exp(b * 52) - 1 };
+  }
+  // swing pivots on weekly closes: highest / lowest within `w` weeks each side; the latest bar counts if it is the extreme of the last 2w+1
+  function pivots(v, w, high) {
+    var P = [], n = v.length, cmp = high ? function (a, b) { return a >= b; } : function (a, b) { return a <= b; };
+    for (var i = w; i < n; i++) { var ok = true, r = Math.min(n - 1, i + w); for (var j = i - w; j <= r; j++) if (j !== i && !cmp(v[i], v[j])) { ok = false; break; } if (ok && (!P.length || i - P[P.length - 1] >= w)) P.push(i); }
+    return P;
+  }
+  function divergence(W, R, t) {
+    var c = W.slice(0, t + 1).map(function (x) { return x.close; }), out = { bear: null, bull: null };
+    var H = pivots(c, 3, true).filter(function (i) { return isF(R[i]); }), L = pivots(c, 3, false).filter(function (i) { return isF(R[i]); });
+    if (H.length >= 2) { var h2 = H[H.length - 1], h1 = H[H.length - 2]; if (t - h2 <= 6 && h2 - h1 <= 52 && c[h2] > c[h1] && R[h2] < R[h1] - 1 && R[h1] >= 60) out.bear = { i1: h1, i2: h2, p1: c[h1], p2: c[h2], r1: R[h1], r2: R[h2] }; }
+    if (L.length >= 2) { var l2 = L[L.length - 1], l1 = L[L.length - 2]; if (t - l2 <= 6 && l2 - l1 <= 52 && c[l2] < c[l1] && R[l2] > R[l1] + 1 && R[l1] <= 40) out.bull = { i1: l1, i2: l2, p1: c[l1], p2: c[l2], r1: R[l1], r2: R[l2] }; }
+    return out;
+  }
+  function analyse(rows, opt) {
+    opt = opt || {}; var W = weekly(rows), n = W.length; if (n < 30) return { ok: false, n: n, why: 'کمتر از ۳۰ هفته داده' };
+    var win = opt.weeks && opt.weeks < n ? opt.weeks : n, from = n - win, t = n - 1, ch = channel(W, from, t, opt.cover || 0.95);
+    var c = W.map(function (x) { return x.close; }), R = rsi(c, 14), dv = divergence(W, R, t), last = c[t];
+    var up = ch.at(t, 1), mid = ch.at(t, 0), lo = ch.at(t, -1), pos = (Math.log(last) - Math.log(lo)) / (Math.log(up) - Math.log(lo));
+    var r52 = n > 52 ? last / c[t - 52] - 1 : NaN, r26 = n > 26 ? last / c[t - 26] - 1 : NaN;
+    var zone = pos >= 0.9 ? 'top' : pos >= 0.65 ? 'upper' : pos > 0.35 ? 'mid' : pos > 0.1 ? 'lower' : 'bottom';
+    var read = pos >= 0.9 && dv.bear ? 'correction' : pos >= 0.9 ? 'stretched' : pos <= 0.1 && dv.bull ? 'rebound' : pos <= 0.1 ? 'depressed' : dv.bear ? 'weakening' : dv.bull ? 'improving' : ch.b > 0 ? 'trend-up' : 'trend-down';
+    // evidence: how well a straight log line describes the series, and how many times each band was touched
+    var touchU = 0, touchL = 0; for (var i = from; i <= t; i++) { var e = (Math.log(c[i]) - (ch.a + ch.b * i)) / ch.half; if (e >= 0.85 && (i === from || (Math.log(c[i - 1]) - (ch.a + ch.b * (i - 1))) / ch.half < 0.85)) touchU++; if (e <= -0.85 && (i === from || (Math.log(c[i - 1]) - (ch.a + ch.b * (i - 1))) / ch.half > -0.85)) touchL++; }
+    var quality = ch.r2 >= 0.85 && touchU >= 2 && touchL >= 2 ? 'قوی' : ch.r2 >= 0.6 && touchU + touchL >= 3 ? 'متوسط' : 'ضعیف';
+    return { ok: true, W: W, R: R, ch: ch, n: n, win: win, t: t, last: last, date: W[t].date, up: up, mid: mid, lo: lo, pos: pos, zone: zone, read: read, dv: dv, rsi: R[t], r52: r52, r26: r26,
+      toMid: mid / last - 1, toLo: lo / last - 1, toUp: up / last - 1, up26: ch.at(t + 26, 1), up52: ch.at(t + 52, 1), mid26: ch.at(t + 26, 0), mid52: ch.at(t + 52, 0), lo26: ch.at(t + 26, -1), touchU: touchU, touchL: touchL, quality: quality };
+  }
+  // causal votes for the trading engine, from daily data only (about a year): channel position and weekly divergence
+  function votesAt(X, t, cache) {
+    var out = { channel: null, wdiv: null }; if (t < 150) return out;
+    var rows = []; for (var i = Math.max(0, t - 259); i <= t; i++) rows.push({ date: X.d[i], open: X.o[i], high: X.h[i], low: X.l[i], close: X.c[i] });
+    var W = weekly(rows), n = W.length; if (n < 30) return out;
+    var ch = channel(W, 0, n - 1, 0.95), c = W.map(function (x) { return x.close; }), last = c[n - 1], up = ch.at(n - 1, 1), lo = ch.at(n - 1, -1), pos = (Math.log(last) - Math.log(lo)) / (Math.log(up) - Math.log(lo)), g = ch.growth;
+    var v = pos >= 0.92 ? -0.6 : pos >= 0.8 ? -0.25 : pos <= 0.08 ? (g > 0 ? 0.6 : 0.2) : pos <= 0.2 ? (g > 0 ? 0.3 : 0) : g > 0 ? 0.15 : -0.15;
+    out.channel = { v: v, why: 'جایگاه در کانال لگاریتمی یک‌ساله: ' + Math.round(pos * 100) + '٪ از کف تا سقف' + (pos >= 0.92 ? ' (نزدیک سقف)' : pos <= 0.08 ? ' (نزدیک کف)' : '') + '، شیب سالانهٔ کانال ' + Math.round(g * 100) + '٪', pos: pos, up: up, lo: lo, mid: ch.at(n - 1, 0) };
+    var R = rsi(c, 14), dv = divergence(W, R, n - 1);
+    out.wdiv = { v: dv.bear ? -0.8 : dv.bull ? 0.8 : 0, why: dv.bear ? 'واگرایی منفی هفتگی: قیمت سقف بالاتر، RSI سقف پایین‌تر (' + Math.round(dv.bear.r1) + ' ← ' + Math.round(dv.bear.r2) + ')' : dv.bull ? 'واگرایی مثبت هفتگی: قیمت کف پایین‌تر، RSI کف بالاتر (' + Math.round(dv.bull.r1) + ' ← ' + Math.round(dv.bull.r2) + ')' : 'واگرایی هفتگی دیده نمی‌شود (RSI هفتگی ' + (isF(R[n - 1]) ? Math.round(R[n - 1]) : '—') + ')' };
+    return out;
+  }
+  Hub.longView = { weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Hub.longView;
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* js/core/tradeengine.js */
 /* =====================================================================
  * TRADING ENGINE — regime, 23 voting models, one ensemble, a standard
@@ -19928,9 +20093,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       acct: { equity: null, riskPct: 0.01, maxPosPct: 0.15, maxHeat: 0.06, maxPos: 8, sectorCap: 0.30, targetVol: 0.35, minRR: 1.5, limitPct: 0.03, costPct: 0.012, liqPct: 0.10, minVal: 3e10, corrMax: 0.8, peak: null, ddSoft: 0.10, ddHard: 0.20 },
       minConf: 55, strongConf: 70, w: {}, off: {}, news: [], positions: [], learn: { wr: {}, block: {}, riskMult: 1, log: [], auto: false } };
   }
-  var BASEW = { trend: 1, macd: 0.6, adx: 0.5, ichimoku: 0.8, mtf: 1, evidence: 1, rsi: 0.6, boll: 0.5, stoch: 0.3, hybrid: 0.8, candles: 0.3, smc: 0.6, fib: 0.3, vp: 0.5, flow: 1, tse: 0.8, gfx: 0.8, factor: 0.8, pairs: 0.5, cross: 0.5, temporal: 0.3, mlrank: 0.7, sentiment: 0.8 };
-  var FAMOF = { trend: 'trend', macd: 'trend', adx: 'trend', ichimoku: 'trend', mtf: 'trend', evidence: 'trend', rsi: 'osc', boll: 'osc', stoch: 'osc', hybrid: 'osc', candles: 'struct', smc: 'struct', fib: 'struct', vp: 'struct', flow: 'flow', tse: 'flow', gfx: 'flow', factor: 'quant', pairs: 'quant', cross: 'quant', temporal: 'quant', mlrank: 'quant', sentiment: 'ai' };
-  var HZ = { rsi: 's', boll: 's', stoch: 's', candles: 's', temporal: 's', mlrank: 's', sentiment: 's', factor: 'l' };
+  var BASEW = { trend: 1, macd: 0.6, adx: 0.5, ichimoku: 0.8, mtf: 1, evidence: 1, rsi: 0.6, boll: 0.5, stoch: 0.3, hybrid: 0.8, candles: 0.3, smc: 0.6, fib: 0.3, vp: 0.5, flow: 1, tse: 0.8, gfx: 0.8, channel: 0.5, wdiv: 0.4, factor: 0.8, pairs: 0.5, cross: 0.5, temporal: 0.3, mlrank: 0.7, sentiment: 0.8 };
+  var FAMOF = { trend: 'trend', macd: 'trend', adx: 'trend', ichimoku: 'trend', mtf: 'trend', evidence: 'trend', rsi: 'osc', boll: 'osc', stoch: 'osc', hybrid: 'osc', candles: 'struct', smc: 'struct', fib: 'struct', vp: 'struct', flow: 'flow', tse: 'flow', gfx: 'flow', channel: 'struct', wdiv: 'osc', factor: 'quant', pairs: 'quant', cross: 'quant', temporal: 'quant', mlrank: 'quant', sentiment: 'ai' };
+  var HZ = { channel: 'l', rsi: 's', boll: 's', stoch: 's', candles: 's', temporal: 's', mlrank: 's', sentiment: 's', factor: 'l' };
   var REG = { up: 'روند صعودی', down: 'روند نزولی', range: 'رنج (بدون روند)', hv: 'پرنوسان', crisis: 'بحرانی', unk: 'نامشخص (دادهٔ کم)' };
 
   /* ---------------- series and indicators ---------------- */
@@ -20095,6 +20260,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var X = prep(a.rows), I = indicators(X), n = X.n, A = { flowAt: flowAccessor(X, a.ct) }, V = {}, RG = [];
     Object.keys(VOTE).forEach(function (m) { V[m] = new Array(n).fill(null); });
     for (var t = 0; t < n; t++) { var rg = regimeAt(X, I, t); RG.push(rg); if (t < 25) continue; Object.keys(VOTE).forEach(function (m) { try { V[m][t] = VOTE[m](X, I, t, rg, A); } catch (e) { V[m][t] = null; } }); }
+    var LV = Hub.longView; V.channel = new Array(n).fill(null); V.wdiv = new Array(n).fill(null);            // long-view school: log channel position and weekly RSI divergence
+    if (LV) for (t = 150; t < n; t++) { if (t !== n - 1 && t % 5 && V.channel[t - 1]) { V.channel[t] = V.channel[t - 1]; V.wdiv[t] = V.wdiv[t - 1]; continue; }   // weekly quantities: refresh every 5th bar and on the last bar
+      try { var lv = LV.votesAt(X, t); V.channel[t] = lv.channel; V.wdiv[t] = lv.wdiv; } catch (e) { /* skip */ } }
     var res = { X: X, I: I, V: V, RG: RG, A: A }; CACHE[ck] = res; return res;
   }
   // date-aligned close lookups for cross-asset work
@@ -21130,6 +21298,31 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         h('p', { class: 'small muted', text: T('Safety: the proxy listens only on this computer (127.0.0.1), forwards only GET requests, and only to TSETMC, TGJU, Codal and the other data hosts the hub uses. A Cloudflare Worker (Data sources & keys) also works where TSETMC accepts its servers’ addresses.', 'امنیت: پروکسی فقط روی همین کامپیوتر (127.0.0.1) گوش می‌دهد، فقط درخواست GET را و فقط به TSETMC، TGJU، کدال و سایر منابع دادهٔ هاب می‌فرستد. Cloudflare Worker (صفحهٔ منابع داده) هم کار می‌کند، اگر TSETMC آدرس سرورهای آن را بپذیرد.') })])]);
   }
 
+
+  /* ---------- connection test: the hub's own calls, straight from this page, timed one by one ---------- */
+  function diagPanel(ctx) {
+    var st = h('div', { class: 'studio-status', 'aria-live': 'polite' }), box = h('div'), rep = '';
+    var btn = h('button', { class: 'btn', type: 'button', text: 'تست اتصال به بورس و TGJU', 'data-notr': '1', onclick: function () {
+      U.clear(box); st.className = 'studio-status'; st.textContent = 'در حال آزمون…'; btn.disabled = true; var tb = h('tbody');
+      box.appendChild(h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, ['آدرس', 'نتیجه', 'زمان'].map(function (x) { return h('th', { 'data-notr': '1', text: x }); }))]), tb])]));
+      Hub.data.diagnose(function (r, i, n) { st.textContent = 'در حال آزمون… ' + (i + 1) + ' از ' + n;
+        tb.appendChild(h('tr', null, [h('td', { 'data-notr': '1', text: r.name }), h('td', { 'data-notr': '1', class: r.ok ? 'good-t' : 'bad-t', style: 'white-space:normal', text: r.ok ? 'رسید (' + Math.round(r.bytes / 1024) + ' KB)' : (r.err || 'HTTP ' + r.status) }), h('td', { 'data-notr': '1', text: (r.ms / 1000).toFixed(1) + ' ث' })])); })
+        .then(function (rows) { btn.disabled = false; var tse = rows.filter(function (r) { return /TSETMC/.test(r.name); }), okT = tse.filter(function (r) { return r.ok; }).length, tg = rows[rows.length - 1].ok;
+          st.className = 'studio-status ' + (okT === tse.length ? 'good-t' : 'warn-t');
+          st.textContent = okT === tse.length ? 'اتصال مستقیم به بورس برقرار است؛ «به‌روزرسانی همه» روی همین دستگاه کار می‌کند.'
+            : okT ? 'بخشی از آدرس‌های بورس جواب داد (' + okT + ' از ' + tse.length + '). به‌روزرسانی کار می‌کند اما بخش‌های ناموفق با دادهٔ قبلی می‌مانند.'
+            : tse.every(function (r) { return /timeout/.test(r.err || ''); }) ? 'بورس جواب نداد (بی‌پاسخ). معمولاً یعنی اینترنت این دستگاه از خارج ایران دیده می‌شود: فیلترشکن را خاموش کنید و دوباره آزمون کنید.' + (tg ? ' (TGJU رسید، پس اینترنت وصل است.)' : '')
+            : 'مرورگر درخواست بورس را رد کرد (شبکه یا CORS). متن این جدول را برای بررسی بفرستید؛ تا آن موقع از «دریافت از کامپیوتر» استفاده کنید.';
+          rep = 'Hub connection test · ' + new Date().toISOString() + ' · ' + location.origin + ' · store=' + U.store.backend() + '\n' + rows.map(function (r) { return (r.ok ? 'OK   ' : 'FAIL ') + r.name + ' · ' + (r.ok ? r.bytes + ' B' : (r.err || 'HTTP ' + r.status)) + ' · ' + r.ms + ' ms'; }).join('\n') + '\n' + navigator.userAgent;
+          box.appendChild(h('div', { class: 'row-ctl' }, [h('button', { class: 'btn sm', type: 'button', text: 'کپی گزارش آزمون', 'data-notr': '1', onclick: function () { try { navigator.clipboard.writeText(rep).then(function () { U.toast('کپی شد', 'good'); }); } catch (e) { U.toast('کپی نشد', 'warn'); } } })]));
+        });
+    } });
+    var keysBig = ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.longview.v1', 'hub.sigtemporal.v1'], kb = keysBig.reduce(function (a, k) { return a + U.store.size(k); }, 0);
+    return ctx.panel('آزمون اتصال', [h('p', { class: 'f-help', 'data-notr': '1', text: 'همان آدرس‌هایی که «به‌روزرسانی» صدا می‌زند، مستقیم از همین دستگاه و یکی‌یکی آزموده می‌شود تا معلوم شود کدام می‌رسد و کدام نه.' }),
+      h('div', { class: 'row-ctl' }, [btn]), st, box,
+      h('p', { class: 'small muted', 'data-notr': '1', text: 'محل نگهداری داده روی این دستگاه: ' + (U.store.backend() === 'IndexedDB' ? 'پایگاه دادهٔ مرورگر (IndexedDB، بدون محدودیت ۵ مگابایت)' : 'localStorage (محدود؛ ممکن است دادهٔ کامل جا نشود)') + ' · حجم دادهٔ بازار: ' + (kb / 1048576).toFixed(1) + ' میلیون نویسه' })]);
+  }
+
   /* ---------- phone sync: PC publishes to GitHub, the phone pulls ---------- */
   function syncTab(ctx) {
     var DS = Hub.dataSync, c = DS.cfg(), phone = DS.served(), st = h('div', { class: 'studio-status', 'aria-live': 'polite' }), wrap = h('div');
@@ -21142,12 +21335,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         ['طلا و ارز (TGJU)', sn.tgju ? 'منتشرشده ' + ago(sn.tgju.publishedAt) + ' از ' + (sn.tgju.by === 'github-action' ? 'به‌روزرسانی خودکار GitHub (هر ساعت)' : 'کامپیوتر شما') : 'هنوز دریافت نشده'],
         ['آخرین انتشار از همین دستگاه', P ? ago(P.at) + ' · ' + P.files.join('، ') : '—']].map(function (r) { return h('tr', null, [h('td', { 'data-notr': '1', text: r[0] }), h('td', { 'data-notr': '1', style: 'white-space:normal', text: r[1] })]); }))])]));
     }
-    var why = h('p', { class: 'f-help', text: 'سایت بورس (TSETMC) فقط به درخواست‌هایی از داخل ایران جواب می‌دهد (آزمون ۲۰ آبان ۱۴۰۵: از سرورهای خارج روی همهٔ آدرس‌های TSETMC پاسخی نیامد، در حالی که TGJU جواب داد) و Safari آیفون هم اجازهٔ درخواست مستقیم نمی‌دهد. راه‌حل: کامپیوتر شما در ایران داده را می‌گیرد و روی همان سایت GitHub منتشر می‌کند؛ گوشی از سایت خودش می‌خواند. طلا و ارز را یک کار زمان‌بندی‌شده در GitHub هر ساعت خودش به‌روز می‌کند.' });
+    var why = h('p', { class: 'f-help', 'data-notr': '1', text: phone
+      ? 'روش اصلی: «به‌روزرسانی همه» روی همین گوشی، مستقیم از سایت بورس (با اینترنت داخل ایران و فیلترشکن خاموش). روش پشتیبان، برای وقتی که گوشی به بورس نمی‌رسد (خارج از ایران یا فیلترشکن روشن): دریافت آخرین داده‌ای که کامپیوتر شما منتشر کرده است.'
+      : 'گوشی در ایران خودش مستقیم از سایت بورس به‌روز می‌شود. این بخش پشتیبان است: سایت بورس فقط از داخل ایران جواب می‌دهد (آزمون ۲۰ آبان ۱۴۰۵ از سرورهای خارج: بی‌پاسخ)، پس اگر گوشی با فیلترشکن یا خارج از ایران است، کامپیوتر داده را منتشر می‌کند و گوشی آن را می‌گیرد.' });
     var parts = [why];
     if (phone) {
       var ap = h('input', { type: 'checkbox', 'aria-label': 'دریافت خودکار' }); ap.checked = c.autoPull !== false; ap.addEventListener('change', function () { DS.setCfg({ autoPull: ap.checked }); });
       parts.push(h('div', { class: 'row-ctl' }, [pullBtn(), h('label', { class: 'chk-l' }, [ap, document.createTextNode(' هر بار که برنامه باز می‌شود خودکار دریافت شود')])]), st, wrap);
-      parts.push(h('p', { class: 'small muted', text: 'دکمه‌های «به‌روزرسانی» مستقیم روی گوشی برای طلا و ارز ممکن است کار کنند، اما برای بورس تهران از این‌جا دریافت کنید.' }));
+
     } else {
       var f = function (k, label, type, help) { var i = h('input', { class: 'f-in', type: type || 'text', value: c[k] || '', 'aria-label': label, autocomplete: 'off', style: 'min-width:280px' }); i.addEventListener('change', function () { var o = {}; o[k] = i.value.trim(); DS.setCfg(o); }); return h('label', { class: 'f-row', style: 'display:grid;gap:4px' }, [h('span', { text: label }), i, help ? h('span', { class: 'small muted', text: help }) : null]); };
       var au = h('input', { type: 'checkbox', 'aria-label': 'انتشار خودکار' }); au.checked = !!c.auto; au.addEventListener('change', function () { DS.setCfg({ auto: au.checked }); });
@@ -21158,7 +21353,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         h('label', { class: 'chk-l' }, [au, document.createTextNode(' بعد از هر به‌روزرسانی موفق، خودکار منتشر شود')])]), st, wrap);
     }
     paint();
-    return ctx.group([ctx.panel('همگام‌سازی با گوشی', parts)]);
+    return ctx.group(phone ? [diagPanel(ctx), ctx.panel('پشتیبان: دریافت از کامپیوتر', parts)] : [ctx.panel('همگام‌سازی با گوشی (پشتیبان)', parts)]);
   }
   function settingsTab(ctx) {
     var f = G.form({ id: 'md-set', onChange: ctx.recompute, fields: [ctx.field('mx', T('Data counts as out of date after (hours)', 'داده پس از چند ساعت کهنه حساب شود'), 'maxAgeH', 'dec'),
@@ -21174,6 +21369,152 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     kpis: function (ctx) { return [['Up-to-date feeds', function () { return ctx.R.fresh + ' / ' + ctx.R.all; }, function () { return '≤ ' + SG.maxAgeH() + ' h'; }],
       ['Last route', function () { var r = Hub.data.route(); return r && r.at ? r.name : '—'; }, function () { var r = Hub.data.route(); return r && r.host ? r.host : T('no request yet', 'هنوز درخواستی نیست'); }]]; },
     tabs: [{ group: 'Data', items: [['feeds', 'Feeds and update', feedsTab], ['access', 'Access and connection', accessTab], ['sync', 'Phone sync', syncTab], ['set', 'Settings', settingsTab]] }] });
+})(window);
+
+/* js/models/longview.js */
+/* =====================================================================
+ * LONG-TERM VIEW (Trading) — market commentary in the "log channel + weekly RSI divergence + macro" style:
+ *   1 Outlook: every tracked series at a glance (position in its channel, weekly RSI, divergence, reading)
+ *     and a ready-to-edit market note; inflation context and real (inflation-adjusted) returns
+ *   2 Chart: weekly log chart with the channel projected a year ahead and the RSI panel
+ *   3 Data: the series list (TSE index, TSE symbol, TGJU key), history fetch, inflation inputs, settings
+ * The channel is a regression fit (reproducible), not a hand-drawn line. Not investment advice.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub; if (!root.document || !Hub.toolkit || !Hub.longView || !Hub.signals) return;
+  var U = Hub.util, h = U.h, G = Hub.grid, TK = Hub.toolkit, LV = Hub.longView, SG = Hub.signals, KEY = 'hub.longview.v1';
+  function fa(x, d) { if (typeof x !== 'number' || !isFinite(x)) return '—'; var s = Math.abs(x) >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d == null ? (Math.abs(x) >= 100 ? 0 : 2) : d); return s.replace(/,/g, '٬').replace(/\./g, '٫').replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }); }
+  function pct(x, d) { return typeof x === 'number' && isFinite(x) ? (x > 0 ? '+' : '') + fa(x * 100, d == null ? 0 : d) + '٪' : '—'; }
+  function sh(g) { var J = Hub.jalali, s = String(g || ''); return J && s.length === 8 ? J.jstr(J.g2d(+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8))) : s; }
+  var ASSETS = [['شاخص کل بورس', 'tse-index', '32097828799138957'], ['شاخص هم‌وزن بورس', 'tse-index', '67130298613737946'], ['دلار آزاد تهران', 'tgju', 'price_dollar_rl'], ['سکه امامی', 'tgju', 'sekee'], ['انس جهانی طلا', 'tgju', 'ons'], ['فولاد', 'tse', '46348559193224090']];
+  var READ = { correction: ['احتمال اصلاح', 'fit-no'], stretched: ['نزدیک سقف کانال', 'fit-cond'], rebound: ['احتمال بازگشت صعودی', 'fit-rec'], depressed: ['نزدیک کف کانال', 'fit-cond'], weakening: ['تضعیف مومنتوم', 'fit-cond'], improving: ['بهبود مومنتوم', 'fit-rec'], 'trend-up': ['روند صعودی، میانهٔ کانال', 'sev-info'], 'trend-down': ['روند نزولی', 'sev-info'] };
+  var ZONE = { top: 'نزدیک سقف', upper: 'نیمهٔ بالایی', mid: 'میانهٔ کانال', lower: 'نیمهٔ پایینی', bottom: 'نزدیک کف' };
+  function synth(seed, weeks, start, drift, vol) { var s = seed, r = function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }, g = function () { return Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(6.2832 * r()); }, out = [], p = start, d = new Date(Date.UTC(2026, 10, 7) - weeks * 7 * 864e5);
+    for (var i = 0; i < weeks; i++) { d = new Date(d.getTime() + 7 * 864e5); var o = p; p = p * Math.exp(drift + vol * g() + 0.02 * Math.sin(i / 23)); out.push({ date: d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate(), open: o, high: Math.max(o, p) * 1.01, low: Math.min(o, p) * 0.99, close: p }); } return out; }
+  function sample() {
+    var S = { version: 1, tool: 'long-view', meta: { title: 'Long-term view', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, settings: { lang: 'auto' }, sources: {},
+      assets: ASSETS.map(function (a) { return { name: a[0], kind: a[1], key: a[2], active: true }; }), data: {}, opt: { weeks: 0, cover: 0.95 }, sel: ASSETS[0][0],
+      macro: { annual: 0.714, point: 0.835, monthly: 0.046, asOf: 'مهر ۱۴۰۵', src: 'اعداد واردشدهٔ شما (منبع اعلامی: مرکز آمار ایران) — پیش از انتشار با منبع رسمی تطبیق دهید' } };
+    S.assets.forEach(function (a, i) { S.data[a.name] = synth(11 + i * 7, 300, [400000, 100000, 300000, 2e7, 1800, 800][i] || 1000, 0.006 + 0.001 * (i % 3), 0.03); });
+    return S;
+  }
+  function fetchAll(S, progress) {
+    var D = Hub.data, list = S.assets.filter(function (a) { return a.active !== false && a.name && a.key; }), data = {}, errs = [], live = S.meta && !/synthetic|Illustrative/i.test(S.meta.source || '');
+    if (live) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });
+    return list.reduce(function (p, a, i) { return p.then(function () { progress && progress(i + 1, list.length, a.name);
+      var q = a.kind === 'tse-index' ? D.tse.index(a.key) : a.kind === 'tse' ? (/^\d{10,}$/.test(a.key) ? Promise.resolve(a.key) : D.tse.resolve(a.key)).then(function (c) { return D.tse.daily(c, 3000); }).then(LV.adjust) : D.tgju(a.key);
+      return q.then(function (rows) { var W = LV.weekly(rows).map(function (w) { return { date: w.date, open: w.open, high: w.high, low: w.low, close: w.close }; }); if (W.length < 30) throw new Error('فقط ' + W.length + ' هفته داده'); data[a.name] = W; }).catch(function (e) { errs.push(a.name + ': ' + e.message); }); }); }, Promise.resolve())
+      .then(function () { S.data = data; if (errs.length >= list.length && list.length) throw new Error(SG.summErr(errs)); SG.stampData(S, 'TSETMC + TGJU'); return errs; });
+  }
+  function run(S) {
+    if (!S.opt) S.opt = { weeks: 0, cover: 0.95 }; if (!S.macro) S.macro = {};
+    var rows = S.assets.filter(function (a) { return a.active !== false && a.name; }).map(function (a) { var d = (S.data || {})[a.name], A = d && d.length ? LV.analyse(d, { weeks: Number(S.opt.weeks) || 0, cover: Number(S.opt.cover) || 0.95 }) : { ok: false, why: 'داده ندارد' }; A.name = a.name; A.kind = a.kind; A.usd = a.key === 'ons'; return A; });
+    var smp = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '');
+    return { rows: rows, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
+  }
+  /* ---------- text ---------- */
+  function lines(A, M) {
+    if (!A.ok) return [A.name + ': ' + (A.why || 'دادهٔ کافی نیست')];
+    var L = [], dv = A.dv;
+    L.push('قیمت فعلی ' + fa(A.last) + ' (هفتهٔ منتهی به ' + sh(A.date) + ')؛ جایگاه در کانال لگاریتمی: ' + fa(A.pos * 100, 0) + '٪ از کف تا سقف — ' + ZONE[A.zone] + '.');
+    if (dv.bear) L.push('واگرایی منفی در تایم‌فریم هفتگی: قیمت سقف بالاتری زده (' + fa(dv.bear.p1) + ' ← ' + fa(dv.bear.p2) + ') اما RSI سقف پایین‌تری ساخته (' + fa(dv.bear.r1, 0) + ' ← ' + fa(dv.bear.r2, 0) + ')؛ نشانهٔ تضعیف مومنتوم صعودی.');
+    if (dv.bull) L.push('واگرایی مثبت در تایم‌فریم هفتگی: قیمت کف پایین‌تری زده اما RSI کف بالاتری ساخته (' + fa(dv.bull.r1, 0) + ' ← ' + fa(dv.bull.r2, 0) + ')؛ نشانهٔ تضعیف فشار فروش.');
+    if (!dv.bear && !dv.bull) L.push('RSI هفتگی ' + fa(A.rsi, 0) + '؛ واگرایی فعالی دیده نمی‌شود.');
+    if (A.pos >= 0.65) L.push('محدودهٔ احتمالی اصلاح: خط میانی کانال ≈ ' + fa(A.mid) + ' (' + pct(A.toMid) + ') و در اصلاح عمیق‌تر کف کانال ≈ ' + fa(A.lo) + ' (' + pct(A.toLo) + ').');
+    L.push('مسیر کانال: سقف اکنون ' + fa(A.up) + ' (' + pct(A.toUp) + ')، در ۲۶ هفته ≈ ' + fa(A.up26) + ' و در ۵۲ هفته ≈ ' + fa(A.up52) + ' (' + pct(A.up52 / A.last - 1) + ')؛ خط میانی در ۵۲ هفته ≈ ' + fa(A.mid52) + '. شیب کانال: ' + pct(A.ch.growth) + ' در سال.');
+    if (isFinite(A.r52)) L.push('بازده ۵۲ هفته: ' + pct(A.r52) + (isFinite(M.point) && M.point && !A.usd ? '؛ در برابر تورم نقطه‌به‌نقطهٔ ' + pct(M.point, 1).replace('+', '') + ' یعنی بازده واقعی ' + pct((1 + A.r52) / (1 + M.point) - 1) + '.' : '.'));
+    L.push('اعتبار کانال: ' + A.quality + ' (R² = ' + fa(A.ch.r2, 2) + '، ' + fa(A.win, 0) + ' هفته، برخورد به محدودهٔ سقف ' + fa(A.touchU, 0) + ' بار و کف ' + fa(A.touchL, 0) + ' بار).');
+    return L;
+  }
+  function note(R, S) {
+    var M = S.macro || {}, T = [], ix = R.rows.filter(function (a) { return a.ok && a.kind === 'tse-index'; }), warn = ix.filter(function (a) { return a.read === 'correction' || a.read === 'stretched'; }), low = ix.filter(function (a) { return a.read === 'rebound' || a.read === 'depressed'; });
+    if (isFinite(M.annual) || isFinite(M.point)) { T.push('تورم ' + (M.asOf || '') + ': سالانه ' + pct(M.annual, 1).replace('+', '') + '، نقطه‌به‌نقطه ' + pct(M.point, 1).replace('+', '') + '، ماهانه ' + pct(M.monthly, 1).replace('+', '') + (isFinite(M.monthly) ? ' (سالانه‌شده: ' + pct(Math.pow(1 + M.monthly, 12) - 1).replace('+', '') + ')' : '') + '.');
+      T.push('کاهش تورم نقطه‌ای به معنای ارزان‌شدن نیست؛ یعنی قیمت‌ها همچنان به‌طور متوسط ' + pct(M.point, 1).replace('+', '') + ' بالاتر از ماه مشابه سال قبل‌اند. هر دارایی که بازده ۵۲ هفته‌اش کمتر از این عدد باشد، قدرت خرید از دست داده است.'); T.push(''); }
+    R.rows.forEach(function (a) { if (!a.ok) return; T.push('▪ ' + a.name + ' — ' + READ[a.read][0]); lines(a, M).slice(0, 5).forEach(function (l) { T.push('  ' + l); }); T.push(''); });
+    if (warn.length) T.push('جمع‌بندی مدل: ' + warn.map(function (a) { return a.name; }).join(' و ') + ' در محدودهٔ سقف کانال' + (warn.some(function (a) { return a.dv.bear; }) ? ' با واگرایی منفی هفتگی' : '') + ' است. قاعدهٔ این مدل در چنین وضعی: شناسایی بخشی از سود یا کاهش بخشی از وزن سهام (مثلاً یک‌سوم) و بالا آوردن حد ضرر باقی‌مانده؛ ورود جدید فقط پس از اصلاح به خط میانی یا رفع واگرایی.');
+    else if (low.length) T.push('جمع‌بندی مدل: ' + low.map(function (a) { return a.name; }).join(' و ') + ' در محدودهٔ کف کانال است. قاعدهٔ این مدل: خرید پله‌ای با حد ضرر زیر کف کانال؛ تأیید با واگرایی مثبت یا بازگشت RSI هفتگی به بالای ۴۰.');
+    else T.push('جمع‌بندی مدل: شاخص‌ها در میانهٔ کانال‌اند؛ قاعدهٔ این مدل اقدام خاصی نمی‌خواهد (نگه‌داری در جهت شیب کانال).');
+    T.push('این متن خروجی قاعده‌محور یک مدل است، نه توصیهٔ خرید یا فروش؛ کانال توصیف گذشته است و واگرایی هشدار است، نه زمان‌سنج.' + (R.sample ? ' (دادهٔ نمونه)' : ''));
+    return T.join('\n');
+  }
+  /* ---------- chart ---------- */
+  function chart(A) {
+    var NS = 'http://www.w3.org/2000/svg', el = function (t, a, txt) { var e = document.createElementNS(NS, t); Object.keys(a || {}).forEach(function (k) { e.setAttribute(k, a[k]); }); if (txt != null) e.textContent = txt; return e; };
+    var W = 920, H1 = 330, H2 = 110, PL = 8, PR = 86, PT = 10, GAP = 26, n = A.n, fwd = 52, N = n + fwd, x = function (i) { return PL + (W - PL - PR) * i / (N - 1); };
+    var from = A.ch.from, vals = [A.ch.at(from, -1), A.ch.at(n - 1 + fwd, 1)]; A.W.forEach(function (w) { vals.push(w.low || w.close, w.high || w.close); });
+    var mn = Math.log(Math.min.apply(null, vals) * 0.95), mx = Math.log(Math.max.apply(null, vals) * 1.05), y = function (v) { return PT + (H1 - PT) * (1 - (Math.log(v) - mn) / (mx - mn)); }, yr = function (v) { return H1 + GAP + H2 * (1 - v / 100); };
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + (H1 + GAP + H2 + 22), role: 'img', 'aria-label': 'نمودار هفتگی لگاریتمی ' + A.name + ' با کانال روند و RSI', style: 'width:100%;height:auto;display:block' });
+    // price grid (log) and year marks
+    var step = Math.pow(10, Math.floor(Math.log10(Math.exp(mx) - Math.exp(mn)))), ticks = [], e0 = Math.floor(mn / Math.LN10), e1 = Math.ceil(mx / Math.LN10);
+    for (var e = e0; e <= e1; e++) [1, 2, 5].forEach(function (k) { var v = k * Math.pow(10, e); if (Math.log(v) > mn && Math.log(v) < mx) ticks.push(v); });
+    ticks.forEach(function (v) { svg.appendChild(el('line', { x1: PL, x2: W - PR, y1: y(v), y2: y(v), stroke: 'var(--line)', 'stroke-width': 0.6 })); svg.appendChild(el('text', { x: W - PR + 6, y: y(v) + 4, fill: 'var(--muted)', 'font-size': 11 }, fa(v))); });
+    var lastY = null; A.W.forEach(function (w, i) { var jy = sh(w.date).slice(0, 4); if (jy !== lastY) { if (lastY !== null) { svg.appendChild(el('line', { x1: x(i), x2: x(i), y1: PT, y2: H1 + GAP + H2, stroke: 'var(--line)', 'stroke-width': 0.5, 'stroke-dasharray': '2 4' })); svg.appendChild(el('text', { x: x(i) + 3, y: H1 + GAP + H2 + 16, fill: 'var(--muted)', 'font-size': 11 }, fa(+jy, 0).replace(/٬/g, ''))); } lastY = jy; } });
+    // channel (solid inside the fitted window, dashed projection)
+    [[1, 'var(--crit)'], [0, 'var(--muted)'], [-1, 'var(--good, #3fb27f)']].forEach(function (b) {
+      svg.appendChild(el('line', { x1: x(from), y1: y(A.ch.at(from, b[0])), x2: x(n - 1), y2: y(A.ch.at(n - 1, b[0])), stroke: b[1], 'stroke-width': 1.4, 'stroke-dasharray': b[0] === 0 ? '5 4' : '' }));
+      svg.appendChild(el('line', { x1: x(n - 1), y1: y(A.ch.at(n - 1, b[0])), x2: x(N - 1), y2: y(A.ch.at(N - 1, b[0])), stroke: b[1], 'stroke-width': 1.2, 'stroke-dasharray': '3 5', opacity: 0.8 })); });
+    svg.appendChild(el('polyline', { points: A.W.map(function (w, i) { return x(i).toFixed(1) + ',' + y(w.close).toFixed(1); }).join(' '), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.6 }));
+    svg.appendChild(el('circle', { cx: x(n - 1), cy: y(A.last), r: 3.5, fill: 'var(--accent)' })); svg.appendChild(el('text', { x: x(n - 1) + 8, y: y(A.last) - 6, fill: 'var(--text)', 'font-size': 12, 'font-weight': 600 }, fa(A.last)));
+    // RSI panel
+    [30, 50, 70].forEach(function (v) { svg.appendChild(el('line', { x1: PL, x2: W - PR, y1: yr(v), y2: yr(v), stroke: 'var(--line)', 'stroke-width': 0.6, 'stroke-dasharray': v === 50 ? '2 4' : '' })); svg.appendChild(el('text', { x: W - PR + 6, y: yr(v) + 4, fill: 'var(--muted)', 'font-size': 11 }, fa(v, 0))); });
+    svg.appendChild(el('polyline', { points: A.R.map(function (v, i) { return isFinite(v) ? x(i).toFixed(1) + ',' + yr(v).toFixed(1) : ''; }).filter(Boolean).join(' '), fill: 'none', stroke: '#9b7fd1', 'stroke-width': 1.3 }));
+    svg.appendChild(el('text', { x: PL + 4, y: H1 + GAP - 6, fill: 'var(--muted)', 'font-size': 11 }, 'RSI هفتگی (۱۴): ' + fa(A.rsi, 0)));
+    [['bear', 'var(--crit)'], ['bull', 'var(--good, #3fb27f)']].forEach(function (d) { var v = A.dv[d[0]]; if (!v) return;
+      svg.appendChild(el('line', { x1: x(v.i1), y1: y(v.p1), x2: x(v.i2), y2: y(v.p2), stroke: d[1], 'stroke-width': 2 })); svg.appendChild(el('line', { x1: x(v.i1), y1: yr(v.r1), x2: x(v.i2), y2: yr(v.r2), stroke: d[1], 'stroke-width': 2 }));
+      svg.appendChild(el('text', { x: x(v.i2) - 4, y: yr(Math.max(v.r1, v.r2)) - 6, fill: d[1], 'font-size': 12, 'font-weight': 600, 'text-anchor': 'end' }, d[0] === 'bear' ? 'واگرایی منفی' : 'واگرایی مثبت')); });
+    return h('div', { class: 'lv-chart', dir: 'ltr' }, [svg]);
+  }
+  function table(head, rows) { return h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, head.map(function (t) { return h('th', { class: 'lbl', 'data-notr': '1', text: t }); }))]), h('tbody', null, rows.map(function (r) { return h('tr', null, r.map(function (c) { return c && c.nodeType ? h('td', null, [c]) : h('td', { class: 'small', 'data-notr': '1', style: 'white-space:normal', text: c == null ? '' : String(c) }); })); }))])]); }
+  function chip(k) { var r = READ[k] || ['—', 'sev-info']; return h('span', { class: 'sev ' + r[1], 'data-notr': '1', text: r[0] }); }
+
+  function outlookTab(ctx) {
+    var S = ctx.S, R = ctx.R, M = S.macro || {}, txt = note(R, S), ta = h('textarea', { class: 'f-area', rows: 16, 'aria-label': 'یادداشت بازار', dir: 'rtl' }); ta.value = txt;
+    var rows = R.rows.map(function (a) { if (!a.ok) return [a.name, '—', '—', '—', '—', '—', '—', '—', a.why || '—'];
+      var link = h('a', { href: '#', 'data-notr': '1', text: a.name, onclick: function (e) { e.preventDefault(); S.sel = a.name; var t = document.querySelector('.tool nav.tabs [data-tab="chart"]'); ctx.rerender(); setTimeout(function () { var b = document.querySelectorAll('[data-tab="chart"]'); if (b.length) b[b.length - 1].click(); }, 50); } });
+      return [link, fa(a.last), fa(a.pos * 100, 0) + '٪ — ' + ZONE[a.zone], fa(a.rsi, 0), a.dv.bear ? 'منفی' : a.dv.bull ? 'مثبت' : '—', chip(a.read), pct(a.toMid) + ' / ' + pct(a.toLo), pct(a.up52 / a.last - 1), pct(a.r52) + (isFinite(M.point) && isFinite(a.r52) && !a.usd ? ' (واقعی ' + pct((1 + a.r52) / (1 + M.point) - 1) + ')' : ''), a.quality]; });
+    var copy = h('button', { class: 'btn primary', type: 'button', text: 'کپی یادداشت', onclick: function () { if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(function () { U.toast('کپی شد.', 'good'); }); else ta.select(); } });
+    return ctx.group([ctx.panel('چشم‌انداز بلندمدت بازارها', [R.sample ? h('p', { class: 'neg', text: 'دادهٔ نمونه است؛ از زبانهٔ «داده و تنظیمات» دریافت کنید.' }) : null,
+      h('p', { class: 'f-help', text: 'برای هر سری: کانال روند در مقیاس لگاریتمی (رگرسیون روی بسته‌شدن هفتگی، دو خط موازی که ۹۵٪ قیمت‌ها را در بر می‌گیرند)، RSI هفتگی و واگرایی میان دو سقف یا دو کف آخر. «تا میانه / کف» فاصلهٔ قیمت تا خط میانی و کف کانال است؛ «سقف ۵۲ هفته» جایی است که خط بالایی کانال یک سال دیگر خواهد بود.' }),
+      table(['سری', 'آخرین', 'جایگاه در کانال', 'RSI هفتگی', 'واگرایی', 'خوانش', 'تا میانه / کف', 'تا سقف ۵۲ هفته', 'بازده ۵۲ هفته', 'اعتبار کانال'], rows)]),
+      ctx.panel('یادداشت بازار (قابل ویرایش)', [h('p', { class: 'f-help', text: 'متن از روی همین اعداد ساخته می‌شود؛ پیش از انتشار ویرایش کنید. اعداد تورم ورودی شماست.' }), ta, h('div', { class: 'row-ctl' }, [copy])])]);
+  }
+  function chartTab(ctx) {
+    var S = ctx.S, R = ctx.R, ok = R.rows.filter(function (a) { return a.ok; }), A = ok.filter(function (a) { return a.name === S.sel; })[0] || ok[0];
+    if (!A) return ctx.group([ctx.panel('نمودار', [h('p', { class: 'muted', text: 'سری با دادهٔ کافی نیست.' })])]);
+    var f = G.form({ id: 'lv-c', onChange: ctx.rerender, fields: [{ key: 's', label: 'سری', options: ok.map(function (a) { return [a.name, a.name]; }), get: function () { return A.name; }, set: function (v) { S.sel = v; } },
+      { key: 'w', label: 'پنجرهٔ کانال', options: [['0', 'همهٔ تاریخچه'], ['520', '۱۰ سال'], ['260', '۵ سال'], ['156', '۳ سال'], ['104', '۲ سال']], get: function () { return String(S.opt.weeks || 0); }, set: function (v) { S.opt.weeks = Number(v); } }] });
+    return ctx.group([ctx.panel(A.name + ' — ' + READ[A.read][0], [f, chart(A), h('p', { class: 'small muted', text: 'خط قرمز: سقف کانال · خط‌چین خاکستری: میانه · خط سبز: کف · خط‌چین‌های سمت راست: ادامهٔ کانال تا ۵۲ هفتهٔ آینده · محور قیمت لگاریتمی است.' }),
+      h('ul', { class: 'studio-l' }, lines(A, S.macro || {}).map(function (l) { return h('li', { 'data-notr': '1', text: l }); })),
+      table(['سطح', 'اکنون', '۲۶ هفته بعد', '۵۲ هفته بعد'], [['سقف کانال', fa(A.up), fa(A.up26), fa(A.up52)], ['خط میانی', fa(A.mid), fa(A.mid26), fa(A.mid52)], ['کف کانال', fa(A.lo), fa(A.lo26), fa(A.ch.at(A.t + 52, -1))]])])]);
+  }
+  function dataTab(ctx) {
+    var S = ctx.S;
+    var lst = ctx.list({ id: 'lv-a', path: 'assets', onChange: ctx.rerender, newRow: function () { return { name: '', kind: 'tse', key: '', active: true }; }, cols: [{ key: 'name', label: 'نام نمایشی', kind: 'text' },
+      { key: 'kind', label: 'نوع', kind: 'select', options: function () { return [['tse-index', 'شاخص (کد TSETMC)'], ['tse', 'نماد بورسی (نماد یا کد)'], ['tgju', 'کلید TGJU']]; } }, { key: 'key', label: 'نماد / کد / کلید', kind: 'text' }, { key: 'active', label: 'فعال', kind: 'bool' }] });
+    var m = G.form({ id: 'lv-m', onChange: ctx.rerender, fields: [ctx.field('ma', 'تورم سالانه (میانگین ۱۲ ماه)', 'macro.annual', 'pct', { optional: true }), ctx.field('mp', 'تورم نقطه‌به‌نقطه', 'macro.point', 'pct', { optional: true }), ctx.field('mm', 'تورم ماهانه', 'macro.monthly', 'pct2', { optional: true }),
+      { key: 'md', label: 'ماه گزارش', type: 'text', get: function () { return S.macro.asOf || ''; }, set: function (v) { S.macro.asOf = v; } }, { key: 'ms', label: 'منبع', type: 'text', get: function () { return S.macro.src || ''; }, set: function (v) { S.macro.src = v; } }] });
+    return ctx.group([ctx.panel('دریافت تاریخچهٔ بلندمدت', [SG.fetchBar ? SG.fetchBar(ctx, fetchAll, 'Fetch long history (TSETMC, TGJU)') : null,
+      h('p', { class: 'f-help', text: 'تا ۳۰۰۰ روز معاملاتی برای نمادها (تعدیل‌شده برای افزایش سرمایه و سود)، کل تاریخچهٔ شاخص‌ها و تا ۴۰۰۰ روز از TGJU؛ به‌صورت هفتگی ذخیره می‌شود. برای شاخص هم‌وزن فرابورس یا هر شاخص دیگر، کد TSETMC آن را با نوع «شاخص» اضافه کنید. دادهٔ TSETMC فقط از داخل ایران (کامپیوتر با پروکسی محلی) می‌آید و با «همگام‌سازی با گوشی» به گوشی می‌رسد.' })]),
+      ctx.panel('سری‌ها', [lst]), ctx.panel('تورم (ورودی شما)', [h('p', { class: 'f-help', text: 'این اعداد خودکار دریافت نمی‌شوند. از گزارش ماهانهٔ مرکز آمار ایران وارد کنید؛ برنامه فقط بازده واقعی و متن یادداشت را با آن‌ها می‌سازد.' }), m])]);
+  }
+  SG.feeds.push({ id: 'long-view', title: 'Long-term view (weekly history)', storeKey: KEY, sample: sample, fetch: fetchAll, size: function (S) { return S.assets.filter(function (a) { return a.active !== false; }).length + ' سری'; }, src: 'TSETMC + TGJU' });
+  TK.define({
+    id: 'long-view', title: 'Long-term view: channels and divergence', sections: ['trading'], priority: 6, version: 1, storeKey: KEY,
+    summary: 'Market commentary from reproducible rules: log-scale trend channel on weekly data, weekly RSI divergence, correction and target levels projected a year ahead, inflation-adjusted returns and a ready-to-edit market note.',
+    sample: sample, blank: sample, run: run, scenarios: false,
+    eyebrow: function () { return 'Trading · Long-term view'; }, heading: function () { return 'تحلیل بلندمدت: کانال و واگرایی'; }, filename: function () { return 'Long_view'; },
+    xlsx: function (S, R) { var b = Hub.xl.book(root.ExcelJS, 'LongView'), s1 = b.sheet('چشم‌انداز', [2, 22, 14, 12, 10, 10, 18, 14, 14, 14, 14, 14, 14, 10], { rightToLeft: true }); s1.title('تحلیل بلندمدت: کانال لگاریتمی و واگرایی هفتگی', (S.meta.asOf || '') + (R.sample ? ' · دادهٔ نمونه' : ''));
+      ['سری', 'آخرین', 'جایگاه (٪)', 'RSI هفتگی', 'واگرایی', 'خوانش', 'سقف', 'میانه', 'کف', 'سقف ۲۶ هفته', 'سقف ۵۲ هفته', 'بازده ۵۲ هفته', 'R²'].forEach(function (t, i) { s1.put(1 + i, 4, t, 'hdr'); });
+      R.rows.forEach(function (a, k) { if (!a.ok) { s1.put(1, 5 + k, a.name, 'wrap'); return; } [a.name, Math.round(a.last), Math.round(a.pos * 100), Math.round(a.rsi), a.dv.bear ? 'منفی' : a.dv.bull ? 'مثبت' : '', READ[a.read][0], Math.round(a.up), Math.round(a.mid), Math.round(a.lo), Math.round(a.up26), Math.round(a.up52), isFinite(a.r52) ? Math.round(a.r52 * 1000) / 10 : '', Math.round(a.ch.r2 * 100) / 100].forEach(function (v, i) { s1.put(1 + i, 5 + k, v, typeof v === 'number' ? 'calc' : 'wrap', typeof v === 'number' ? (Math.abs(v) < 10 && v % 1 ? 'dec' : 'money') : undefined); }); });
+      var s2 = b.sheet('یادداشت بازار', [2, 120], { rightToLeft: true }); s2.title('یادداشت بازار'); note(R, S).split('\n').forEach(function (l, i) { s2.put(1, 4 + i, l, 'wrap'); }); return b.wb; },
+    kpis: function (ctx) { var r = function () { return ctx.R.rows.filter(function (a) { return a.ok; }); }; return [
+      ['Series', function () { return fa(r().length, 0); }, function () { return 'هفتگی، مقیاس لگاریتمی'; }],
+      ['Near channel top', function () { return fa(r().filter(function (a) { return a.pos >= 0.9; }).length, 0); }, function () { return r().filter(function (a) { return a.pos >= 0.9; }).map(function (a) { return a.name; }).join('، ') || '—'; }],
+      ['Bearish divergence', function () { return fa(r().filter(function (a) { return a.dv.bear; }).length, 0); }, function () { return r().filter(function (a) { return a.dv.bear; }).map(function (a) { return a.name; }).join('، ') || '—'; }],
+      ['Near channel bottom', function () { return fa(r().filter(function (a) { return a.pos <= 0.1; }).length, 0); }, function () { return r().filter(function (a) { return a.pos <= 0.1; }).map(function (a) { return a.name; }).join('، ') || '—'; }]]; },
+    tabs: [{ group: 'Outputs', items: [['outlook', 'چشم‌انداز و یادداشت بازار', outlookTab], ['chart', 'نمودار کانال و RSI', chartTab]] }, { group: 'Inputs', items: [['data', 'داده و تنظیمات', dataTab]] }]
+  });
 })(window);
 
 /* js/models/trading-engine.js */
@@ -21243,8 +21584,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var news = ctx.list({ id: 'te-news', path: 'e.news', onChange: ctx.rerender, newRow: function () { return { asset: '', dir: -0.5, impact: 'med', note: '', fresh: true }; }, cols: [
       { key: 'asset', label: 'نماد (* = همه)', kind: 'text' }, { key: 'dir', label: 'جهت (۱− منفی … ۱+ مثبت)', fmt: 'dec' },
       { key: 'impact', label: 'اثر', kind: 'select', options: function () { return [['low', 'کم'], ['med', 'متوسط'], ['high', 'زیاد (شوک)']]; } }, { key: 'note', label: 'خبر', kind: 'text' }, { key: 'fresh', label: 'تازه (امروز)', kind: 'bool' }] });
-    return ctx.group([modePanel(ctx), Hub.dataSync && Hub.dataSync.served() && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, ctx.panel('اجرا و تنظیمات', [h('p', { class: 'f-help', text: 'موتور از دادهٔ ذخیره‌شدهٔ ابزارهای سیگنال (سهام، طلا، ارز، اختیار) می‌خواند، ۲۳ مدل رأی‌دهنده را روی هر دارایی اجرا می‌کند و برای هر کدام یک سیگنال استاندارد با ورود، حد ضرر، اهداف، حجم، اطمینان، دلایل و شرایط ابطال می‌دهد. سیگنال بدون مدیریت ریسک صادر نمی‌شود. این ابزار توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.' }),
-      boxes, f]), Hub.dataSync && Hub.dataSync.served() ? null : dataPanel(ctx), Hub.dataSync && !Hub.dataSync.served() && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, Hub.dataSync && Hub.dataSync.served() ? dataPanel(ctx) : null, ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
+    return ctx.group([modePanel(ctx), ctx.panel('اجرا و تنظیمات', [h('p', { class: 'f-help', text: 'موتور از دادهٔ ذخیره‌شدهٔ ابزارهای سیگنال (سهام، طلا، ارز، اختیار) می‌خواند، ۲۳ مدل رأی‌دهنده را روی هر دارایی اجرا می‌کند و برای هر کدام یک سیگنال استاندارد با ورود، حد ضرر، اهداف، حجم، اطمینان، دلایل و شرایط ابطال می‌دهد. سیگنال بدون مدیریت ریسک صادر نمی‌شود. این ابزار توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.' }),
+      boxes, f]), dataPanel(ctx), Hub.dataSync && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
   }
   function dataPanel(ctx) {
     var wrap = h('div'), log = h('div', { 'aria-live': 'polite' }), busy = false, symIn = h('input', { class: 'f-in', type: 'text', placeholder: 'مثلاً: فولاد، شپنا، طلا', 'aria-label': 'نمادهای انتخابی', style: 'min-width:260px' });
@@ -21623,7 +21964,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
 
   /* ---------- trading tools (embedded, existing) ---------- */
-  var TOOLS = [['market-data', 'مرکز دادهٔ بازار'], ['sig-stocks', 'سیگنال سهام'], ['sig-gold', 'سیگنال طلا و سکه'], ['sig-fx', 'سیگنال ارز و تتر'], ['sig-options', 'سیگنال اختیار معامله'], ['sig-temporal', 'تحلیل زمانی'], ['position', 'اندازهٔ موقعیت و ریسک'], ['rm-trading', 'نقشهٔ راه معامله‌گری']];
+  var TOOLS = [['long-view', 'تحلیل بلندمدت: کانال و واگرایی'], ['market-data', 'مرکز دادهٔ بازار'], ['sig-stocks', 'سیگنال سهام'], ['sig-gold', 'سیگنال طلا و سکه'], ['sig-fx', 'سیگنال ارز و تتر'], ['sig-options', 'سیگنال اختیار معامله'], ['sig-temporal', 'تحلیل زمانی'], ['position', 'اندازهٔ موقعیت و ریسک'], ['rm-trading', 'نقشهٔ راه معامله‌گری']];
   var NOTE = 'همان ابزار مستقل با دادهٔ ذخیره‌شدهٔ خودش؛ هر تغییری اینجا در موتور سیگنال هم دیده می‌شود.';
 
   function sample() { return { version: 1, tool: 'trading-engine', settings: { lang: 'auto' }, sources: {}, e: TE.defaults(), f: { type: 'act', cls: 'all', n: 30 } }; }
@@ -21689,11 +22030,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611110646) */
+/* PWA: offline cache + app updates (version 202611110710) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611110646';
+  window.HUB_APP_VERSION = '202611110710';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
@@ -21701,7 +22042,8 @@ Hub.start();
     reg.addEventListener('updatefound', function () { var w = reg.installing; w.addEventListener('statechange', function () { if (w.state === 'installed' && navigator.serviceWorker.controller) waiting(w); }); });
     var check = function () { reg.update().catch(function () {}); }; setInterval(check, 30 * 60e3); document.addEventListener('visibilitychange', function () { if (!document.hidden) check(); });
   }).catch(function () {});
-  var reloaded = false; navigator.serviceWorker.addEventListener('controllerchange', function () { if (!reloaded) { reloaded = true; location.reload(); } });
+  var reloaded = false, had = !!navigator.serviceWorker.controller;   // reload only for an update, not on the very first install
+  navigator.serviceWorker.addEventListener('controllerchange', function () { if (!had) { had = true; return; } if (!reloaded) { reloaded = true; location.reload(); } });
   window.addEventListener('offline', function () { show('آفلاین هستید: برنامه با آخرین داده‌های ذخیره‌شده کار می‌کند.'); });
   window.addEventListener('online', function () { show('اتصال برقرار شد؛ می‌توانید داده‌ها را به‌روز کنید.'); });
 })();
