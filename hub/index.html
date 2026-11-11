@@ -511,6 +511,13 @@ table.sig-t.ticket thead { display: none; }
 .lv-chart { border: 1px solid var(--line); border-radius: 6px; padding: 6px; background: var(--panel); overflow-x: auto; }
 .lv-chart svg { min-width: 560px; }
 
+/* Iran markets: key-date cards */
+.lv-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--panel, transparent); }
+.lv-card > summary { cursor: pointer; padding: 4px 0; line-height: 1.9; }
+.lv-card h4 { margin: 14px 0 6px; font-size: 0.95rem; }
+.lv-card .lv-plan { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; }
+.lv-card .studio-l li { margin-bottom: 6px; line-height: 1.9; }
+
 </style>
 
 <script>try { if (!localStorage.getItem('hub.lang')) localStorage.setItem('hub.lang', JSON.stringify('fa')); } catch (e) {}</script>
@@ -4003,8 +4010,8 @@ else if (typeof exports === 'object')
 "Iran markets: three-horizon history": "بازارهای ایران: تاریخچهٔ سه افق",
 "Fetch all series (TSETMC, TGJU)": "دریافت همهٔ سری‌ها (TSETMC، TGJU)",
 "Next key date": "تاریخ کلیدی بعدی",
-"Above FLD": "بالاتر از FLD",
-"Below FLD": "پایین‌تر از FLD",
+"Above FLD": "قیمت بالاتر است",
+"Below FLD": "قیمت پایین‌تر است",
 };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -19531,6 +19538,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return S;
   }
   function tempRun(S) {
+    if (S.autoPiv !== false && S.data && S.data.series && S.data.series.length && S.meta && !/synthetic/i.test(S.meta.source || '')) { var ld = S.data.series[S.data.series.length - 1].date; if (S.autoStamp !== ld) { tempAuto(S); S.autoStamp = ld; } }
     var J = Hub.jalali, px = (S.data && S.data.series) || [], n = Math.min(px.length, Math.round(num(S.series.bars)) || 600), x = px.slice(-n), N = x.length, out = { N: N, checks: [] };
     if (N < 60) { out.checks.push({ level: 'critical', msg: 'Not enough data for the cycle scan (need 60+ bars).' }); out.cycles = []; out.windows = []; out.sq9 = []; return out; }
     var y = x.map(function (b) { return S.series.log ? Math.log(b.close) : b.close; }), t = y.map(function (_, i) { return i; }), mt = (N - 1) / 2, my = mean(y);
@@ -20085,7 +20093,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var y = x.map(function (r) { return Math.log(r.close); }), mt = (N - 1) / 2, my = 0, i; for (i = 0; i < N; i++) my += y[i] / N;
     var sxy = 0, sxx = 0; for (i = 0; i < N; i++) { sxy += (i - mt) * (y[i] - my); sxx += (i - mt) * (i - mt); } var sl = sxy / sxx, dt = y.map(function (v, k) { return v - (my + sl * (k - mt)); }), sd = 0; for (i = 0; i < N; i++) sd += dt[i] * dt[i] / N; sd = Math.sqrt(sd);
     var scan = [], maxP = Math.min(o.maxP || 250, Math.floor(N / 2));
-    for (var p = Math.max(4, o.minP || 20); p <= maxP; p++) { var a = 0, b = 0; for (i = 0; i < N; i++) { a += dt[i] * Math.cos(2 * Math.PI * i / p); b += dt[i] * Math.sin(2 * Math.PI * i / p); } a *= 2 / N; b *= 2 / N; scan.push({ p: p, amp: Math.sqrt(a * a + b * b), a: a, b: b }); }
+    for (var p = Math.max(4, o.minP || 20); p <= maxP; p += (o.stepP || 1)) { var a = 0, b = 0; for (i = 0; i < N; i++) { a += dt[i] * Math.cos(2 * Math.PI * i / p); b += dt[i] * Math.sin(2 * Math.PI * i / p); } a *= 2 / N; b *= 2 / N; scan.push({ p: p, amp: Math.sqrt(a * a + b * b), a: a, b: b }); }
     var pk = scan.filter(function (s, k) { return (k === 0 || s.amp >= scan[k - 1].amp) && (k === scan.length - 1 || s.amp >= scan[k + 1].amp); }).sort(function (u, v) { return v.amp - u.amp; }), top = [];
     pk.forEach(function (s) { if (top.length < 3 && top.every(function (q) { return Math.abs(s.p / q.p - 1) >= (o.sep || 0.15); })) top.push(s); });
     var cpb = (jdnOf(x[N - 1].date) - jdnOf(x[0].date)) / Math.max(1, N - 1), last = x[N - 1].close;
@@ -20103,10 +20111,37 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   // time windows as calendar-day offsets from the last bar: fixed day counts from each pivot, Fibonacci multiples of the last swing's duration, cycle troughs and peaks
   function timeWindows(rows, cy, piv, o) {
     o = o || {}; var x = rows.filter(function (r) { return r.close > 0; }); if (!x.length) return []; var d0 = jdnOf(x[x.length - 1].date), W = [];
-    (o.gann || [30, 45, 60, 90, 120, 144, 180, 360]).forEach(function (g) { piv.forEach(function (q) { W.push({ days: jdnOf(q.date) + g - d0, type: 'gann', n: g, from: q.kind }); }); });
-    if (piv.length >= 2) { var A = piv[piv.length - 2], B = piv[piv.length - 1], D = jdnOf(B.date) - jdnOf(A.date); (o.fibs || [0.382, 0.618, 1, 1.618, 2.618]).forEach(function (f) { W.push({ days: jdnOf(B.date) + Math.round(D * f) - d0, type: 'fib', n: f, span: D, from: A.kind + '>' + B.kind }); }); }
-    if (cy && cy.ok) cy.cycles.forEach(function (c) { W.push({ days: c.troughIn, type: 'trough', n: c.calDays, strength: c.strength }); W.push({ days: c.peakIn, type: 'peak', n: c.calDays, strength: c.strength }); });
+    (o.gann || [30, 45, 60, 90, 120, 144, 180, 360]).forEach(function (g) { piv.forEach(function (q) { W.push({ days: jdnOf(q.date) + g - d0, type: 'gann', n: g, from: q.kind, pd: q.date, pp: q.price }); }); });
+    if (piv.length >= 2) { var A = piv[piv.length - 2], B = piv[piv.length - 1], D = jdnOf(B.date) - jdnOf(A.date); (o.fibs || [0.382, 0.618, 1, 1.618, 2.618]).forEach(function (f) { W.push({ days: jdnOf(B.date) + Math.round(D * f) - d0, type: 'fib', n: f, span: D, from: A.kind + '>' + B.kind, pd: B.date, pp: B.price, pd0: A.date }); }); }
+    if (cy && cy.ok) cy.cycles.forEach(function (c) { W.push({ days: c.troughIn, type: 'trough', n: c.calDays, bars: c.period, strength: c.strength }); W.push({ days: c.peakIn, type: 'peak', n: c.calDays, bars: c.period, strength: c.strength }); });
     return W.filter(function (w) { return w.days >= -3 && w.days <= (o.ahead || 120); }).sort(function (u, v) { return u.days - v.days; });
+  }
+  // class of a time window, for the track record: each day count and ratio on its own, cycles by length
+  function winClass(w) { return w.type === 'gann' ? 'gann-' + w.n : w.type === 'fib' ? 'fib-' + w.n : w.type + (w.n <= 150 ? '-short' : '-long'); }
+  // a turn = a close that is the highest (or lowest) of the 5 bars before and the 5 bars after it
+  function turns(c) {
+    var n = c.length, k = 5, hi = [], lo = [], i, j;
+    for (i = k; i < n - k; i++) { var h = true, l = true; for (j = i - k; j <= i + k; j++) { if (j === i) continue; if (c[j] > c[i]) h = false; if (c[j] < c[i]) l = false; } if (h) hi.push(i); if (l) lo.push(i); }
+    var near = function (P) { var m = new Array(n).fill(false); P.forEach(function (q) { for (var d = -2; d <= 2; d++) if (q + d >= 0 && q + d < n) m[q + d] = true; }); return m; };
+    return { hi: near(hi), lo: near(lo), last: n - k - 1 };
+  }
+  function hitAt(T, w, i) { return w.type === 'trough' ? T.lo[i] : w.type === 'peak' ? T.hi[i] : T.lo[i] || T.hi[i]; }
+  /* walk-forward check of the time windows on a series' own history: at every 10th past bar the windows are computed from data up to that bar only,
+   * and each window due within 30 days is checked against what happened: did a turn (see turns) fall within ±2 bars of the date?
+   * base = how often a random day is within ±2 bars of such a turn. Returns counts per class. */
+  function evalWindows(rows, o) {
+    o = o || {}; var x = rows.filter(function (r) { return r.close > 0; }), n = x.length, start = o.start || 300, out = { cls: {}, n: 0 }; if (n < start + 40) return out;
+    var c = x.map(function (r) { return r.close; }), jd = x.map(function (r) { return jdnOf(r.date); }), T = turns(c), seen = {}, i, b = { any: 0, lo: 0, hi: 0 }, m = 0, mv = 0, mvN = 0;
+    for (i = start; i <= T.last; i++) { m++; if (T.lo[i] || T.hi[i]) b.any++; if (T.lo[i]) b.lo++; if (T.hi[i]) b.hi++; if (i + 10 < n) { mv += Math.abs(c[i + 10] / c[i] - 1); mvN++; } }
+    if (!m) return out; b.any /= m; b.lo /= m; b.hi /= m; mv = mvN ? mv / mvN : 0;
+    for (var t = start; t < T.last; t += (o.step || 10)) {
+      var sub = x.slice(Math.max(0, t - 599), t + 1), cy = cycles(sub, { bars: 400, stepP: 2 }), piv = autoPivots(sub, 300), W = timeWindows(sub, cy, piv, { ahead: 30 });
+      W.forEach(function (w) { if (w.days < 1) return; if ((w.type === 'trough' || w.type === 'peak') && !(w.strength >= 0.4)) return; var tg = jd[t] + w.days, key = winClass(w) + '|' + (w.type === 'trough' || w.type === 'peak' ? Math.round(tg / 7) : tg); if (seen[key]) return;
+        var k2 = t + 1; while (k2 < n && jd[k2] < tg) k2++; if (k2 > T.last || jd[k2] - tg > 4) return; seen[key] = 1;
+        var cl = winClass(w), q = out.cls[cl] || (out.cls[cl] = { n: 0, hit: 0, exp: 0, vr: 0, mv: 0, mvB: 0 }), bb = w.type === 'trough' ? b.lo : w.type === 'peak' ? b.hi : b.any;
+        q.n++; out.n++; if (hitAt(T, w, k2)) q.hit++; q.exp += bb; q.vr += bb * (1 - bb); if (k2 + 10 < n) { q.mv += Math.abs(c[k2 + 10] / c[k2] - 1); q.mvB += mv; } });
+    }
+    return out;
   }
   // square of nine: levels at ±k·45° around a base price (sqrt(base) ± k/4, squared); the ones nearest to the current price
   function sq9(base, price, each) {
@@ -20127,7 +20162,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     out.wdiv = { v: dv.bear ? -0.8 : dv.bull ? 0.8 : 0, why: dv.bear ? 'واگرایی منفی هفتگی: قیمت سقف بالاتر، RSI سقف پایین‌تر (' + Math.round(dv.bear.r1) + ' ← ' + Math.round(dv.bear.r2) + ')' : dv.bull ? 'واگرایی مثبت هفتگی: قیمت کف پایین‌تر، RSI کف بالاتر (' + Math.round(dv.bull.r1) + ' ← ' + Math.round(dv.bull.r2) + ')' : 'واگرایی هفتگی دیده نمی‌شود (RSI هفتگی ' + (isF(R[n - 1]) ? Math.round(R[n - 1]) : '—') + ')' };
     return out;
   }
-  Hub.longView = { cycles: cycles, autoPivots: autoPivots, timeWindows: timeWindows, sq9: sq9, weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
+  Hub.longView = { winClass: winClass, turns: turns, hitAt: hitAt, evalWindows: evalWindows, cycles: cycles, autoPivots: autoPivots, timeWindows: timeWindows, sq9: sq9, weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.longView;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -21468,16 +21503,18 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function gdate(jdn) { var g = J.d2g(jdn); return g.gy * 10000 + g.gm * 100 + g.gd; }
   function synthD(seed, n, start, drift, vol) { var s = seed, r = function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }, g = function () { return Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(6.2832 * r()); }, out = [], p = start, d0 = J.g2d(2026, 11, 10) - Math.round(n * 7 / 5);
     for (var i = 0; i < n; i++) { var o = p; p = p * Math.exp(drift + vol * g() + 0.004 * Math.sin(i / 37) + 0.003 * Math.sin(i / 11)); out.push({ date: gdate(d0 + Math.round(i * 7 / 5)), open: o, high: Math.max(o, p) * 1.004, low: Math.min(o, p) * 0.996, close: p }); } return out; }
-  function store(rows) { return { w: pack(LV.weekly(rows)), d: pack(rows.slice(-600)) }; }
+  function store(rows) { return { w: pack(LV.weekly(rows)), d: pack(rows.slice(-900)) }; }
   function ensure(S) {
     if (!S.opt) S.opt = {}; ['sWin', 'mWin', 'lWin'].forEach(function (k, i) { if (!(S.opt[k] >= 0) || S.opt[k] === '') S.opt[k] = HZ[i].def; }); if (!S.opt.cover) S.opt.cover = 0.95; if (!S.opt.ahead) S.opt.ahead = 120;
     if (!S.macro) S.macro = {}; if (!S.hz) S.hz = 'm';
     if (!S.v2) { S.v2 = 1; ASSETS.forEach(function (a) { if (!S.assets.some(function (x) { return x.kind === a[1] && x.key === a[2]; })) S.assets.push({ name: a[0], kind: a[1], key: a[2], usd: !!a[3], active: true }); });
       S.assets.forEach(function (x) { if (x.key === 'ons') x.usd = true; }); }
+    if (!S.v3) { S.v3 = 1; S.assets = S.assets.filter(function (x) { return !(x.kind === 'tse' && (x.key === '46348559193224090' || x.name === 'فولاد')); }); if (S.data) delete S.data['فولاد']; if (S.sel === 'فولاد') S.sel = S.assets[0] && S.assets[0].name; }
+    if (!Array.isArray(S.tj)) S.tj = [];
     return S;
   }
   function sample() {
-    var S = { version: 1, v2: 1, tool: 'long-view', meta: { title: 'Iran markets', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, settings: { lang: 'auto' }, sources: {},
+    var S = { version: 1, v2: 1, v3: 1, tj: [], tool: 'long-view', meta: { title: 'Iran markets', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, settings: { lang: 'auto' }, sources: {},
       assets: ASSETS.map(function (a) { return { name: a[0], kind: a[1], key: a[2], usd: !!a[3], active: true }; }), data: {}, opt: { sWin: 60, mWin: 78, lWin: 260, cover: 0.95, ahead: 120 }, sel: ASSETS[0][0], hz: 'm',
       macro: { annual: 0.714, point: 0.835, monthly: 0.046, asOf: 'مهر ۱۴۰۵', src: 'اعداد واردشدهٔ شما (منبع اعلامی: مرکز آمار ایران) — پیش از انتشار با منبع رسمی تطبیق دهید' } };
     var st = [2.2e6, 6e5, 9e5, 9.2e5, 1.05e6, 2.5e5, 9e7, 8e6, 2600, 9e4, 75, 2.4];
@@ -21496,31 +21533,86 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return Promise.all([one(), one(), one()]).then(function () {
       ratios.forEach(function (a) { var p = String(a.key).split('/').map(function (x) { return x.trim(); }), A = raw[p[0]], B = raw[p[1]];
         if (!A || !B) { if (!data[a.name]) errs.push(a.name + ': دو سری پایه دریافت نشد'); return; } var r = ratioRows(A, B); if (r.length >= 60) data[a.name] = store(r); else errs.push(a.name + ': هم‌پوشانی تاریخ کم است'); });
-      S.data = data; if (errs.length >= list.length && list.length) throw new Error(SG.summErr(errs)); SG.stampData(S, 'TSETMC + TGJU'); S.lastErrs = errs.slice(0, 20); return errs; });
+      S.data = data; if (errs.length >= list.length && list.length) throw new Error(SG.summErr(errs)); SG.stampData(S, 'TSETMC + TGJU'); S.lastErrs = errs.slice(0, 20); try { record(S); } catch (e) { /* the track record is optional */ } return errs; });
   }
   function family(a) { var k = String(a.key || ''); return a.kind === 'tse-index' || a.kind === 'tse' || a.kind === 'ratio' ? 'بورس' : /^crypto-tether|^price_/.test(k) ? 'ارز' : /^(sek|geram|gerami|mesghal|ons|nim|rob|silver)/.test(k) ? 'طلا' : /^crypto-/.test(k) ? 'رمزارز' : /oil/.test(k) ? 'نفت' : a.name; }
+  /* ---------- learning: how did each kind of time window do on these series' own history? ---------- */
+  function record(S) {
+    var cls = {}, n = 0, used = 0;
+    S.assets.forEach(function (a) { if (a.active === false || a.kind === 'ratio') return; var D = series(S, a.name); if (D.d.length < 340) return; var e = LV.evalWindows(D.d); used++; n += e.n;
+      Object.keys(e.cls).forEach(function (k) { var q = cls[k] || (cls[k] = { n: 0, hit: 0, exp: 0, vr: 0, mv: 0, mvB: 0 }), z = e.cls[k]; Object.keys(q).forEach(function (f) { q[f] += z[f]; }); }); });
+    S.tstat = { at: Date.now(), asOf: S.meta && S.meta.asOf, series: used, n: n, cls: cls, sample: !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '') };
+    return S.tstat;
+  }
+  // back-test counts + live journal (live outcomes count double); weight = shrunk lift, bounded 0.5…1.5
+  function stats(S) {
+    var out = {}, add = function (k, hit, exp, vr, n, live) { var q = out[k] || (out[k] = { n: 0, hit: 0, exp: 0, vr: 0, live: 0, liveHit: 0, mv: 0, mvB: 0 }); q.n += n; q.hit += hit; q.exp += exp; q.vr += vr; if (live) { q.live += n / 2; q.liveHit += hit / 2; } };
+    var T = S.tstat && S.tstat.cls || {}; Object.keys(T).forEach(function (k) { add(k, T[k].hit, T[k].exp, T[k].vr, T[k].n); out[k].mv = T[k].mv; out[k].mvB = T[k].mvB; });
+    (S.tj || []).forEach(function (j) { if (j.hit == null) return; add(j.c, 2 * j.hit, 2 * j.b, 2 * j.b * (1 - j.b), 2, true); });
+    Object.keys(out).forEach(function (k) { var q = out[k]; q.rate = q.n ? q.hit / q.n : NaN; q.base = q.n ? q.exp / q.n : NaN; q.lift = q.exp > 0 ? q.hit / q.exp : NaN; q.z = q.vr > 0 ? (q.hit - q.exp) / Math.sqrt(q.vr) : 0;
+      q.verdict = q.n < 20 ? 'few' : q.z >= 2 ? 'good' : q.z <= -2 ? 'bad' : 'none'; q.w = q.n < 20 || !isFinite(q.lift) ? 1 : Math.max(0.5, Math.min(1.5, 1 + (q.lift - 1) * q.n / (q.n + 50))); q.move = q.mvB > 0 ? q.mv / q.mvB : NaN; });
+    return out;
+  }
+  var VERD = { few: ['نمونه کم است', 'sev-info'], good: ['بهتر از تصادف', 'fit-rec'], bad: ['بدتر از تصادف', 'fit-no'], none: ['فرقی با تصادف ندارد', 'sev-info'] };
+  function clsName(k) { var m = k.split('-'); return m[0] === 'gann' ? 'شمارش ' + fa(+m[1], 0) + ' روز از سقف/کف اصلی (گن)' : m[0] === 'fib' ? 'نسبت زمانی فیبوناچی ' + m[1].replace('.', '٫').replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }) : (m[0] === 'trough' ? 'کف چرخه' : 'قلهٔ چرخه') + (m[1] === 'short' ? ' (چرخه‌های تا ۱۵۰ روز)' : ' (چرخه‌های بلندتر از ۱۵۰ روز)'); }
+  // live journal: every window due within 30 days is written down when first seen, and graded once 5 bars after its date exist
+  function journal(S, A, D) {
+    if (!A.tw || D.d.length < 60) return; var x = D.d, n = x.length, c = x.map(function (r) { return r.close; }), jd = x.map(function (r) { return LV.jdnOf(r.date); }), d0 = jd[n - 1], T = null, base = null, have = {};
+    S.tj.forEach(function (j) { if (j.a === A.name) have[j.k] = 1; });
+    A.tw.forEach(function (w) { if (w.days < 1 || w.days > 30) return; var cl = LV.winClass(w), tg = d0 + w.days, k = cl + '|' + (w.type === 'trough' || w.type === 'peak' ? Math.round(tg / 7) : tg); if (have[k]) return; have[k] = 1; S.tj.push({ a: A.name, k: k, c: cl, ty: w.type, tg: tg, is: d0, hit: null }); });
+    S.tj.forEach(function (j) { if (j.a !== A.name || j.hit != null || j.tg > d0) return; if (!T) { T = LV.turns(c); var m = 0, b = { any: 0, lo: 0, hi: 0 }; for (var i = Math.max(0, n - 400); i <= T.last; i++) { m++; if (T.lo[i] || T.hi[i]) b.any++; if (T.lo[i]) b.lo++; if (T.hi[i]) b.hi++; } base = m ? { any: b.any / m, lo: b.lo / m, hi: b.hi / m } : { any: 0.4, lo: 0.2, hi: 0.2 }; }
+      var k2 = 0; while (k2 < n && jd[k2] < j.tg) k2++; if (k2 >= n || k2 > T.last) return; if (jd[k2] - j.tg > 4) { j.hit = -1; return; }
+      j.hit = LV.hitAt(T, { type: j.ty }, k2) ? 1 : 0; j.b = j.ty === 'trough' ? base.lo : j.ty === 'peak' ? base.hi : base.any; j.px = c[k2]; });
+    S.tj = S.tj.filter(function (j) { return j.hit !== -1; }); if (S.tj.length > 1500) S.tj = S.tj.slice(-1500);
+  }
+  /* ---------- solution: scenarios, levels and action for one market around a key date (rule-based) ---------- */
+  function plan(A) {
+    var m = A.h.m, sh2 = A.h.s, c0 = A.cy && A.cy.ok && A.cy.cycles[0], sc = 0, why = [];
+    if (m.ok) { if (m.pos >= 0.9) { sc -= 2; why.push('قیمت نزدیک سقف کانال میان‌مدت است'); } else if (m.pos >= 0.65) { sc -= 1; why.push('قیمت در نیمهٔ بالایی کانال میان‌مدت است'); } else if (m.pos <= 0.1) { sc += 2; why.push('قیمت نزدیک کف کانال میان‌مدت است'); } else if (m.pos <= 0.35) { sc += 1; why.push('قیمت در نیمهٔ پایینی کانال میان‌مدت است'); } }
+    if ((m.ok && m.dv.bear) || (sh2.ok && sh2.dv.bear)) { sc -= 1; why.push('واگرایی منفی RSI دیده می‌شود'); } if ((m.ok && m.dv.bull) || (sh2.ok && sh2.dv.bull)) { sc += 1; why.push('واگرایی مثبت RSI دیده می‌شود'); }
+    if (c0 && c0.strength >= 0.4) { if (c0.phase < 0.5) { sc -= 1; why.push('چرخهٔ غالب در نیمهٔ نزولی است'); } else { sc += 1; why.push('چرخهٔ غالب در نیمهٔ صعودی است'); } }
+    var lean = sc <= -2 ? 'dn' : sc >= 2 ? 'up' : 'flat', L = A.lv || {}, px = A.last, uniq = function (a) { return a.filter(function (v, i) { return isFinite(v) && a.indexOf(v) === i; }); };
+    var dnT = uniq([sh2.ok && sh2.mid, sh2.ok && sh2.lo, m.ok && m.mid, m.ok && m.lo].filter(function (v) { return v && v < L.lo10 * 0.995; }).sort(function (a, b) { return b - a; })).slice(0, 2);
+    var upT = uniq([sh2.ok && sh2.up, m.ok && m.up, m.ok && m.upF1].filter(function (v) { return v && v > L.hi10 * 1.005; }).sort(function (a, b) { return a - b; })).slice(0, 2);
+    var stopL = L.lo10 - 0.5 * (L.atr || 0), riskL = L.hi10 > 0 ? L.hi10 / stopL - 1 : NaN;
+    var P2 = { lean: lean, why: why, lv: L, dnT: dnT, upT: upT, stopL: stopL, riskL: riskL, text: [] };
+    if (!(L.hi10 > 0)) return P2;
+    P2.up = 'صعودی: اگر قیمت در روزهای نزدیک به این تاریخ بالای ' + fa(L.hi10) + ' (بالاترین قیمت ۱۰ روز اخیر) بسته شود، حرکت صعودی تأیید می‌شود' + (upT.length ? '؛ سطوح بعدی: ' + upT.map(function (v) { return fa(v) + ' (' + pct(v / px - 1) + ')'; }).join(' و ') : '') + '.';
+    P2.dn = 'نزولی: اگر زیر ' + fa(L.lo10) + ' (پایین‌ترین قیمت ۱۰ روز اخیر) بسته شود، اصلاح تأیید می‌شود' + (dnT.length ? '؛ سطوح بعدی: ' + dnT.map(function (v) { return fa(v) + ' (' + pct(v / px - 1) + ')'; }).join(' و ') : '') + '.';
+    P2.flat = 'خنثی: اگر قیمت بین ' + fa(L.lo10) + ' و ' + fa(L.hi10) + ' بماند، این تاریخ بی‌اثر گذشته است و برنامهٔ قبلی ادامه می‌یابد.';
+    P2.act = lean === 'dn' ? 'اقدام پیشنهادی مدل (تمایل نزولی): از ۳ روز پیش از تاریخ خرید تازه نکنید. حد ضرر موقعیت‌های باز را به ' + fa(stopL) + ' (کمی زیر کف ۱۰ روز) بیاورید. اگر قیمت زیر ' + fa(L.lo10) + ' بسته شد، یک‌سوم تا نصف موقعیت را ببندید و باقی را تا سطح بعدی نگه دارید.'
+      : lean === 'up' ? 'اقدام پیشنهادی مدل (تمایل صعودی): پیش‌دستی نکنید؛ خرید فقط پس از بسته‌شدن بالای ' + fa(L.hi10) + '، در دو یا سه پله، با حد ضرر ' + fa(stopL) + ' (فاصلهٔ ورود تا حد ضرر حدود ' + pct(-riskL).replace('-', '') + ').'
+      : 'اقدام پیشنهادی مدل (بدون تمایل): موقعیت تازه نگیرید؛ روی ' + fa(L.hi10) + ' و ' + fa(L.lo10) + ' هشدار قیمت بگذارید و با شکست هر کدام طبق سناریوی همان سمت عمل کنید.';
+    P2.risk = 'مدیریت ریسک: در هر معامله حداکثر ۱٪ سرمایه را ریسک کنید؛ حجم = ۱٪ سرمایه ÷ فاصلهٔ ورود تا حد ضرر. نوسان روزانهٔ معمول این بازار (ATR ۱۴ روزه) ' + fa(L.atr) + ' (' + pct(L.atr / px, 1).replace('+', '') + ') است؛ حد ضرر نزدیک‌تر از آن با نوسان عادی می‌خورد.';
+    return P2;
+  }
+  var LEAN = { dn: ['تمایل نزولی', 'fit-no'], up: ['تمایل صعودی', 'fit-rec'], flat: ['بدون تمایل', 'sev-info'] };
   function retSince(rows, days) { if (!rows.length) return NaN; var t = rows[rows.length - 1], target = LV.jdnOf(t.date) - days, k = rows.length - 1; while (k > 0 && LV.jdnOf(rows[k].date) > target) k--; if (LV.jdnOf(rows[k].date) > target + 10 || LV.jdnOf(rows[k].date) < target - 20) return NaN; return t.close / rows[k].close - 1; }
   function run(S) {
-    ensure(S); var cover = Number(S.opt.cover) || 0.95, today = 0;
+    ensure(S); var cover = Number(S.opt.cover) || 0.95, today = 0, smp0 = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '');
     var rows = S.assets.filter(function (a) { return a.active !== false && a.name; }).map(function (a) {
       var D = series(S, a.name), A = { name: a.name, kind: a.kind, usd: !!a.usd, h: {}, ok: false };
       HZ.forEach(function (H) { var src = H.bars === 'd' ? D.d : D.w, win = Number(S.opt[H.key]); A.h[H.id] = src.length ? LV.analyse(src, { bars: H.bars, win: win, cover: cover, f: H.f }) : { ok: false, why: H.bars === 'd' ? 'دادهٔ روزانه ندارد؛ دوباره دریافت کنید' : 'داده ندارد' }; if (A.h[H.id].ok) A.ok = true; });
       var base = D.d.length ? D.d : D.w; if (base.length) { A.last = base[base.length - 1].close; A.date = base[base.length - 1].date; today = Math.max(today, LV.jdnOf(A.date)); }
       var long = D.d.length && LV.jdnOf(D.d[D.d.length - 1].date) - LV.jdnOf(D.d[0].date) > 380 ? D.d : D.w;
       A.ret = { m1: retSince(D.d.length ? D.d : D.w, 30), m3: retSince(D.d.length ? D.d : D.w, 91), y1: retSince(long, 365) };
-      if (D.d.length >= 120) { A.cy = LV.cycles(D.d, { bars: 600 }); A.piv = LV.autoPivots(D.d, 300); A.tw = LV.timeWindows(D.d, A.cy, A.piv, { ahead: Number(S.opt.ahead) || 120 }).filter(function (w) { return (w.type !== 'peak' && w.type !== 'trough') || w.strength >= 0.4; }); var low = A.piv.filter(function (q) { return q.kind === 'low'; })[0]; A.sq = low ? LV.sq9(low.price, A.last, 3) : []; A.sqBase = low && low.price; }
+      if (D.d.length >= 120) { A.cy = LV.cycles(D.d, { bars: 600 }); A.piv = LV.autoPivots(D.d, 300); A.tw = LV.timeWindows(D.d, A.cy, A.piv, { ahead: Number(S.opt.ahead) || 120 }).filter(function (w) { return (w.type !== 'peak' && w.type !== 'trough') || w.strength >= 0.4; }); var low = A.piv.filter(function (q) { return q.kind === 'low'; })[0]; A.sq = low ? LV.sq9(low.price, A.last, 3) : []; A.sqBase = low && low.price;
+        var dd = D.d, k0 = dd.length, tr = 0, cnt = 0; for (var q2 = Math.max(1, k0 - 14); q2 < k0; q2++) { tr += Math.max(dd[q2].high - dd[q2].low, Math.abs(dd[q2].high - dd[q2 - 1].close), Math.abs(dd[q2].low - dd[q2 - 1].close)); cnt++; }
+        var l10 = dd.slice(-10); A.lv = { atr: cnt ? tr / cnt : 0, hi10: Math.max.apply(null, l10.map(function (r) { return r.close; })), lo10: Math.min.apply(null, l10.map(function (r) { return r.close; })) };
+        if (!smp0 && a.kind !== 'ratio') journal(S, A, D); }
       return A; });
+    var ST = stats(S); rows.forEach(function (A) { if (A.ok) A.plan = plan(A); });
     // one calendar for all series: windows within 4 days of each other form one date
     var all = []; rows.forEach(function (A) { (A.tw || []).forEach(function (w) { all.push({ day: LV.jdnOf(A.date) + w.days, w: w, name: A.name }); }); }); all.sort(function (u, v) { return u.day - v.day; });
     var cal = [], cur = null; all.forEach(function (x) { if (x.day < today - 3) return; if (!cur || x.day - cur.from > 4) { cur = { from: x.day, to: x.day, items: [] }; cal.push(cur); } cur.to = x.day; cur.items.push(x); });
     // importance is judged against what is normal for this calendar: with many series, a few coincidences in any 5 days are expected.
     // Related markets count once (dollar, tether, euro and dirham are one family), so four currencies agreeing is not four confirmations.
     var fam = {}; S.assets.forEach(function (a) { fam[a.name] = family(a); });
-    var ahead = Number(S.opt.ahead) || 120, mean = cal.length ? cal.reduce(function (t, c) { return t + c.items.length; }, 0) / Math.max(1, cal.length) : 0;
-    cal.forEach(function (c) { var as = {}, fm = {}, ty = {}; c.items.forEach(function (x) { as[x.name] = 1; fm[fam[x.name] || x.name] = 1; ty[x.w.type === 'peak' || x.w.type === 'trough' ? 'cycle' : x.w.type] = 1; }); c.assets = Object.keys(as); c.fams = Object.keys(fm); c.types = Object.keys(ty).length; c.n = c.items.length; c.in = c.from - today; c.x = mean ? c.n / mean : 0;
+    var ahead = Number(S.opt.ahead) || 120, wOf = function (x) { var q = ST[LV.winClass(x.w)]; return q ? q.w : 1; }, mean = cal.length ? cal.reduce(function (t, c) { return t + c.items.reduce(function (u, x) { return u + wOf(x); }, 0); }, 0) / Math.max(1, cal.length) : 0;
+    cal.forEach(function (c) { var as = {}, fm = {}, ty = {}; c.items.forEach(function (x) { as[x.name] = 1; fm[fam[x.name] || x.name] = 1; ty[x.w.type === 'peak' || x.w.type === 'trough' ? 'cycle' : x.w.type] = 1; }); c.assets = Object.keys(as); c.fams = Object.keys(fm); c.types = Object.keys(ty).length; c.n = c.items.length; c.score = c.items.reduce(function (u, x) { return u + wOf(x); }, 0); c.in = c.from - today; c.x = mean ? c.score / mean : 0;
       c.rank = c.fams.length >= 3 && c.types >= 2 && c.x >= 1.6 ? 2 : c.fams.length >= 2 && c.x >= 1.25 ? 1 : 0; });
     var smp = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '');
-    return { rows: rows, cal: cal, calMean: mean, today: today, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
+    return { rows: rows, cal: cal, calMean: mean, ST: ST, today: today, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
   }
   /* ---------- text ---------- */
   function lines(A0, H, M) {
@@ -21626,12 +21718,43 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var S = ctx.S, R = ctx.R, withT = R.rows.filter(function (a) { return a.cy && a.cy.ok; }), A = withT.filter(function (a) { return a.name === S.sel; })[0] || withT[0];
     var only = S.calAll ? R.cal : R.cal.filter(function (c) { return c.rank >= 1; });
     var tg = h('label', { class: 'chk-l' }, [(function () { var i = h('input', { type: 'checkbox', 'aria-label': 'نمایش همه' }); i.checked = !!S.calAll; i.addEventListener('change', function () { S.calAll = i.checked; ctx.rerender(); }); return i; })(), document.createTextNode(' تاریخ‌های کم‌اهمیت (تک‌نشانه) هم نشان داده شود')]);
-    var calRows = only.map(function (c) { var by = {}; c.items.forEach(function (x) { (by[x.name] = by[x.name] || []).push(winText(x.w)); });
-      return [calDate(c), fa(Math.max(0, c.in), 0), h('span', { class: 'sev ' + RANK[c.rank][1], 'data-notr': '1', text: RANK[c.rank][0] }), fa(c.n, 0) + ' (' + fa(c.x, 1) + '×)', Object.keys(by).map(function (k) { return k + ': ' + by[k].join('؛ '); }).join('  |  ')]; });
     var cyRows = withT.map(function (a) { var c = a.cy.cycles[0]; if (!c) return [a.name, '—', '—', '—', '—', '—', '—'];
       return [a.name, 'حدود ' + fa(c.calDays, 0) + ' روز (' + fa(c.period, 0) + ' کندل)', STR(c.strength) + (a.cy.weak ? ' · نامطمئن' : ''), c.phase < 0.5 ? 'نیمهٔ نزولی (از قله به سمت کف)' : 'نیمهٔ صعودی (از کف به سمت قله)', J.jstr(LV.jdnOf(a.date) + c.troughIn) + ' (' + fa(c.troughIn, 0) + ' روز)', J.jstr(LV.jdnOf(a.date) + c.peakIn) + ' (' + fa(c.peakIn, 0) + ' روز)', '±' + pct(c.swing / 2).replace('+', '')]; });
-    var parts = [ctx.panel('تقویم تاریخ‌های کلیدی پیش رو (همهٔ بازارها)', [P('برای هر سری سه نوع «نشانهٔ زمانی» حساب می‌شود و همه روی یک تقویم می‌آیند. وقتی چند نشانه از چند بازار در فاصلهٔ ۴ روز کنار هم بیفتند، آن بازه یک «تاریخ کلیدی» است: زمانی برای دقت بیشتر به بازار، نه پیش‌بینی جهت. اهمیت نسبت به وضع عادی همین تقویم سنجیده می‌شود (میانگین فعلی: ' + fa(R.calMean || 0, 1) + ' نشانه در هر بازه)، چون با این تعداد سری، چند هم‌زمانی در هر چند روز عادی است. «زیاد»: دست‌کم سه خانوادهٔ بازار (بورس، ارز، طلا، رمزارز، نفت)، دو نوع نشانه و تراکم دست‌کم ۱٫۶ برابر میانگین. «متوسط»: دو خانواده و ۱٫۲۵ برابر میانگین. ارزها با هم یک خانواده‌اند، پس هم‌زمانی دلار و تتر و یورو یک تأیید حساب می‌شود، نه سه.'),
-      h('div', { class: 'row-ctl' }, [tg]), calRows.length ? table(['تاریخ', 'چند روز دیگر', 'اهمیت', 'تعداد نشانه', 'شرح (بازار: نشانه‌ها)'], calRows, function (i) { return only[i].rank === 2 ? 'total' : ''; }) : P('در ' + fa(S.opt.ahead, 0) + ' روز آینده تاریخ هم‌زمانی نیست.', 'muted')]),
+    var ST = R.ST || {}, byName = {}; R.rows.forEach(function (a) { byName[a.name] = a; });
+    var pvn = function (k) { return k === 'low' ? 'کف' : 'سقف'; }, pc0 = function (v) { return isFinite(v) ? fa(v * 100, 0) + '٪' : '—'; };
+    var explain = function (x) { var w = x.w, nm = x.name, q = ST[LV.winClass(w)], t;
+      if (w.type === 'gann') t = fa(w.n, 0) + ' روز تقویمی از ' + pvn(w.from) + ' اصلی ' + nm + ' (' + sh(w.pd) + '، قیمت ' + fa(w.pp) + ') می‌گذرد. در روش گن، این شمارش‌ها زمان‌هایی‌اند که چرخش یا شتاب قیمت محتمل‌تر دانسته می‌شود.';
+      else if (w.type === 'fib') { var pr = w.from.split('>'); t = 'حرکت ' + nm + ' از ' + pvn(pr[0]) + ' اصلی (' + sh(w.pd0) + ') تا ' + pvn(pr[1]) + ' اصلی (' + sh(w.pd) + ') ' + fa(w.span, 0) + ' روز طول کشید؛ ' + String(w.n).replace('.', '٫').replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }) + ' برابر همان مدت (' + fa(Math.round(w.span * w.n), 0) + ' روز) پس از ' + pvn(pr[1]) + ' به این تاریخ می‌رسد. در تحلیل زمانی فیبوناچی این نسبت‌ها زمان احتمالی پایان یا چرخش حرکت بعدی دانسته می‌شوند.'; }
+      else t = 'چرخهٔ حدود ' + fa(w.n, 0) + ' روزهٔ ' + nm + ' (' + fa(w.bars, 0) + ' کندل، قدرت ' + STR(w.strength) + ') طبق برازش فعلی در این تاریخ به ' + (w.type === 'trough' ? 'کف' : 'قلهٔ') + ' خود می‌رسد؛ یعنی اگر این موج ادامه یابد، ' + (w.type === 'trough' ? 'فشار نزولی ناشی از آن حوالی این تاریخ تمام می‌شود.' : 'نیروی صعودی ناشی از آن حوالی این تاریخ تمام می‌شود.');
+      return t + (q && q.n >= 20 ? ' سابقه: از ' + fa(q.n, 0) + ' مورد مشابه در گذشتهٔ همین بازارها، ' + pc0(q.rate) + ' با یک چرخش واقعی هم‌زمان شد (نرخ تصادفی ' + pc0(q.base) + ') — ' + VERD[q.verdict][0] + '.' : ' سابقه: ' + (q ? 'نمونه کم است (' + fa(q.n, 0) + ' مورد).' : 'هنوز محاسبه نشده.')); };
+    var card = function (c, open) {
+      var hits = 0, exps = 0, k = 0; c.items.forEach(function (x) { var q = ST[LV.winClass(x.w)]; if (q && q.n >= 20) { hits += q.rate; exps += q.base; k++; } });
+      var imp = 'اهمیت ' + RANK[c.rank][0] + ': ' + fa(c.n, 0) + ' نشانه از ' + fa(c.fams.length, 0) + ' خانوادهٔ بازار (' + c.fams.join('، ') + ')؛ تراکم وزنی ' + fa(c.x, 1) + ' برابر یک بازهٔ معمولی همین تقویم. ' +
+        (k ? 'احتمال تأثیر، بر پایهٔ سابقه: نشانه‌های این تاریخ در گذشته به‌طور میانگین ' + pc0(hits / k) + ' مواقع با چرخش واقعی (±۲ کندل) هم‌زمان بوده‌اند؛ یک روز تصادفی ' + pc0(exps / k) + '. ' + (hits / k > exps / k * 1.15 ? 'یعنی اندکی بهتر از تصادف.' : hits / k < exps / k * 0.87 ? 'یعنی بدتر از تصادف؛ به این تاریخ وزن کمی بدهید.' : 'یعنی تفاوت معناداری با تصادف ندارد؛ این تاریخ را فقط یادآور بازبینی بدانید، نه پیش‌بینی.') : 'احتمال تأثیر: کارنامه هنوز محاسبه نشده؛ پایین همین صفحه «محاسبهٔ کارنامه» را بزنید.');
+      var names = c.assets.filter(function (n) { return byName[n] && byName[n].plan && byName[n].plan.up; });
+      var mk = function (n) { var A0 = byName[n], P2 = A0.plan; return h('div', { class: 'lv-plan' }, [h('p', { 'data-notr': '1' }, [h('strong', { text: n + ' — قیمت ' + fa(A0.last) + ' — ' }), h('span', { class: 'sev ' + LEAN[P2.lean][1], text: LEAN[P2.lean][0] }), document.createTextNode(P2.why.length ? ' (چون ' + P2.why.join('؛ ') + ')' : ' (نشانهٔ جهت‌داری در کانال، RSI یا چرخه نیست)')]),
+        h('ul', { class: 'studio-l' }, [P2.up, P2.dn, P2.flat, P2.act, P2.risk].map(function (t) { return h('li', { 'data-notr': '1', text: t }); }))]); };
+      var d = h('details', { class: 'lv-card' }, [h('summary', { 'data-notr': '1' }, [h('strong', { text: calDate(c) + ' (' + (c.in <= 0 ? 'همین روزها' : fa(c.in, 0) + ' روز دیگر') + ')' }), document.createTextNode(' — '), h('span', { class: 'sev ' + RANK[c.rank][1], text: 'اهمیت ' + RANK[c.rank][0] }), document.createTextNode(' — ' + fa(c.n, 0) + ' نشانه در ' + c.fams.join('، '))]),
+        h('h4', { 'data-notr': '1', text: '۱. این تاریخ چه می‌گوید' }), h('ul', { class: 'studio-l' }, c.items.map(function (x) { return h('li', { 'data-notr': '1', text: explain(x) }); })),
+        h('h4', { 'data-notr': '1', text: '۲. درجهٔ اهمیت و احتمال تأثیر' }), P(imp),
+        h('h4', { 'data-notr': '1', text: '۳. سناریوهای بازار، سطوح قیمت، پیشنهاد عملی و مدیریت ریسک' }), names.length ? h('div', null, names.map(mk)) : P('برای بازارهای این تاریخ دادهٔ روزانهٔ کافی نیست.', 'muted'),
+        h('h4', { 'data-notr': '1', text: '۴. یادآوری' }), P('این تحلیل فقط بر چرخه‌ها و شمارش‌های زمانی تکیه دارد و جهت حرکت را نمی‌گوید. سطوح و اقدام‌ها خروجی قاعده‌محور مدل‌اند، نه توصیهٔ خرید یا فروش؛ پیش از هر تصمیم با تحلیل تکنیکال (روند، حجم، سطوح) و بنیادی (سود شرکت‌ها، نرخ بهره، ارز، تورم، خبر) ترکیب کنید.', 'small muted')]);
+      if (open) d.setAttribute('open', ''); return d; };
+    // track record
+    var keys = Object.keys(ST).sort(function (u, v) { return ST[v].n - ST[u].n; }), tj = S.tj || [], graded = tj.filter(function (j) { return j.hit === 0 || j.hit === 1; }), st = h('span', { class: 'small muted', 'aria-live': 'polite' });
+    var recBtn = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: S.tstat ? 'محاسبهٔ دوبارهٔ کارنامه' : 'محاسبهٔ کارنامه', onclick: function () { recBtn.disabled = true; st.textContent = ' در حال بازبینی گذشته (چند ثانیه)…'; setTimeout(function () { try { record(S); } catch (e) { U.toast(String(e.message || e), 'warn'); } ctx.rerender(); }, 60); } });
+    var all0 = { n: 0, hit: 0, exp: 0, vr: 0 }; keys.forEach(function (k) { ['n', 'hit', 'exp', 'vr'].forEach(function (f) { all0[f] += ST[k][f]; }); });
+    var scoreP = ctx.panel('کارنامه و یادگیری: هر نوع نشانهٔ زمانی در عمل چقدر درست بوده است', [
+      P('روش: برای هر بازار، در هر ۱۰ کندلِ گذشته، نشانه‌های زمانی فقط با دادهٔ تا همان روز دوباره حساب می‌شود و هر نشانه‌ای که تا ۳۰ روز بعدش سررسید داشته با واقعیت سنجیده می‌شود. «برخورد» یعنی در فاصلهٔ ±۲ کندل از تاریخ، قیمت واقعاً چرخیده باشد (بسته‌شدنی که از ۵ کندل قبل و ۵ کندل بعدش بالاتر یا پایین‌تر است؛ برای کف چرخه فقط کف و برای قله فقط قله). «تصادفی» یعنی سهم روزهایی که بدون هیچ تحلیلی هم نزدیک یک چرخش‌اند. «نسبت تحرک» = اندازهٔ حرکت ۱۰ کندل بعد از این تاریخ‌ها نسبت به حرکت ۱۰ کندلهٔ معمول (بالاتر از ۱ یعنی بعدش بازار پرتحرک‌تر بوده). وزن هر نوع نشانه در تقویم بالا از همین کارنامه می‌آید (بین ۰٫۵ و ۱٫۵، با احتیاط برای نمونهٔ کم) و با هر به‌روزرسانی داده و هر تاریخ سپری‌شده دوباره تنظیم می‌شود.'),
+      h('div', { class: 'row-ctl' }, [recBtn, st]),
+      S.tstat ? P('آخرین محاسبه: ' + fa(S.tstat.n, 0) + ' نشانهٔ سنجیده‌شده در ' + fa(S.tstat.series, 0) + ' بازار' + (S.tstat.sample ? ' — روی دادهٔ نمونه (ساختگی)؛ بی‌معنا تا وقتی دادهٔ واقعی دریافت شود' : '') + '. جمع کل: نرخ برخورد ' + pc0(all0.n ? all0.hit / all0.n : NaN) + ' در برابر ' + pc0(all0.n ? all0.exp / all0.n : NaN) + ' تصادفی.', 'small muted') : P('هنوز محاسبه نشده است. پس از هر «دریافت» خودکار حساب می‌شود.', 'small warn-t'),
+      keys.length ? table(['نوع نشانه', 'تعداد', 'نرخ برخورد', 'تصادفی', 'نسبت به تصادف', 'نسبت تحرک', 'داوری', 'وزن در تقویم', 'زنده (سپری‌شده)'], keys.map(function (k) { var q = ST[k]; return [clsName(k), fa(q.n, 0), pc0(q.rate), pc0(q.base), isFinite(q.lift) ? fa(q.lift, 2) + '×' : '—', isFinite(q.move) ? fa(q.move, 2) + '×' : '—', h('span', { class: 'sev ' + VERD[q.verdict][1], 'data-notr': '1', text: VERD[q.verdict][0] }), fa(q.w, 2), q.live ? fa(q.liveHit, 0) + ' از ' + fa(q.live, 0) : '—']; })) : null,
+      P('دفتر زنده: ' + fa(tj.length, 0) + ' نشانه ثبت شده، ' + fa(graded.length, 0) + ' مورد سررسیدشده و سنجیده‌شده' + (graded.length ? ' (' + fa(graded.filter(function (j) { return j.hit === 1; }).length, 0) + ' برخورد)' : '') + '. هر بار که برنامه با دادهٔ واقعی باز می‌شود، نشانه‌های ۳۰ روز آینده ثبت و موارد سررسیدشده (پس از ۵ کندل) سنجیده می‌شوند؛ نتیجهٔ زنده دو برابر بازبینی گذشته وزن دارد.', 'small muted'),
+      graded.length ? table(['بازار', 'نشانه', 'تاریخ', 'نتیجه'], graded.slice(-12).reverse().map(function (j) { return [j.a, clsName(j.c), J.jstr(j.tg), j.hit ? 'چرخش رخ داد' : 'چرخشی نبود']; })) : null,
+      P('حد این یادگیری: فقط «زمان چرخش» سنجیده می‌شود، نه سودآوری معامله؛ بازارهای هم‌خانواده (دلار، تتر، یورو، درهم) نمونه‌های مستقل نیستند و عدد «تعداد» را بزرگ‌تر از واقع نشان می‌دهند؛ و هر ۲۰ نوع نشانه‌ای که بیازماییم، یکی به‌تصادف «بهتر از تصادف» درمی‌آید.', 'small muted')]);
+    var parts = [ctx.panel('تاریخ‌های کلیدی پیش رو — شرح، اهمیت، سناریو و اقدام', [P('هر ردیف را باز کنید. برای هر سری سه نوع «نشانهٔ زمانی» حساب می‌شود (شمارش روز گن از سقف و کف اصلی، نسبت‌های زمانی فیبوناچی، کف و قلهٔ چرخه‌های غالب). وقتی چند نشانه از چند بازار در فاصلهٔ ۴ روز کنار هم بیفتند، آن بازه یک «تاریخ کلیدی» است. اهمیت نسبت به وضع عادی همین تقویم سنجیده می‌شود (میانگین وزنی فعلی: ' + fa(R.calMean || 0, 1) + ' در هر بازه). «زیاد»: دست‌کم سه خانوادهٔ بازار، دو نوع نشانه و تراکم ۱٫۶ برابر میانگین. «متوسط»: دو خانواده و ۱٫۲۵ برابر. ارزها با هم یک خانواده‌اند.'),
+      h('div', { class: 'row-ctl' }, [tg]), only.length ? h('div', { class: 'stack' }, only.slice(0, 14).map(function (c, i) { return card(c, i === 0); })) : P('در ' + fa(S.opt.ahead, 0) + ' روز آینده تاریخ هم‌زمانی نیست.', 'muted')]),
+      scoreP,
       ctx.panel('چرخهٔ غالب هر بازار', [P('چرخهٔ غالب = دوره‌ای که نوسان قیمت حول روندش بیشترین شباهت را به یک موج منظم با آن طول دارد (از ۶۰۰ کندل روزانهٔ اخیر). «قدرت» نسبت دامنهٔ این موج به کل نوسان حول روند است؛ «نامطمئن» یعنی چرخهٔ دوم تقریباً به همان اندازه قوی است و نمی‌شود یکی را غالب دانست. «دامنه» نوسان معمول قیمت حول روند در این چرخه است.'),
         table(['بازار', 'طول چرخه', 'قدرت', 'اکنون در', 'کف بعدی چرخه', 'قلهٔ بعدی چرخه', 'دامنه'], cyRows)])];
     if (A) { var f = G.form({ id: 'lv-t', onChange: ctx.rerender, fields: [{ key: 's', label: 'سری', options: withT.map(function (a) { return [a.name, a.name]; }), get: function () { return A.name; }, set: function (v) { S.sel = v; } }] }), d0 = LV.jdnOf(A.date), pv = function (k) { return k === 'low' ? 'کف اصلی' : 'سقف اصلی'; };
@@ -21665,7 +21788,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         'نسبت زمانی فیبوناچی: فاصلهٔ زمانی دو نقطهٔ محوری آخر در ۰٫۳۸۲، ۰٫۶۱۸، ۱، ۱٫۶۱۸ و ۲٫۶۱۸ ضرب و از نقطهٔ دوم جلو برده می‌شود. مثال: «۰٫۳۸۲ × ۲۵۳ روز» یعنی ۹۷ روز پس از نقطهٔ دوم.',
         'مربع نُه گن: سطوح قیمتی حول یک قیمت پایه (این‌جا کف اصلی). در ابزار تفصیلی قبلی قیمت پایه و نقاط محوری پس از دریافت داده به‌روز نمی‌شد و از دادهٔ نمونه می‌ماند؛ برای همین فاصله‌هایی مثل «۶۹٪−» می‌دیدید. اصلاح شد.',
         'پشتوانهٔ آماری این شمارش‌ها ضعیف است. ارزش عملی‌شان فقط در «هم‌زمانی» است: وقتی چند نشانهٔ مستقل از چند بازار روی یک بازه می‌افتد، آن بازه را برای بازبینی موقعیت‌ها علامت بزنید.']),
-      sec('۶. بازده واقعی و سری‌های نسبت', ['بازده واقعی = (۱ + بازده یک‌ساله) ÷ (۱ + تورم نقطه‌به‌نقطه) − ۱. تورم ورودی شماست و خودکار دریافت نمی‌شود.', '«شاخص کل به دلار» = شاخص کل تقسیم بر دلار آزاد همان روز؛ نشان می‌دهد بورس نسبت به دلار گران یا ارزان شده است. هر نسبت دیگری را در «داده و تنظیمات» با نوع «نسبت دو سری» و نوشتن «نام اول / نام دوم» بسازید.',
+      sec('۶. مبنا و منابع تحلیل زمانی', ['مبنای مستقیم: همان روش‌های مکانیکی فایل Temporal_Analysis خود شما (اسکن چرخه، FLD، مربع نُه، شمارش روز گن و نسبت‌های زمانی فیبوناچی از نقاط محوری) که به این برنامه منتقل و برای چند بازار گسترش داده شد.',
+        'شمارش روز و مربع نُه: روش‌های منسوب به W. D. Gann (دههٔ ۱۹۳۰ تا ۱۹۵۰). شمارش‌های ۳۰، ۴۵، ۶۰، ۹۰، ۱۲۰، ۱۴۴، ۱۸۰ و ۳۶۰ از تقسیم دایرهٔ ۳۶۰ درجه و عدد ۱۴۴ (مربع ۱۲) می‌آیند.',
+        'چرخه‌ها و FLD: J. M. Hurst، کتاب The Profit Magic of Stock Transaction Timing (۱۹۷۰). روش یافتن طول چرخه در این برنامه پریودوگرام (برازش موج سینوسی به روش کمترین مربعات روی سری بدون روند) است که ابزار استاندارد تحلیل طیفی است.',
+        'RSI: J. Welles Wilder، کتاب New Concepts in Technical Trading Systems (۱۹۷۸). کانال: رگرسیون خطی کمترین مربعات روی لگاریتم قیمت.',
+        'نسبت‌های زمانی فیبوناچی: عرف رایج تحلیل تکنیکال؛ منبع علمی معتبری که اثربخشی‌اش را نشان دهد سراغ ندارم.',
+        'اعتبار علمی: تا جایی که می‌دانم، پژوهش دانشگاهی معتبری قدرت پیش‌بینی شمارش‌های گن و نسبت‌های زمانی فیبوناچی را تأیید نکرده است. به همین دلیل برنامه به‌جای ادعای «احتمال بالا»، برای هر نوع نشانه نرخ برخورد واقعی‌اش را روی دادهٔ خود همین بازارها اندازه می‌گیرد و کنار نرخ تصادفی نشان می‌دهد (زبانهٔ تحلیل زمانی، بخش کارنامه).',
+        'سناریوها و سطوح: قاعده‌محورند. تمایل از جایگاه در کانال میان‌مدت، واگرایی RSI و نیمهٔ چرخهٔ غالب می‌آید؛ سطح تأیید صعود و نزول بالاترین و پایین‌ترین بسته‌شدن ۱۰ روز اخیر است؛ سطوح بعدی خطوط کانال کوتاه‌مدت و میان‌مدت‌اند؛ حد ضرر نیم ATR زیر کف ۱۰ روز.']),
+      sec('۷. بازده واقعی و سری‌های نسبت', ['بازده واقعی = (۱ + بازده یک‌ساله) ÷ (۱ + تورم نقطه‌به‌نقطه) − ۱. تورم ورودی شماست و خودکار دریافت نمی‌شود.', '«شاخص کل به دلار» = شاخص کل تقسیم بر دلار آزاد همان روز؛ نشان می‌دهد بورس نسبت به دلار گران یا ارزان شده است. هر نسبت دیگری را در «داده و تنظیمات» با نوع «نسبت دو سری» و نوشتن «نام اول / نام دوم» بسازید.',
         'تفاوت تتر و دلار آزاد، یا طلای ۱۸ و انس × دلار (حباب)، در ابزارهای «سیگنال ارز و تتر» و «سیگنال طلا و سکه» حساب می‌شود.'])]);
   }
   function dataTab(ctx) {
@@ -21696,6 +21826,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       R.cal.forEach(function (c, k) { put(s4, 5 + k, [calDate(c), Math.max(0, c.in), RANK[c.rank][0], c.n, c.items.map(function (x) { return x.name + ': ' + winText(x.w); }).join(' | ')]); });
       var s5 = b.sheet('چرخه‌ها', [2, 22, 12, 12, 10, 10, 14, 14], { rightToLeft: true }); s5.title('چرخه‌های غالب'); ['سری', 'طول (کندل)', 'روز تقویمی', 'قدرت', 'فاز', 'کف بعدی', 'قلهٔ بعدی'].forEach(function (t, i) { s5.put(1 + i, 4, t, 'hdr'); }); var r5 = 5;
       R.rows.forEach(function (a) { if (!a.cy || !a.cy.ok) return; a.cy.cycles.forEach(function (c) { put(s5, r5++, [a.name, c.period, c.calDays, Math.round(c.strength * 100) / 100, Math.round(c.phase * 100) / 100, J.jstr(LV.jdnOf(a.date) + c.troughIn), J.jstr(LV.jdnOf(a.date) + c.peakIn)]); }); });
+      var s6 = b.sheet('کارنامهٔ زمانی', [2, 44, 10, 12, 12, 12, 12, 22, 10], { rightToLeft: true }); s6.title('کارنامهٔ نشانه‌های زمانی', 'نرخ برخورد با چرخش واقعی (±۲ کندل) در برابر نرخ تصادفی'); ['نوع نشانه', 'تعداد', 'نرخ برخورد ٪', 'تصادفی ٪', 'نسبت', 'نسبت تحرک', 'داوری', 'وزن'].forEach(function (t, i) { s6.put(1 + i, 4, t, 'hdr'); });
+      Object.keys(R.ST || {}).forEach(function (k, i) { var q = R.ST[k]; put(s6, 5 + i, [clsName(k), q.n, rd(q.rate, 100), rd(q.base, 100), isFinite(q.lift) ? Math.round(q.lift * 100) / 100 : '', isFinite(q.move) ? Math.round(q.move * 100) / 100 : '', VERD[q.verdict][0], Math.round(q.w * 100) / 100]); });
+      var s7 = b.sheet('سناریوها', [2, 22, 14, 14, 90], { rightToLeft: true }); s7.title('سناریوها و اقدام پیشنهادی مدل برای هر بازار'); ['بازار', 'قیمت', 'تمایل', 'شرح'].forEach(function (t, i) { s7.put(1 + i, 4, t, 'hdr'); }); var r7 = 5;
+      R.rows.forEach(function (a) { if (!a.plan || !a.plan.up) return; [a.plan.up, a.plan.dn, a.plan.flat, a.plan.act, a.plan.risk].forEach(function (t, i) { put(s7, r7++, [i ? '' : a.name, i ? '' : a.last, i ? '' : LEAN[a.plan.lean][0], t]); }); });
       var s2 = b.sheet('یادداشت بازار', [2, 120], { rightToLeft: true }); s2.title('یادداشت بازار'); note(R, S).split('\n').forEach(function (l, i) { s2.put(1, 4 + i, l, 'wrap'); }); return b.wb; },
     kpis: function (ctx) { var r = function () { return ctx.R.rows.filter(function (a) { return a.ok; }); }, cnt = function (fn) { var n = []; r().forEach(function (a) { if (['m', 'l'].some(function (k) { return a.h[k].ok && fn(a.h[k]); })) n.push(a.name); }); return n; }; return [
       ['Series', function () { return fa(r().length, 0); }, function () { return 'سه افق: کوتاه، میان، بلند'; }],
@@ -22221,11 +22355,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111046) */
+/* PWA: offline cache + app updates (version 202611111136) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111046';
+  window.HUB_APP_VERSION = '202611111136';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
