@@ -1,0 +1,51 @@
+# One-off probe (runs once on push): which Iranian market-data sources answer from outside Iran, and which allow browser (CORS) calls.
+name: source-probe
+on:
+  push:
+    paths: ['.github/workflows/source-probe.yml']
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe
+        run: |
+          set +e
+          mkdir -p probe
+          python3 - <<'PY'
+          import json, urllib.request, ssl, time
+          URLS = [
+            "https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/46348559193224090/5",
+            "https://tsetmc.com/", "https://www.tsetmc.com/", "https://old.tsetmc.com/",
+            "https://rahavard365.com/", "https://rahavard365.com/api/v2/", "https://rahavard365.com/asset/1",
+            "https://www.bourseeye.com/", "https://bourseeye.com/", "https://ra100.ir/", "https://www.ra100.ir/",
+            "https://brsapi.ir/", "https://brsapi.ir/Api/Tsetmc/AllSymbols.php",
+            "https://www.fipiran.ir/", "https://fund.fipiran.ir/", "https://fund.fipiran.ir/api/v1/fund/fundcompare",
+            "https://www.sahamyab.com/", "https://www.sahamyab.com/api/proxy/symbol/getSymbolExtData?code=IRO1FOLD0001",
+            "https://search.codal.ir/api/search/v2/q?&Symbol=%D9%81%D9%88%D9%84%D8%A7%D8%AF", "https://www.codal.ir/",
+            "https://www.tse.ir/", "https://www.ifb.ir/", "https://www.nabzebourse.com/", "https://www.tablokhani.com/",
+            "https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl",
+            "https://www.tgju.org/profile/price_dollar_rl", "https://www.tgju.org/",
+            "https://api.nobitex.ir/v2/orderbook/USDTIRT",
+          ]
+          ctx = ssl.create_default_context(); out = []
+          for u in URLS:
+              t0 = time.time(); rec = {"url": u}
+              try:
+                  rq = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "Origin": "https://amir6990.github.io", "Accept": "application/json, text/html, */*"})
+                  with urllib.request.urlopen(rq, timeout=20, context=ctx) as r:
+                      b = r.read(400000)
+                      rec.update(status=r.status, acao=r.headers.get("Access-Control-Allow-Origin"), ctype=r.headers.get("Content-Type"), size=len(b), head=b[:220].decode("utf-8", "replace"))
+              except urllib.error.HTTPError as e:
+                  rec.update(status=e.code, acao=e.headers.get("Access-Control-Allow-Origin"), err=str(e)[:120])
+              except Exception as e:
+                  rec.update(status=0, err=(type(e).__name__ + ": " + str(e))[:160])
+              rec["secs"] = round(time.time() - t0, 1); out.append(rec); print(rec["status"], rec["secs"], u)
+          json.dump(out, open("probe/sources.json", "w"), ensure_ascii=False, indent=1)
+          PY
+      - name: Commit result
+        run: |
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add probe && git commit -q -m "probe: data sources reachable from outside Iran" && git push -q || echo nothing
