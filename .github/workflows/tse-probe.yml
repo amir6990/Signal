@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Probe data hosts from GitHub's runners
         run: |
+          set +e
           mkdir -p hub/data
           probe() { r=$(curl -s -m 25 -A "Mozilla/5.0" -o /tmp/b -w "%{http_code} %{size_download} %{time_total}" "$1"); echo "{\"url\":\"$1\",\"result\":\"$r\",\"head\":$(head -c 160 /tmp/b | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}"; }
           {
