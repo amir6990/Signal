@@ -518,6 +518,11 @@ table.sig-t.ticket thead { display: none; }
 .lv-card .lv-plan { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; }
 .lv-card .studio-l li { margin-bottom: 6px; line-height: 1.9; }
 
+.lv-report .rep-title { font-size: 1.25rem; border-bottom: 2px solid var(--accent); padding-bottom: 8px; }
+.lv-report .rep-lead { font-weight: 600; line-height: 2; border-inline-start: 4px solid var(--accent); padding: 10px 12px; background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 4px; }
+.lv-report h3 { margin-top: 22px; } .lv-report h4 { margin: 16px 0 6px; } .lv-report h5 { margin: 12px 0 4px; font-size: 0.95rem; }
+@media print { body.printing-report .print-report table { font-size: 10px; } body.printing-report .print-report td, body.printing-report .print-report th { color: #000; border: 1px solid #999; } }
+
 </style>
 
 <script>try { if (!localStorage.getItem('hub.lang')) localStorage.setItem('hub.lang', JSON.stringify('fa')); } catch (e) {}</script>
@@ -20143,6 +20148,19 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     }
     return out;
   }
+  /* walk-forward check of the channel / divergence readings: at past bars (non-overlapping steps of `fwd`), the reading is computed from data
+   * up to that bar only and the return over the next `fwd` bars is recorded. Per reading: count, mean forward return, share of positive returns.
+   * `all` is the same for every tested bar (the unconditional comparison). */
+  function evalReadings(rows, o) {
+    o = o || {}; var daily = o.bars === 'd', W = daily ? rows.filter(function (r) { return r.close > 0; }) : weekly(rows), n = W.length, win = o.win || 60, fwd = o.fwd || 20, step = o.step || fwd, out = { cls: {}, all: { n: 0, sum: 0, sq: 0, pos: 0 } };
+    var start = Math.max(win, 30); if (n < start + fwd + 5) return out;
+    for (var t = start; t + fwd < n; t += step) {
+      var A = analyse(W.slice(0, t + 1), { bars: 'd', win: win, cover: o.cover || 0.95, f: [1, fwd] }); if (!A.ok) continue;      // 'd' = use the bars as they are (already weekly when needed)
+      var r = Math.log(W[t + fwd].close / W[t].close), add = function (q) { q.n++; q.sum += r; q.sq += r * r; if (r > 0) q.pos++; };
+      add(out.all); add(out.cls[A.read] || (out.cls[A.read] = { n: 0, sum: 0, sq: 0, pos: 0, base: 0 })); out.cls[A.read].base += 0;
+    }
+    return out;
+  }
   // square of nine: levels at ±k·45° around a base price (sqrt(base) ± k/4, squared); the ones nearest to the current price
   function sq9(base, price, each) {
     if (!(base > 0) || !(price > 0)) return []; var rt = Math.sqrt(base), L = [];
@@ -20162,7 +20180,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     out.wdiv = { v: dv.bear ? -0.8 : dv.bull ? 0.8 : 0, why: dv.bear ? 'واگرایی منفی هفتگی: قیمت سقف بالاتر، RSI سقف پایین‌تر (' + Math.round(dv.bear.r1) + ' ← ' + Math.round(dv.bear.r2) + ')' : dv.bull ? 'واگرایی مثبت هفتگی: قیمت کف پایین‌تر، RSI کف بالاتر (' + Math.round(dv.bull.r1) + ' ← ' + Math.round(dv.bull.r2) + ')' : 'واگرایی هفتگی دیده نمی‌شود (RSI هفتگی ' + (isF(R[n - 1]) ? Math.round(R[n - 1]) : '—') + ')' };
     return out;
   }
-  Hub.longView = { winClass: winClass, turns: turns, hitAt: hitAt, evalWindows: evalWindows, cycles: cycles, autoPivots: autoPivots, timeWindows: timeWindows, sq9: sq9, weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
+  Hub.longView = { evalReadings: evalReadings, winClass: winClass, turns: turns, hitAt: hitAt, evalWindows: evalWindows, cycles: cycles, autoPivots: autoPivots, timeWindows: timeWindows, sq9: sq9, weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.longView;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -21542,6 +21560,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     S.assets.forEach(function (a) { if (a.active === false || a.kind === 'ratio') return; var D = series(S, a.name); if (D.d.length < 340) return; var e = LV.evalWindows(D.d); used++; n += e.n;
       Object.keys(e.cls).forEach(function (k) { var q = cls[k] || (cls[k] = { n: 0, hit: 0, exp: 0, vr: 0, mv: 0, mvB: 0 }), z = e.cls[k]; Object.keys(q).forEach(function (f) { q[f] += z[f]; }); }); });
     S.tstat = { at: Date.now(), asOf: S.meta && S.meta.asOf, series: used, n: n, cls: cls, sample: !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '') };
+    // readings (channel position, divergence, trend) on each horizon: forward return after the reading vs after any tested bar
+    var rs = {}; HZ.forEach(function (H) { var agg = { cls: {}, all: { n: 0, sum: 0, sq: 0, pos: 0 } };
+      S.assets.forEach(function (a) { if (a.active === false) return; var D = series(S, a.name), src = H.bars === 'd' ? D.d : D.w; if (!src.length) return; var e = LV.evalReadings(src, { bars: H.bars, win: Number(S.opt[H.key]) || H.def, fwd: H.f[1], cover: Number(S.opt.cover) || 0.95 });
+        ['n', 'sum', 'sq', 'pos'].forEach(function (f) { agg.all[f] += e.all[f]; }); Object.keys(e.cls).forEach(function (k) { var q = agg.cls[k] || (agg.cls[k] = { n: 0, sum: 0, sq: 0, pos: 0 }); ['n', 'sum', 'sq', 'pos'].forEach(function (f) { q[f] += e.cls[k][f]; }); }); });
+      rs[H.id] = agg; });
+    S.rstat = rs;
     return S.tstat;
   }
   // back-test counts + live journal (live outcomes count double); weight = shrunk lift, bounded 0.5…1.5
@@ -21550,7 +21574,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var T = S.tstat && S.tstat.cls || {}; Object.keys(T).forEach(function (k) { add(k, T[k].hit, T[k].exp, T[k].vr, T[k].n); out[k].mv = T[k].mv; out[k].mvB = T[k].mvB; });
     (S.tj || []).forEach(function (j) { if (j.hit == null) return; add(j.c, 2 * j.hit, 2 * j.b, 2 * j.b * (1 - j.b), 2, true); });
     Object.keys(out).forEach(function (k) { var q = out[k]; q.rate = q.n ? q.hit / q.n : NaN; q.base = q.n ? q.exp / q.n : NaN; q.lift = q.exp > 0 ? q.hit / q.exp : NaN; q.z = q.vr > 0 ? (q.hit - q.exp) / Math.sqrt(q.vr) : 0;
-      q.verdict = q.n < 20 ? 'few' : q.z >= 2 ? 'good' : q.z <= -2 ? 'bad' : 'none'; q.w = q.n < 20 || !isFinite(q.lift) ? 1 : Math.max(0.5, Math.min(1.5, 1 + (q.lift - 1) * q.n / (q.n + 50))); q.move = q.mvB > 0 ? q.mv / q.mvB : NaN; });
+      q.verdict = q.n < 20 ? 'few' : q.z >= 3 ? 'good' : q.z <= -2 ? 'bad' : 'none'; q.w = q.n < 20 || !isFinite(q.lift) ? 1 : Math.max(0.5, Math.min(1.5, 1 + (q.lift - 1) * q.n / (q.n + 50))); q.move = q.mvB > 0 ? q.mv / q.mvB : NaN; });
     return out;
   }
   var VERD = { few: ['نمونه کم است', 'sev-info'], good: ['بهتر از تصادف', 'fit-rec'], bad: ['بدتر از تصادف', 'fit-no'], none: ['فرقی با تصادف ندارد', 'sev-info'] };
@@ -21565,12 +21589,46 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       j.hit = LV.hitAt(T, { type: j.ty }, k2) ? 1 : 0; j.b = j.ty === 'trough' ? base.lo : j.ty === 'peak' ? base.hi : base.any; j.px = c[k2]; });
     S.tj = S.tj.filter(function (j) { return j.hit !== -1; }); if (S.tj.length > 1500) S.tj = S.tj.slice(-1500);
   }
+  /* ---------- validity: what the literature says, and what these series' own history says ---------- */
+  // reading record on one horizon: reads = classes pooled, sign = the direction the reading claims (−1 weaker than usual, +1 stronger)
+  function rv(S, hid, reads, sign) {
+    var A = S.rstat && S.rstat[hid]; if (!A || !A.all.n) return { v: 'na', n: 0 }; var q = { n: 0, sum: 0, pos: 0 }; reads.forEach(function (k) { var c = A.cls[k]; if (c) { q.n += c.n; q.sum += c.sum; q.pos += c.pos; } });
+    var mAll = A.all.sum / A.all.n, sd = Math.sqrt(Math.max(1e-12, A.all.sq / A.all.n - mAll * mAll)); if (!q.n) return { v: 'na', n: 0, all: mAll };
+    var m = q.sum / q.n, t = (m - mAll) / (sd / Math.sqrt(q.n)); return { n: q.n, mean: Math.exp(m) - 1, all: Math.exp(mAll) - 1, t: t, pos: q.pos / q.n, v: q.n < 20 ? 'few' : t * sign >= 3 ? 'ok' : t * sign <= -2 ? 'against' : 'none' };
+  }
+  function grp(ST, re) { var q = { n: 0, hit: 0, exp: 0, vr: 0 }; Object.keys(ST).forEach(function (k) { if (re.test(k)) ['n', 'hit', 'exp', 'vr'].forEach(function (f) { q[f] += ST[k][f]; }); }); q.rate = q.n ? q.hit / q.n : NaN; q.base = q.n ? q.exp / q.n : NaN; q.z = q.vr > 0 ? (q.hit - q.exp) / Math.sqrt(q.vr) : 0; q.v = !q.n ? 'na' : q.n < 20 ? 'few' : q.z >= 3 ? 'ok' : q.z <= -2 ? 'against' : 'none'; return q; }
+  var VV = { na: 'هنوز محاسبه نشده', few: 'نمونه کم است', ok: 'در این داده تأیید شد', against: 'در این داده خلافش دیده شد', none: 'در این داده تأیید نشد (فرقی با حالت عادی ندارد)' };
+  var REFS = ['Moskowitz, T. J., Ooi, Y. H., & Pedersen, L. H. (2012). Time series momentum. Journal of Financial Economics.',
+    'Park, C.-H., & Irwin, S. H. (2007). What do we know about the profitability of technical analysis? Journal of Economic Surveys.',
+    'Sullivan, R., Timmermann, A., & White, H. (1999). Data-snooping, technical trading rule performance, and the bootstrap. Journal of Finance.',
+    'Rink, K. (2023). The predictive ability of technical trading rules: an empirical analysis of developed and emerging equity markets. Financial Markets and Portfolio Management.',
+    'Batchelor, R., & Ramyar, R. (2006). Magic numbers in the Dow.',
+    'Granger, C. W. J., & Morgenstern, O. (1963). Spectral analysis of New York stock market prices.',
+    'Kitkanasiri, C., et al. (2025). Market efficiency and technical trading: an empirical study of MACD and RSI indicators in major Asian stock indices. ABAC Journal.',
+    'Raissi, S., et al. (2011). Profitability of Iranian stock market based on technical analysis trading rules. Journal of Optimization in Industrial Engineering.'];
+  var GRADE = { A: 'قوی', B: 'مختلط', C: 'ضعیف یا ردشده', D: 'تعریف حسابی', P: 'قاعدهٔ احتیاطی (عرف حرفه‌ای)' };
+  function fmtRv(x, H) { return x.v === 'na' || !x.n ? VV.na : fa(x.n, 0) + ' مورد؛ میانگین بازده ' + fa(H.f[1], 0) + ' ' + H.u + ' بعد ' + pct(x.mean, 1) + ' در برابر ' + pct(x.all, 1) + ' عادی — ' + VV[x.v]; }
+  function validity(S, ST) {
+    var Hm = hz('m'), top = rv(S, 'm', ['stretched', 'correction'], -1), bot = rv(S, 'm', ['depressed', 'rebound'], 1), trU = rv(S, 'm', ['trend-up'], 1), dvB = rv(S, 'm', ['weakening', 'correction'], -1), dvU = rv(S, 'm', ['improving', 'rebound'], 1);
+    var g = grp(ST, /^gann-/), f = grp(ST, /^fib-/), c = grp(ST, /^(trough|peak)-/), tw = function (q) { return q.v === 'na' ? VV.na : fa(q.n, 0) + ' مورد؛ برخورد با چرخش واقعی ' + fa(q.rate * 100, 0) + '٪ در برابر ' + fa(q.base * 100, 0) + '٪ تصادفی — ' + VV[q.v]; };
+    return { top: top, bot: bot, trU: trU, dvB: dvB, dvU: dvU, gann: g, fib: f, cyc: c, cycleOk: c.v === 'ok', timeOk: g.v === 'ok' || f.v === 'ok' || c.v === 'ok',
+      rows: [
+        { m: 'ادامهٔ روند (شیب کانال میان‌مدت و بازده ۳ ماه هم‌جهت)', g: 'A', src: 'پایداری بازده ۱ تا ۱۲ ماهه در ۵۸ قرارداد آتی سهام، ارز، کالا و اوراق؛ برگشت جزئی در افق‌های بلندتر [۱]', own: fmtRv(trU, Hm), use: 'در تمایل مدل حساب می‌شود' },
+        { m: 'جایگاه در کانال (نزدیک سقف یا کف به‌عنوان نشانهٔ برگشت)', g: 'B', src: 'آزمون مستقیمی برای کانال رگرسیونی نیافتم. پشتوانهٔ غیرمستقیم: برگشت جزئی بازده در افق‌های بلندتر [۱]؛ مرور ۹۵ مطالعه: ۵۶ نتیجهٔ مثبت برای قواعد تکنیکال، با ایراد داده‌کاوی [۲][۳]؛ عملکرد قواعد در خارج از نمونه پایدار نبوده [۴]', own: 'سقف: ' + fmtRv(top, Hm) + ' | کف: ' + fmtRv(bot, Hm), use: top.v === 'against' && bot.v === 'against' ? 'از تمایل مدل کنار گذاشته شد' : 'در تمایل مدل حساب می‌شود؛ هر سمت که در داده خلافش دیده شود کنار می‌رود' },
+        { m: 'RSI و واگرایی', g: 'B', src: 'در ده بازار آسیایی قواعد RSI و MACD بیشتر مواقع از خرید و نگه‌داری بهتر نبودند [۷]. دربارهٔ خودِ واگرایی مطالعهٔ معتبری نیافتم', own: 'واگرایی منفی: ' + fmtRv(dvB, Hm) + ' | مثبت: ' + fmtRv(dvU, Hm), use: 'با وزن ۱ در تمایل؛ هر سمت که در داده خلافش دیده شود کنار می‌رود' },
+        { m: 'چرخه‌های زمانی (پریودوگرام، FLD)', g: 'C', src: 'تحلیل طیفی قیمت سهام نیویورک: حرکت کوتاه‌مدت با گام تصادفی سازگار است و مؤلفه‌های فصلی و چرخهٔ تجاری اهمیت ناچیزی دارند [۶]', own: tw(c), use: c.v === 'ok' ? 'چون در این داده تأیید شد، در تمایل حساب می‌شود' : 'در تمایل مدل حساب نمی‌شود؛ فقط یادآور تاریخ' },
+        { m: 'نسبت‌های زمانی فیبوناچی', g: 'C', src: 'در شاخص داوجونز، نسبت طول و مدت روندهای پیاپی بیش از حد تصادف دور نسبت‌های فیبوناچی جمع نمی‌شوند [۵]', own: tw(f), use: 'فقط یادآور تاریخ؛ در تمایل و سطوح نقشی ندارد' },
+        { m: 'شمارش روز گن و مربع نُه', g: 'C', src: 'مطالعهٔ دانشگاهی معتبری که اثربخشی‌اش را نشان دهد نیافتم', own: tw(g), use: 'فقط یادآور تاریخ؛ در تمایل و سطوح نقشی ندارد' },
+        { m: 'بازده واقعی = (۱ + بازده اسمی) ÷ (۱ + تورم) − ۱', g: 'D', src: 'تعریف است، نه فرضیه. دقتش به عدد تورم واردشده بستگی دارد', own: '—', use: 'مبنای مقایسهٔ دارایی‌ها با تورم' },
+        { m: 'ریسک ۱٪ در هر معامله و حد ضرر بر پایهٔ ATR', g: 'P', src: 'قاعدهٔ رایج مدیریت ریسک؛ یافتهٔ علمی دربارهٔ عدد ۱٪ نیست', own: '—', use: 'حد بالای زیان هر تصمیم را محدود می‌کند' }] };
+  }
   /* ---------- solution: scenarios, levels and action for one market around a key date (rule-based) ---------- */
-  function plan(A) {
-    var m = A.h.m, sh2 = A.h.s, c0 = A.cy && A.cy.ok && A.cy.cycles[0], sc = 0, why = [];
-    if (m.ok) { if (m.pos >= 0.9) { sc -= 2; why.push('قیمت نزدیک سقف کانال میان‌مدت است'); } else if (m.pos >= 0.65) { sc -= 1; why.push('قیمت در نیمهٔ بالایی کانال میان‌مدت است'); } else if (m.pos <= 0.1) { sc += 2; why.push('قیمت نزدیک کف کانال میان‌مدت است'); } else if (m.pos <= 0.35) { sc += 1; why.push('قیمت در نیمهٔ پایینی کانال میان‌مدت است'); } }
-    if ((m.ok && m.dv.bear) || (sh2.ok && sh2.dv.bear)) { sc -= 1; why.push('واگرایی منفی RSI دیده می‌شود'); } if ((m.ok && m.dv.bull) || (sh2.ok && sh2.dv.bull)) { sc += 1; why.push('واگرایی مثبت RSI دیده می‌شود'); }
-    if (c0 && c0.strength >= 0.4) { if (c0.phase < 0.5) { sc -= 1; why.push('چرخهٔ غالب در نیمهٔ نزولی است'); } else { sc += 1; why.push('چرخهٔ غالب در نیمهٔ صعودی است'); } }
+  function plan(A, V) {
+    V = V || {}; var m = A.h.m, sh2 = A.h.s, c0 = A.cy && A.cy.ok && A.cy.cycles[0], sc = 0, why = [], topOk = !V.top || V.top.v !== 'against', botOk = !V.bot || V.bot.v !== 'against';
+    if (m.ok && isFinite(A.ret.m3)) { if (m.ch.b > 0 && A.ret.m3 > 0) { sc += 1; why.push('روند میان‌مدت و بازده ۳ ماه هر دو مثبت‌اند'); } else if (m.ch.b < 0 && A.ret.m3 < 0) { sc -= 1; why.push('روند میان‌مدت و بازده ۳ ماه هر دو منفی‌اند'); } }
+    if (m.ok) { if (m.pos >= 0.65 && !topOk) why.push('نزدیکی به سقف کانال حساب نشد چون در دادهٔ همین بازارها خلافش دیده شده'); else if (m.pos <= 0.35 && !botOk) why.push('نزدیکی به کف کانال حساب نشد چون در دادهٔ همین بازارها خلافش دیده شده'); else if (m.pos >= 0.9) { sc -= 2; why.push('قیمت نزدیک سقف کانال میان‌مدت است'); } else if (m.pos >= 0.65) { sc -= 1; why.push('قیمت در نیمهٔ بالایی کانال میان‌مدت است'); } else if (m.pos <= 0.1) { sc += 2; why.push('قیمت نزدیک کف کانال میان‌مدت است'); } else if (m.pos <= 0.35) { sc += 1; why.push('قیمت در نیمهٔ پایینی کانال میان‌مدت است'); } }
+    if (((m.ok && m.dv.bear) || (sh2.ok && sh2.dv.bear)) && !(V.dvB && V.dvB.v === 'against')) { sc -= 1; why.push('واگرایی منفی RSI دیده می‌شود'); } if (((m.ok && m.dv.bull) || (sh2.ok && sh2.dv.bull)) && !(V.dvU && V.dvU.v === 'against')) { sc += 1; why.push('واگرایی مثبت RSI دیده می‌شود'); }
+    if (c0 && c0.strength >= 0.4 && V.cycleOk) { if (c0.phase < 0.5) { sc -= 1; why.push('چرخهٔ غالب در نیمهٔ نزولی است'); } else { sc += 1; why.push('چرخهٔ غالب در نیمهٔ صعودی است'); } }
     var lean = sc <= -2 ? 'dn' : sc >= 2 ? 'up' : 'flat', L = A.lv || {}, px = A.last, uniq = function (a) { return a.filter(function (v, i) { return isFinite(v) && a.indexOf(v) === i; }); };
     var dnT = uniq([sh2.ok && sh2.mid, sh2.ok && sh2.lo, m.ok && m.mid, m.ok && m.lo].filter(function (v) { return v && v < L.lo10 * 0.995; }).sort(function (a, b) { return b - a; })).slice(0, 2);
     var upT = uniq([sh2.ok && sh2.up, m.ok && m.up, m.ok && m.upF1].filter(function (v) { return v && v > L.hi10 * 1.005; }).sort(function (a, b) { return a - b; })).slice(0, 2);
@@ -21601,7 +21659,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var l10 = dd.slice(-10); A.lv = { atr: cnt ? tr / cnt : 0, hi10: Math.max.apply(null, l10.map(function (r) { return r.close; })), lo10: Math.min.apply(null, l10.map(function (r) { return r.close; })) };
         if (!smp0 && a.kind !== 'ratio') journal(S, A, D); }
       return A; });
-    var ST = stats(S); rows.forEach(function (A) { if (A.ok) A.plan = plan(A); });
+    var ST = stats(S), V = validity(S, ST); rows.forEach(function (A) { if (A.ok) A.plan = plan(A, V); });
     // one calendar for all series: windows within 4 days of each other form one date
     var all = []; rows.forEach(function (A) { (A.tw || []).forEach(function (w) { all.push({ day: LV.jdnOf(A.date) + w.days, w: w, name: A.name }); }); }); all.sort(function (u, v) { return u.day - v.day; });
     var cal = [], cur = null; all.forEach(function (x) { if (x.day < today - 3) return; if (!cur || x.day - cur.from > 4) { cur = { from: x.day, to: x.day, items: [] }; cal.push(cur); } cur.to = x.day; cur.items.push(x); });
@@ -21612,7 +21670,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     cal.forEach(function (c) { var as = {}, fm = {}, ty = {}; c.items.forEach(function (x) { as[x.name] = 1; fm[fam[x.name] || x.name] = 1; ty[x.w.type === 'peak' || x.w.type === 'trough' ? 'cycle' : x.w.type] = 1; }); c.assets = Object.keys(as); c.fams = Object.keys(fm); c.types = Object.keys(ty).length; c.n = c.items.length; c.score = c.items.reduce(function (u, x) { return u + wOf(x); }, 0); c.in = c.from - today; c.x = mean ? c.score / mean : 0;
       c.rank = c.fams.length >= 3 && c.types >= 2 && c.x >= 1.6 ? 2 : c.fams.length >= 2 && c.x >= 1.25 ? 1 : 0; });
     var smp = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '');
-    return { rows: rows, cal: cal, calMean: mean, ST: ST, today: today, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
+    return { rows: rows, cal: cal, calMean: mean, ST: ST, V: V, today: today, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
   }
   /* ---------- text ---------- */
   function lines(A0, H, M) {
@@ -21768,7 +21826,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   function guideTab(ctx) {
     var sec = function (t, items) { return ctx.panel(t, [h('ul', { class: 'studio-l' }, items.map(function (x) { return h('li', { 'data-notr': '1', text: x }); }))]); };
+    var V = ctx.R.V;
     return ctx.group([
+      ctx.panel('اعتبار علمی هر روش و نقش آن در راه‌حل', [P('درجهٔ پشتوانه از پژوهش‌های منتشرشده است (شماره‌ها به فهرست منابع در پایان گزارش اشاره دارند)؛ «سابقه در این داده» از بازبینی گذشتهٔ همین بازارها می‌آید و با هر دریافت داده به‌روز می‌شود.'), table(['روش', 'پشتوانهٔ پژوهشی', 'خلاصهٔ شواهد', 'سابقه در این داده', 'نقش در راه‌حل'], V.rows.map(function (r) { return [r.m, GRADE[r.g], r.src, r.own, r.use]; })), h('ol', { class: 'studio-l' }, REFS.map(function (x) { return h('li', { 'data-notr': '1', dir: 'ltr', style: 'text-align:left', text: x }); }))]),
       sec('۱. کانال روند (در هر سه افق)', ['چه می‌کند: روی لگاریتم قیمت یک خط راست برازش می‌شود (رگرسیون). این «خط میانی» است. خط سقف و کف با همان شیب، جایی کشیده می‌شوند که ۹۵٪ قیمت‌های آن دوره میانشان بماند (سقف از بالاترین انحراف‌ها و کف از پایین‌ترین‌ها، هر کدام جدا).',
         'جایگاه در کانال: ۰٪ یعنی قیمت روی کف کانال، ۵۰٪ حدود میانه، ۱۰۰٪ روی سقف. بالای ۹۰٪ «نزدیک سقف» و زیر ۱۰٪ «نزدیک کف» خوانده می‌شود.',
         'تا سقف / میانه / کف: درصد فاصلهٔ قیمت امروز تا هر خط. منفی یعنی آن خط پایین‌تر از قیمت است.',
@@ -21797,6 +21857,87 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         'سناریوها و سطوح: قاعده‌محورند. تمایل از جایگاه در کانال میان‌مدت، واگرایی RSI و نیمهٔ چرخهٔ غالب می‌آید؛ سطح تأیید صعود و نزول بالاترین و پایین‌ترین بسته‌شدن ۱۰ روز اخیر است؛ سطوح بعدی خطوط کانال کوتاه‌مدت و میان‌مدت‌اند؛ حد ضرر نیم ATR زیر کف ۱۰ روز.']),
       sec('۷. بازده واقعی و سری‌های نسبت', ['بازده واقعی = (۱ + بازده یک‌ساله) ÷ (۱ + تورم نقطه‌به‌نقطه) − ۱. تورم ورودی شماست و خودکار دریافت نمی‌شود.', '«شاخص کل به دلار» = شاخص کل تقسیم بر دلار آزاد همان روز؛ نشان می‌دهد بورس نسبت به دلار گران یا ارزان شده است. هر نسبت دیگری را در «داده و تنظیمات» با نوع «نسبت دو سری» و نوشتن «نام اول / نام دوم» بسازید.',
         'تفاوت تتر و دلار آزاد، یا طلای ۱۸ و انس × دلار (حباب)، در ابزارهای «سیگنال ارز و تتر» و «سیگنال طلا و سکه» حساب می‌شود.'])]);
+  }
+  /* ---------- report: answer first, then the reasons, the evidence, the validity of each method, and the solution ---------- */
+  function buildReport(R, S) {
+    var M = S.macro || {}, rp = S.rep || {}, pick = rp.sel && rp.sel.length ? rp.sel : null, rows = R.rows.filter(function (a) { return a.ok && (!pick || pick.indexOf(a.name) >= 0); }), B = [], V = R.V, names = function (l) { return l.map(function (a) { return a.name; }).join('، '); };
+    var mOk = rows.filter(function (a) { return a.h.m.ok; }), top = mOk.filter(function (a) { return a.h.m.pos >= 0.9; }), bot = mOk.filter(function (a) { return a.h.m.pos <= 0.1; }), bear = rows.filter(function (a) { return (a.h.m.ok && a.h.m.dv.bear) || (a.h.s.ok && a.h.s.dv.bear); }), bull = rows.filter(function (a) { return (a.h.m.ok && a.h.m.dv.bull) || (a.h.s.ok && a.h.s.dv.bull); });
+    var ln = function (k) { return rows.filter(function (a) { return a.plan && a.plan.lean === k; }); }, dn = ln('dn'), up = ln('up'), fl = ln('flat');
+    var rial = rows.filter(function (a) { return !a.usd && isFinite(a.ret.y1); }), beat = isFinite(M.point) ? rial.filter(function (a) { return a.ret.y1 > M.point; }) : [];
+    var next = R.cal.filter(function (c) { return c.rank >= 1; })[0];
+    B.push({ t: 'h1', x: rp.title || 'گزارش تحلیل مالی بازارهای ایران' });
+    B.push({ t: 'meta', x: 'تاریخ داده: ' + (S.meta.asOf || '—') + ' · منبع: ' + (R.sample ? 'دادهٔ نمونه (ساختگی)' : (S.meta.source || '—')) + (rp.by ? ' · تهیه‌کننده: ' + rp.by : '') + ' · ' + fa(rows.length, 0) + ' بازار' });
+    if (R.sample) B.push({ t: 'warn', x: 'این گزارش روی دادهٔ نمونه ساخته شده و اعدادش واقعی نیست. پیش از استفاده، داده را دریافت کنید.' });
+    if (!rows.length) { B.push({ t: 'p', x: 'این بخش قابل تکمیل نیست: برای هیچ بازاری دادهٔ کافی وجود ندارد.' }); return B; }
+    // 1 answer
+    B.push({ t: 'h2', x: '۱. نتیجهٔ اصلی' });
+    B.push({ t: 'lead', x: 'از ' + fa(rows.length, 0) + ' بازار، تمایل مدل در ' + fa(dn.length, 0) + ' بازار نزولی' + (dn.length ? ' (' + names(dn) + ')' : '') + '، در ' + fa(up.length, 0) + ' بازار صعودی' + (up.length ? ' (' + names(up) + ')' : '') + ' و در ' + fa(fl.length, 0) + ' بازار بدون جهت است. ' +
+      (dn.length ? 'اقدام اصلی: در بازارهای با تمایل نزولی خرید تازه متوقف و حد ضرر موقعیت‌های باز بالا آورده شود. ' : '') + (up.length ? 'در بازارهای با تمایل صعودی، خرید فقط پس از تأیید قیمتی و پله‌ای. ' : '') + (!dn.length && !up.length ? 'اقدام اصلی: تغییری در موقعیت‌ها لازم نیست؛ فقط سطوح تأیید پایش شود. ' : '') +
+      (isFinite(M.point) && rial.length ? 'در یک سال گذشته ' + fa(beat.length, 0) + ' از ' + fa(rial.length, 0) + ' دارایی ریالی از تورم نقطه‌به‌نقطهٔ ' + pct(M.point, 1).replace('+', '') + ' جلو زده‌اند' + (beat.length ? ' (' + names(beat) + ')' : '') + '.' : '') });
+    // 2 reasons
+    B.push({ t: 'h2', x: '۲. سه دلیل کلیدی' });
+    B.push({ t: 'ol', x: [
+      'جایگاه و روند: در افق میان‌مدت ' + fa(top.length, 0) + ' بازار نزدیک سقف کانال' + (top.length ? ' (' + names(top) + ')' : '') + ' و ' + fa(bot.length, 0) + ' بازار نزدیک کف' + (bot.length ? ' (' + names(bot) + ')' : '') + ' است؛ شیب کانال میان‌مدت در ' + fa(mOk.filter(function (a) { return a.h.m.ch.b > 0; }).length, 0) + ' از ' + fa(mOk.length, 0) + ' بازار صعودی است.',
+      'مومنتوم و زمان: واگرایی منفی RSI در ' + fa(bear.length, 0) + ' بازار' + (bear.length ? ' (' + names(bear) + ')' : '') + ' و واگرایی مثبت در ' + fa(bull.length, 0) + ' بازار' + (bull.length ? ' (' + names(bull) + ')' : '') + ' دیده می‌شود. ' + (next ? 'نزدیک‌ترین تاریخ کلیدی: ' + calDate(next) + ' (' + fa(Math.max(0, next.in), 0) + ' روز دیگر، اهمیت ' + RANK[next.rank][0] + '). ' : 'تاریخ کلیدی هم‌زمانی در افق تقویم نیست. ') + (V.timeOk ? '' : 'نشانه‌های زمانی در دادهٔ همین بازارها بهتر از تصادف نبوده‌اند، پس فقط یادآور بازبینی‌اند.'),
+      isFinite(M.point) ? 'تورم و بازده واقعی: با تورم نقطه‌به‌نقطهٔ ' + pct(M.point, 1).replace('+', '') + ' (' + (M.asOf || '—') + '، ورودی کاربر)، ' + (rial.length ? 'بهترین بازده واقعی یک‌ساله: ' + (function () { var b = rial.slice().sort(function (u, v) { return v.ret.y1 - u.ret.y1; }); return b[0].name + ' ' + pct((1 + b[0].ret.y1) / (1 + M.point) - 1) + '؛ بدترین: ' + b[b.length - 1].name + ' ' + pct((1 + b[b.length - 1].ret.y1) / (1 + M.point) - 1) + '.'; })() : 'بازده یک‌ساله برای دارایی‌های ریالی در دسترس نیست.') : 'تورم و بازده واقعی: این بخش قابل تکمیل نیست، چون عدد تورم وارد نشده است.'] });
+    // 3 evidence
+    B.push({ t: 'h2', x: '۳. شواهد' });
+    B.push({ t: 'h3', x: 'وضعیت هر بازار در سه افق' });
+    var cell = function (x) { return x.ok ? READ[x.read][0] + ' · ' + fa(x.pos * 100, 0) + '٪' + (x.dv.bear ? ' · واگرایی −' : x.dv.bull ? ' · واگرایی +' : '') : '—'; };
+    B.push({ t: 'table', head: ['بازار', 'آخرین', 'کوتاه‌مدت', 'میان‌مدت', 'بلندمدت', 'اعتبار کانال میان‌مدت'], rows: rows.map(function (a) { return [a.name, fa(a.last), cell(a.h.s), cell(a.h.m), cell(a.h.l), a.h.m.ok ? a.h.m.quality : '—']; }) });
+    B.push({ t: 'small', x: 'درصد = جایگاه قیمت در کانال همان افق (۰٪ کف، ۱۰۰٪ سقف). کوتاه‌مدت: ' + fa(S.opt.sWin, 0) + ' کندل روزانه؛ میان‌مدت: ' + fa(S.opt.mWin, 0) + ' هفته؛ بلندمدت: ' + (Number(S.opt.lWin) ? fa(S.opt.lWin, 0) + ' هفته' : 'کل تاریخچه') + '.' });
+    B.push({ t: 'h3', x: 'بازده‌ها و فاصله تا خطوط کانال میان‌مدت' });
+    B.push({ t: 'table', head: ['بازار', '۱ ماه', '۳ ماه', '۱ سال', 'واقعی ۱ سال', 'تا سقف', 'تا میانه', 'تا کف'], rows: rows.map(function (a) { var m = a.h.m; return [a.name, pct(a.ret.m1), pct(a.ret.m3), pct(a.ret.y1), isFinite(M.point) && isFinite(a.ret.y1) && !a.usd ? pct((1 + a.ret.y1) / (1 + M.point) - 1) : '—', m.ok ? pct(m.toUp) : '—', m.ok ? pct(m.toMid) : '—', m.ok ? pct(m.toLo) : '—']; }) });
+    var hot = R.cal.filter(function (c) { return c.rank >= 1; }).slice(0, 6);
+    B.push({ t: 'h3', x: 'تاریخ‌های کلیدی پیش رو' });
+    if (hot.length) B.push({ t: 'table', head: ['تاریخ', 'روز دیگر', 'اهمیت', 'نشانه‌ها', 'بازارها'], rows: hot.map(function (c) { return [calDate(c), fa(Math.max(0, c.in), 0), RANK[c.rank][0], fa(c.n, 0) + ' (' + fa(c.x, 1) + ' برابر عادی)', c.assets.join('، ')]; }) }); else B.push({ t: 'p', x: 'تاریخ هم‌زمانی با اهمیت متوسط یا زیاد در ' + fa(S.opt.ahead, 0) + ' روز آینده نیست.' });
+    // 4 validity
+    B.push({ t: 'h2', x: '۴. اعتبار علمی هر روش و سابقهٔ آن در دادهٔ همین بازارها' });
+    B.push({ t: 'p', x: 'هر روش دو بار سنجیده می‌شود: یک بار با پژوهش‌های منتشرشده و یک بار روی تاریخچهٔ خود این بازارها (بازبینی گذشته با دادهٔ تا همان روز). فقط روش‌هایی که پشتوانهٔ پژوهشی دارند، یا در این داده تأیید شده‌اند، در «تمایل مدل» و راه‌حل نقش دارند. برای «تأیید» آستانهٔ سخت‌گیرانه (سه انحراف معیار) لازم است، چون بازارها به هم وابسته‌اند و چندین روش هم‌زمان آزموده می‌شود؛ برای «کنار گذاشتن» دو انحراف معیار کافی است.' });
+    B.push({ t: 'table', head: ['روش', 'پشتوانهٔ پژوهشی', 'خلاصهٔ شواهد', 'سابقه در این داده', 'نقش در راه‌حل'], rows: V.rows.map(function (r) { return [r.m, GRADE[r.g], r.src, r.own, r.use]; }) });
+    if (!S.rstat || !S.tstat) B.push({ t: 'warn', x: 'ستون «سابقه در این داده» هنوز محاسبه نشده است؛ در زبانهٔ تحلیل زمانی «محاسبهٔ کارنامه» را بزنید یا داده را دریافت کنید.' });
+    else if (S.tstat.sample) B.push({ t: 'small', x: 'سابقه روی دادهٔ نمونه حساب شده و بی‌معناست.' });
+    // 5 solution
+    B.push({ t: 'h2', x: '۵. راه‌حل' });
+    var ord = dn.concat(up, fl).filter(function (a) { return a.plan && a.plan.up; });
+    B.push({ t: 'h3', x: 'اقدام‌ها به ترتیب اولویت' });
+    if (ord.length) B.push({ t: 'table', head: ['بازار', 'تمایل مدل', 'چرا', 'تأیید صعود بالای', 'تأیید نزول زیر', 'حد ضرر خرید'], rows: ord.map(function (a) { var p2 = a.plan; return [a.name, LEAN[p2.lean][0], p2.why.join('؛ ') || '—', fa(p2.lv.hi10), fa(p2.lv.lo10), fa(p2.stopL)]; }) });
+    ord.forEach(function (a) { B.push({ t: 'h4', x: a.name + ' — ' + LEAN[a.plan.lean][0] }); B.push({ t: 'ul', x: [a.plan.up, a.plan.dn, a.plan.flat, a.plan.act] }); });
+    if (!ord.length) B.push({ t: 'p', x: 'این بخش قابل تکمیل نیست: دادهٔ روزانهٔ کافی برای سطوح و سناریوها نیست (یک بار «دریافت» را بزنید).' });
+    B.push({ t: 'h3', x: 'مدیریت ریسک مشترک' });
+    B.push({ t: 'ul', x: ['در هر تصمیم حداکثر ۱٪ سرمایه ریسک شود: حجم = ۱٪ سرمایه ÷ فاصلهٔ ورود تا حد ضرر.', 'حد ضرر نزدیک‌تر از نوسان روزانهٔ معمول (ATR) گذاشته نشود.', 'بازارهای هم‌خانواده (دلار، تتر، یورو، درهم؛ یا سکه و طلا) یک ریسک‌اند؛ مجموع موقعیت در یک خانواده مثل یک موقعیت حساب شود.', 'در بازهٔ ±۳ روز تاریخ‌های کلیدی با اهمیت زیاد، موقعیت اهرمی تازه گرفته نشود' + (V.timeOk ? '.' : '؛ این فقط احتیاط است، چون نشانه‌های زمانی در این داده بهتر از تصادف نبوده‌اند.')] });
+    B.push({ t: 'h3', x: 'چه چیزی این نتیجه را عوض می‌کند' });
+    B.push({ t: 'ul', x: ['بسته‌شدن قیمت بیرون از دو سطح تأیید هر بازار (جدول بالا): همان روز سناریوی آن سمت فعال می‌شود.', 'عدد تازهٔ تورم یا تغییر محسوس نرخ ارز: بازده واقعی و ترتیب دارایی‌ها باید دوباره حساب شود.', 'به‌روزرسانی کارنامه: اگر روشی در دادهٔ تازه «خلافش دیده شد»، خودکار از تمایل مدل کنار می‌رود.'] });
+    if (rp.view) { B.push({ t: 'h3', x: 'جمع‌بندی و نظر تحلیلگر' }); String(rp.view).split('\n').filter(Boolean).forEach(function (l) { B.push({ t: 'p', x: l }); }); }
+    // 6 limits + refs
+    B.push({ t: 'h2', x: '۶. محدودیت‌ها و منابع' });
+    B.push({ t: 'ul', x: ['خروجی قاعده‌محور است، نه توصیهٔ خرید یا فروش؛ تصمیم نهایی با تحلیلگر است.', 'عامل‌های بنیادی (سود شرکت‌ها، نرخ بهره، بودجه، تحریم، خبر) در مدل نیستند و باید جدا سنجیده شوند.', 'تورم ورودی کاربر است' + (M.src ? ' (' + M.src + ')' : '') + '.', 'سابقه‌سنجی فقط جهت و زمان را می‌سنجد، نه سود پس از کارمزد و لغزش؛ بازارهای هم‌خانواده نمونه‌های مستقل نیستند.', 'کانال توصیف گذشته است و شکست آن همیشه ممکن است؛ هر جا «اعتبار کانال» ضعیف است، سطوح آن بازار کم‌اعتبار است.'] });
+    B.push({ t: 'h3', x: 'منابع' }); B.push({ t: 'ol', x: REFS });
+    return B;
+  }
+  function esc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function repHtml(B) { return B.map(function (b) { var li = function (a) { return a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); };
+    return b.t === 'h1' ? '<h1>' + esc(b.x) + '</h1>' : /^h[234]$/.test(b.t) ? '<' + b.t + '>' + esc(b.x) + '</' + b.t + '>' : b.t === 'ul' ? '<ul>' + li(b.x) + '</ul>' : b.t === 'ol' ? '<ol>' + li(b.x) + '</ol>' : b.t === 'table' ? '<table><thead><tr>' + b.head.map(function (x) { return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + b.rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>' : '<p class="' + b.t + '">' + esc(b.x) + '</p>'; }).join('\n'); }
+  function repDoc(B) { return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>' + esc(B[0].x) + '</title><style>body{font-family:Vazirmatn,Tahoma,Arial,sans-serif;direction:rtl;text-align:right;line-height:1.9;max-width:900px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:22px;border-bottom:2px solid #b8860b;padding-bottom:8px}h2{font-size:17px;margin-top:26px;color:#7a5a00}h3{font-size:15px;margin-top:18px}h4{font-size:14px;margin:14px 0 4px}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}th,td{border:1px solid #bbb;padding:5px 7px;vertical-align:top;text-align:right}th{background:#f1ead8}p.lead{font-size:15px;font-weight:600;background:#faf5e6;padding:10px 12px;border-right:4px solid #b8860b}p.meta,p.small{color:#555;font-size:12.5px}p.warn{color:#a40000;font-weight:600}li{margin-bottom:5px}@page{size:A4;margin:14mm}@media print{body{margin:0;max-width:none;font-size:11.5px}table{font-size:10px;page-break-inside:auto}tr{page-break-inside:avoid}h2,h3,h4{page-break-after:avoid}}</style></head><body>' + repHtml(B) + '</body></html>'; }
+  function repText(B) { return B.map(function (b) { return b.t === 'h1' ? b.x + '\n' + '='.repeat(30) : /^h[234]$/.test(b.t) ? '\n' + b.x : b.t === 'ul' || b.t === 'ol' ? b.x.map(function (x, i) { return (b.t === 'ol' ? (i + 1) + '. ' : '• ') + x; }).join('\n') : b.t === 'table' ? [b.head.join(' | ')].concat(b.rows.map(function (r) { return r.join(' | '); })).join('\n') : b.x; }).join('\n'); }
+  function reportTab(ctx) {
+    var S = ctx.S, R = ctx.R; if (!S.rep) S.rep = { title: '', by: '', view: '', sel: [] };
+    var B = buildReport(R, S), body = h('div', { class: 'report-body print-report lv-report', 'data-notr': '1' });
+    B.forEach(function (b) { var li = function (a) { return a.map(function (x) { return h('li', { text: x }); }); };
+      body.appendChild(b.t === 'h1' ? h('h2', { class: 'rep-title', text: b.x }) : b.t === 'h2' ? h('h3', { text: b.x }) : b.t === 'h3' ? h('h4', { text: b.x }) : b.t === 'h4' ? h('h5', { text: b.x }) : b.t === 'ul' ? h('ul', { class: 'studio-l' }, li(b.x)) : b.t === 'ol' ? h('ol', { class: 'studio-l' }, li(b.x)) : b.t === 'table' ? table(b.head, b.rows) : h('p', { class: b.t === 'lead' ? 'rep-lead' : b.t === 'warn' ? 'neg' : b.t === 'meta' || b.t === 'small' ? 'small muted' : '', text: b.x })); });
+    var fn = 'Iran_Markets_Report_' + String(S.meta.asOf || '').replace(/[^\d]/g, '').slice(0, 8);
+    var btns = h('div', { class: 'row-ctl' }, [
+      h('button', { class: 'btn primary', type: 'button', text: 'چاپ / ذخیره به PDF', 'data-notr': '1', onclick: function () {   // a clean stand-alone page is printed, not the app screen
+        try { var fr = document.createElement('iframe'); fr.setAttribute('aria-hidden', 'true'); fr.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px'; fr.srcdoc = repDoc(B);
+          fr.onload = function () { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { U.toast('چاپ در این محیط در دسترس نیست؛ «دانلود HTML» را بگیرید و از مرورگر چاپ کنید.', 'warn'); } setTimeout(function () { if (fr.parentNode) fr.parentNode.removeChild(fr); }, 60000); };
+          document.body.appendChild(fr); } catch (e) { U.toast('چاپ در این محیط در دسترس نیست؛ «دانلود HTML» را بگیرید.', 'warn'); } } }),
+      h('button', { class: 'btn', type: 'button', text: 'دانلود Word', 'data-notr': '1', onclick: function () { U.saveFile(fn + '.doc', new Blob(['﻿' + repDoc(B)], { type: 'application/msword' })); } }),
+      h('button', { class: 'btn', type: 'button', text: 'دانلود HTML', 'data-notr': '1', onclick: function () { U.saveFile(fn + '.html', new Blob([repDoc(B)], { type: 'text/html;charset=utf-8' })); } }),
+      h('button', { class: 'btn', type: 'button', text: 'کپی متن', 'data-notr': '1', onclick: function () { var t = repText(B); if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { U.toast('کپی شد.', 'good'); }, function () { U.toast('کپی نشد.', 'warn'); }); } })]);
+    var all = R.rows.filter(function (a) { return a.ok; }), box = h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, all.map(function (a) { var i = h('input', { type: 'checkbox', 'aria-label': a.name }); i.checked = !S.rep.sel.length || S.rep.sel.indexOf(a.name) >= 0; i.addEventListener('change', function () { var cur = S.rep.sel.length ? S.rep.sel.slice() : all.map(function (x) { return x.name; }); if (i.checked) { if (cur.indexOf(a.name) < 0) cur.push(a.name); } else cur = cur.filter(function (x) { return x !== a.name; }); S.rep.sel = cur.length === all.length ? [] : cur; ctx.rerender(); }); return h('label', { class: 'chk-l', 'data-notr': '1' }, [i, document.createTextNode(' ' + a.name)]); }));
+    var f = G.form({ id: 'lv-r', onChange: ctx.rerender, fields: [{ key: 'ti', label: 'عنوان گزارش', type: 'text', get: function () { return S.rep.title || ''; }, set: function (v) { S.rep.title = v; } }, { key: 'by', label: 'تهیه‌کننده', type: 'text', get: function () { return S.rep.by || ''; }, set: function (v) { S.rep.by = v; } }] });
+    var view = h('textarea', { class: 'f-area', rows: 4, dir: 'rtl', 'aria-label': 'نظر تحلیلگر', placeholder: 'نظر و تصمیم خودتان (اختیاری؛ در بخش راه‌حل گزارش می‌آید)' }); view.value = S.rep.view || ''; view.addEventListener('change', function () { S.rep.view = view.value; ctx.rerender(); });
+    return ctx.group([ctx.panel('تنظیم گزارش', [P('گزارش از همین داده و مدل‌ها ساخته می‌شود: اول نتیجه، بعد سه دلیل، بعد شواهد، اعتبار علمی هر روش، و در پایان راه‌حل. بازارها را انتخاب کنید و اگر خواستید نظر خودتان را اضافه کنید.'), f, h('p', { class: 'small muted', 'data-notr': '1', text: 'بازارهای گزارش:' }), box, view, btns]), ctx.panel('پیش‌نمایش گزارش', [body])]);
   }
   function dataTab(ctx) {
     var S = ctx.S;
@@ -21837,7 +21978,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['Bearish divergence', function () { return fa(cnt(function (x) { return x.dv.bear; }).length, 0); }, function () { return cnt(function (x) { return x.dv.bear; }).join('، ') || 'هفتگی'; }],
       ['Near channel bottom', function () { return fa(cnt(function (x) { return x.pos <= 0.1; }).length, 0); }, function () { return cnt(function (x) { return x.pos <= 0.1; }).join('، ') || 'میان‌مدت یا بلندمدت'; }],
       ['Next key date', function () { var c = ctx.R.cal.filter(function (x) { return x.rank >= 1; })[0]; return c ? J.jstr(c.from) : '—'; }, function () { var c = ctx.R.cal.filter(function (x) { return x.rank >= 1; })[0]; return c ? fa(Math.max(0, c.in), 0) + ' روز دیگر · اهمیت ' + RANK[c.rank][0] : 'تحلیل زمانی'; }]]; },
-    tabs: [{ group: 'Outputs', items: [['outlook', 'نمای کلی و یادداشت بازار', overviewTab], ['hz', 'کوتاه‌مدت، میان‌مدت، بلندمدت', horizonTab], ['chart', 'نمودار کانال و RSI', chartTab], ['time', 'تحلیل زمانی و تاریخ‌های کلیدی', timeTab], ['guide', 'راهنمای مدل‌ها', guideTab]] },
+    tabs: [{ group: 'Outputs', items: [['outlook', 'نمای کلی و یادداشت بازار', overviewTab], ['hz', 'کوتاه‌مدت، میان‌مدت، بلندمدت', horizonTab], ['chart', 'نمودار کانال و RSI', chartTab], ['time', 'تحلیل زمانی و تاریخ‌های کلیدی', timeTab], ['report', 'گزارش و راه‌حل', reportTab], ['guide', 'راهنمای مدل‌ها و اعتبار علمی', guideTab]] },
       { group: 'Inputs', items: [['data', 'داده و تنظیمات', dataTab], ['t-sig-temporal', 'تحلیل زمانی تفصیلی (یک سری)', TK.embedTab('sig-temporal', 'همان ابزار مستقل تحلیل زمانی برای یک سری دلخواه، با نقاط محوری و تنظیمات دستی.')]] }]
   });
 })(window);
@@ -22355,11 +22496,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111136) */
+/* PWA: offline cache + app updates (version 202611111227) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111136';
+  window.HUB_APP_VERSION = '202611111227';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
