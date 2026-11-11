@@ -3996,6 +3996,15 @@ else if (typeof exports === 'object')
 "Near channel bottom": "نزدیک کف کانال",
 "Bearish divergence": "واگرایی منفی",
 "Market commentary from reproducible rules: log-scale trend channel on weekly data, weekly RSI divergence, correction and target levels projected a year ahead, inflation-adjusted returns and a ready-to-edit market note.": "تفسیر بازار با قواعد تکرارپذیر: کانال روند لگاریتمی روی دادهٔ هفتگی، واگرایی RSI هفتگی، سطوح اصلاح و هدف تا یک سال آینده، بازده واقعی پس از تورم و یادداشت بازار آماده برای ویرایش.",
+"Iran Economy: Financial Analysis": "تحلیل مالی اقتصاد ایران",
+"Iran economy: financial market analysis": "تحلیل مالی اقتصاد ایران: بازارها در سه افق",
+"Tehran exchange, dollar, tether, gold, coin, bitcoin and oil on three horizons (short, medium, long): trend channel, RSI divergence, time cycles and one calendar of key dates, inflation-adjusted returns and a ready-to-edit market note.": "بورس تهران، دلار، تتر، طلا، سکه، بیت‌کوین و نفت در سه افق کوتاه‌مدت، میان‌مدت و بلندمدت: کانال روند، واگرایی RSI، چرخه‌های زمانی و یک تقویم از تاریخ‌های کلیدی، بازده واقعی پس از تورم و یادداشت بازار آمادهٔ ویرایش.",
+"Iran economy · Markets": "اقتصاد ایران · بازارها",
+"Iran markets: three-horizon history": "بازارهای ایران: تاریخچهٔ سه افق",
+"Fetch all series (TSETMC, TGJU)": "دریافت همهٔ سری‌ها (TSETMC، TGJU)",
+"Next key date": "تاریخ کلیدی بعدی",
+"Above FLD": "بالاتر از FLD",
+"Below FLD": "پایین‌تر از FLD",
 };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -9262,23 +9271,25 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     { id: 'ipo', label: 'IPO' },
     { id: 'ib', label: 'Investment Banking & M&A' },
     { id: 'pe', label: 'Private Equity' },
-    { id: 'trading', label: 'Trading' }
+    { id: 'trading', label: 'Trading' },
+    { id: 'iran', label: 'Iran Economy: Financial Analysis' }
   ];
   // primary home of each tool (a tool may declare several sections; it is listed only here)
   var PLACE = { 'strategy-engine': 'strategy', company: 'statements', auditor: 'statements', valsummary: 'valuation', dcf: 'valuation', comps: 'valuation', precedents: 'valuation', wacc: 'valuation', 'rm-valuation': 'valuation',
     financing: 'financing', fundraise: 'financing', 'rm-capital': 'financing', 'rm-finmgmt': 'financing', 'debt-capacity': 'bonds', 'bond-issue': 'bonds', bond: 'bonds', 'bond-suite': 'bonds',
     ipo: 'ipo', 'ipo-suite': 'ipo', 'rm-governance': 'ipo', 'ma-suite': 'ib', accretion: 'ib', 'acq-pricing': 'ib', 'target-screen': 'ib', 'buyer-universe': 'ib', 'bid-compare': 'ib',
-    lbo: 'pe', 'pe-suite': 'pe', 'trading-engine': 'trading' };
+    lbo: 'pe', 'pe-suite': 'pe', 'trading-engine': 'trading', 'long-view': 'iran' };
   var OLD = { audit: 'statements', finmgmt: 'financing', finance: 'financing', buyside: 'ib', sellside: 'ib', signals: 'trading' };
   // tools shown inside another page (the strategy engine or a suite): reachable, but not listed twice
   var STRAT_IN = { 'strategy-studio': 'studio', 'rm-strategy': 'rm', 'five-forces': 'ff', kernel: 'kn', 'blue-ocean': 'bo', 'playing-to-win': 'pw' };
-  var TRADE_IN = ['long-view', 'market-data', 'sig-stocks', 'sig-gold', 'sig-fx', 'sig-options', 'sig-temporal', 'position', 'rm-trading'];
+  var TRADE_IN = ['market-data', 'sig-stocks', 'sig-gold', 'sig-fx', 'sig-options', 'position', 'rm-trading'];
   // exact duplicates folded into another page (same checklist content)
   var ALIAS = { 'buyside-process': { id: 'ma-suite', tab: 's-ib-process', key: 'hub.ma-suite.v1' }, 'sellside-process': { id: 'ma-suite', tab: 's-ib-process', key: 'hub.ma-suite.v1' } };
   function parentOf(id) {
     if (ALIAS[id]) return ALIAS[id];
     if (STRAT_IN[id]) return { id: 'strategy-engine', tab: 't-' + STRAT_IN[id], key: 'hub.strategyEngine.v1' };
     if (TRADE_IN.indexOf(id) >= 0) return { id: 'trading-engine', tab: 't-' + id, key: 'hub.tradingEngine.v1' };
+    if (id === 'sig-temporal') return { id: 'long-view', tab: 't-sig-temporal', key: 'hub.longview.v1' };
     var S = (Hub.toolkit && Hub.toolkit.SUITES) || {}, f = null;
     Object.keys(S).forEach(function (k) { if (S[k].members.indexOf(id) >= 0) f = { id: k, tab: 's-' + id, key: S[k].storeKey }; });
     return f;
@@ -19561,9 +19572,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (S.meta.source && /synthetic/i.test(S.meta.source)) out.checks.push({ level: 'info', msg: 'Showing illustrative synthetic data. Press Fetch.' });
     return out;
   }
+  // pivots and the square-of-nine base follow the fetched series (they used to stay on the sample's values after a fetch)
+  function tempAuto(S) {
+    var px = (S.data && S.data.series) || [], LV = Hub.longView, J = Hub.jalali; if (!LV || px.length < 30) return;
+    var toJ = function (d) { var t = String(d); return J.jstr(J.g2d(+t.slice(0, 4), +t.slice(4, 6), +t.slice(6, 8))); }, P = LV.autoPivots(px, 300);
+    S.pivots = P.map(function (q) { return { label: q.kind === 'low' ? 'Major low' : 'Major high', date: toJ(q.date), price: Math.round(q.price * 100) / 100 }; });
+    var lo = P.filter(function (q) { return q.kind === 'low'; })[0]; if (lo) S.sq9.base = Math.round(lo.price * 100) / 100;
+  }
   function tempFetch(S) {
     var s = S.series, p = s.source === 'tse-index' ? Hub.data.tse.index(s.key) : s.source === 'tse' ? Hub.data.tse.resolve(s.key).then(function (c) { return Hub.data.tse.daily(c, 1200); }) : Hub.data.tgju(s.key);
-    return p.then(function (r) { S.data = { series: r }; stampData(S, s.source === 'tgju' ? 'TGJU' : 'TSETMC'); return []; });
+    return p.then(function (r) { S.data = { series: r }; stampData(S, s.source === 'tgju' ? 'TGJU' : 'TSETMC'); if (S.autoPiv !== false) tempAuto(S); return []; });
   }
 
   /* ---------- CSV paste (Series, Date, Open, High, Low, Close[, Volume, Value]) ---------- */
@@ -19842,7 +19860,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     kpis: function (ctx) { var R = function () { return ctx.R; }; return [
       ['Dominant cycle', function () { var c = R().cycles[0]; return c ? c.period + ' bars' : '–'; }, function () { var c = R().cycles[0]; return c ? '≈ ' + c.calDays + ' days · amplitude ' + fN(c.strength, 2) : ''; }],
       ['Next trough', function () { var c = R().cycles[0]; return c ? c.nextTrough : '–'; }, function () { var c = R().cycles[0]; return c ? c.barsToTrough + ' bars' : ''; }],
-      ['vs FLD', function () { var c = R().cycles[0]; return c ? (c.aboveFld ? 'Above' : 'Below') : '–'; }, function () { return 'price vs half-cycle shift'; }],
+      ['vs FLD', function () { var c = R().cycles[0]; return c ? (c.aboveFld ? 'Above FLD' : 'Below FLD') : '–'; }, function () { return 'price vs half-cycle shift'; }],
       ['Next window', function () { var w = R().windows.filter(function (x) { return x.days >= 0; })[0]; return w ? w.date : '–'; }, function () { var w = R().windows.filter(function (x) { return x.days >= 0; })[0]; return w ? w.kind : ''; }]]; },
     tabs: [
       { group: 'Inputs', items: [['series', 'Series & pivots', function (ctx) {
@@ -19862,7 +19880,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       { group: 'Outputs', items: [['cyc', 'Cycles & windows', function (ctx) {
         var a = h('div'), b2 = h('div'), c = h('div');
         function paint() { var R = ctx.R; U.clear(a); U.clear(b2); U.clear(c);
-          a.appendChild(table(['Period (bars)', '≈ days', 'Amplitude', 'Phase', 'Bars to trough', 'Next trough', 'Next peak', 'FLD', 'Price vs FLD'], R.cycles.map(function (q) { return [q.period, q.calDays, fN(q.strength, 2), fN(q.phase, 2), q.barsToTrough, q.nextTrough, q.nextPeak, fN(q.fld), q.aboveFld ? 'above' : 'below']; }), 1));
+          a.appendChild(table(['Period (bars)', '≈ days', 'Amplitude', 'Phase', 'Bars to trough', 'Next trough', 'Next peak', 'FLD', 'Price vs FLD'], R.cycles.map(function (q) { return [q.period, q.calDays, fN(q.strength, 2), fN(q.phase, 2), q.barsToTrough, q.nextTrough, q.nextPeak, fN(q.fld), q.aboveFld ? 'Above FLD' : 'Below FLD']; }), 1));
           b2.appendChild(table(['Date', 'Days', 'Window', 'From', 'Cluster'], R.windows.map(function (w) { return [w.date, w.days, w.kind, w.from, w.cluster > 1 ? '◆ ' + w.cluster : '']; }), 1, function (i) { return R.windows[i].cluster > 1 ? 'total' : ''; }));
           c.appendChild(table(['Turn', 'Angle', 'Level', 'From price'], R.sq9.map(function (q) { return [q.turn, q.angle, fN(q.level), fP(q.dist)]; }), 2)); }
         paint();
@@ -20015,13 +20033,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return W;
   }
   function rsi(c, k) { var o = new Array(c.length).fill(NaN), u = 0, d = 0; for (var i = 1; i < c.length; i++) { var x = c[i] - c[i - 1], up = Math.max(x, 0), dn = Math.max(-x, 0); if (i <= k) { u += up / k; d += dn / k; if (i === k) o[i] = d === 0 ? 100 : 100 - 100 / (1 + u / d); } else { u = (u * (k - 1) + up) / k; d = (d * (k - 1) + dn) / k; o[i] = d === 0 ? 100 : 100 - 100 / (1 + u / d); } } return o; }
+  // bands: the upper line sits at the upper residual quantile and the lower line at the lower one (each measured on its own side).
+  // An earlier version used one width for both sides (the larger extreme), which made the far side look much further than price ever went.
   function channel(W, from, to, cover) {
     var n = to - from + 1; if (n < 20) return null; var sx = 0, sy = 0, sxx = 0, sxy = 0, i, y;
     for (i = from; i <= to; i++) { y = Math.log(W[i].close); sx += i; sy += y; sxx += i * i; sxy += i * y; }
     var b = (n * sxy - sx * sy) / (n * sxx - sx * sx), a = (sy - b * sx) / n, res = [], ss = 0, st = 0, my = sy / n;
     for (i = from; i <= to; i++) { y = Math.log(W[i].close); var e = y - (a + b * i); res.push(e); ss += e * e; st += (y - my) * (y - my); }
-    var srt = res.slice().sort(function (p, q) { return p - q; }), q = (1 - (cover || 0.95)) / 2, lo = srt[Math.floor(q * (n - 1))], hi = srt[Math.ceil((1 - q) * (n - 1))], half = Math.max(Math.abs(lo), Math.abs(hi));
-    return { a: a, b: b, half: half, sd: Math.sqrt(ss / (n - 2)), r2: st > 0 ? 1 - ss / st : 0, from: from, to: to, n: n, at: function (i2, k) { return Math.exp(a + b * i2 + (k || 0) * half); }, growth: Math.exp(b * 52) - 1 };
+    var srt = res.slice().sort(function (p, q) { return p - q; }), q = (1 - (cover || 0.95)) / 2, lo = Math.min(srt[Math.floor(q * (n - 1))], -1e-9), hi = Math.max(srt[Math.ceil((1 - q) * (n - 1))], 1e-9);
+    return { a: a, b: b, hi: hi, lo: lo, half: Math.max(-lo, hi), sd: Math.sqrt(ss / (n - 2)), r2: st > 0 ? 1 - ss / st : 0, from: from, to: to, n: n,
+      at: function (i2, k) { return Math.exp(a + b * i2 + (k > 0 ? k * hi : k < 0 ? -k * lo : 0)); }, res: function (i2, v) { var e2 = Math.log(v) - (a + b * i2); return e2 >= 0 ? e2 / hi : -e2 / lo; }, growth: Math.exp(b * 52) - 1 };
   }
   // swing pivots on weekly closes: highest / lowest within `w` weeks each side; the latest bar counts if it is the extreme of the last 2w+1
   function pivots(v, w, high) {
@@ -20036,19 +20057,63 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (L.length >= 2) { var l2 = L[L.length - 1], l1 = L[L.length - 2]; if (t - l2 <= 6 && l2 - l1 <= 52 && c[l2] < c[l1] && R[l2] > R[l1] + 1 && R[l1] <= 40) out.bull = { i1: l1, i2: l2, p1: c[l1], p2: c[l2], r1: R[l1], r2: R[l2] }; }
     return out;
   }
+  /* analyse(rows, opt): opt.bars 'w' (default: rows are grouped into weeks) or 'd' (rows used as they are);
+   * opt.win = number of bars in the channel window (0 = all); opt.f = [near, far] bars ahead for the projected lines. */
   function analyse(rows, opt) {
-    opt = opt || {}; var W = weekly(rows), n = W.length; if (n < 30) return { ok: false, n: n, why: 'کمتر از ۳۰ هفته داده' };
-    var win = opt.weeks && opt.weeks < n ? opt.weeks : n, from = n - win, t = n - 1, ch = channel(W, from, t, opt.cover || 0.95);
+    opt = opt || {}; var daily = opt.bars === 'd', W = daily ? rows.filter(function (r) { return r.close > 0; }) : weekly(rows), n = W.length, unit = daily ? 'روز' : 'هفته';
+    if (n < 30) return { ok: false, n: n, why: 'کمتر از ۳۰ ' + unit + ' داده' };
+    var wn = opt.win || opt.weeks || 0, win = wn && wn < n ? wn : n, from = n - win, t = n - 1, ch = channel(W, from, t, opt.cover || 0.95), f = opt.f || [26, 52];
+    var span = jdnOf(W[t].date) - jdnOf(W[from].date), ppy = span > 0 ? (win - 1) / (span / 365.25) : (daily ? 240 : 52); ch.growth = Math.exp(ch.b * ppy) - 1;
     var c = W.map(function (x) { return x.close; }), R = rsi(c, 14), dv = divergence(W, R, t), last = c[t];
     var up = ch.at(t, 1), mid = ch.at(t, 0), lo = ch.at(t, -1), pos = (Math.log(last) - Math.log(lo)) / (Math.log(up) - Math.log(lo));
-    var r52 = n > 52 ? last / c[t - 52] - 1 : NaN, r26 = n > 26 ? last / c[t - 26] - 1 : NaN;
+    var r52 = !daily && n > 52 ? last / c[t - 52] - 1 : NaN, r26 = !daily && n > 26 ? last / c[t - 26] - 1 : NaN;
     var zone = pos >= 0.9 ? 'top' : pos >= 0.65 ? 'upper' : pos > 0.35 ? 'mid' : pos > 0.1 ? 'lower' : 'bottom';
     var read = pos >= 0.9 && dv.bear ? 'correction' : pos >= 0.9 ? 'stretched' : pos <= 0.1 && dv.bull ? 'rebound' : pos <= 0.1 ? 'depressed' : dv.bear ? 'weakening' : dv.bull ? 'improving' : ch.b > 0 ? 'trend-up' : 'trend-down';
-    // evidence: how well a straight log line describes the series, and how many times each band was touched
-    var touchU = 0, touchL = 0; for (var i = from; i <= t; i++) { var e = (Math.log(c[i]) - (ch.a + ch.b * i)) / ch.half; if (e >= 0.85 && (i === from || (Math.log(c[i - 1]) - (ch.a + ch.b * (i - 1))) / ch.half < 0.85)) touchU++; if (e <= -0.85 && (i === from || (Math.log(c[i - 1]) - (ch.a + ch.b * (i - 1))) / ch.half > -0.85)) touchL++; }
-    var quality = ch.r2 >= 0.85 && touchU >= 2 && touchL >= 2 ? 'قوی' : ch.r2 >= 0.6 && touchU + touchL >= 3 ? 'متوسط' : 'ضعیف';
-    return { ok: true, W: W, R: R, ch: ch, n: n, win: win, t: t, last: last, date: W[t].date, up: up, mid: mid, lo: lo, pos: pos, zone: zone, read: read, dv: dv, rsi: R[t], r52: r52, r26: r26,
-      toMid: mid / last - 1, toLo: lo / last - 1, toUp: up / last - 1, up26: ch.at(t + 26, 1), up52: ch.at(t + 52, 1), mid26: ch.at(t + 26, 0), mid52: ch.at(t + 52, 0), lo26: ch.at(t + 26, -1), touchU: touchU, touchL: touchL, quality: quality };
+    // evidence: how well a straight log line describes the series, and how many separate times each band was approached
+    var touchU = 0, touchL = 0; for (var i = from; i <= t; i++) { var e = ch.res(i, c[i]), ep = i === from ? 0 : ch.res(i - 1, c[i - 1]), up1 = Math.log(c[i]) >= ch.a + ch.b * i, upP = i === from ? up1 : Math.log(c[i - 1]) >= ch.a + ch.b * (i - 1);
+      if (up1 && e >= 0.7 && (i === from || !upP || ep < 0.7)) touchU++; if (!up1 && e >= 0.7 && (i === from || upP || ep < 0.7)) touchL++; }
+    var quality = ch.r2 >= 0.8 && touchU >= 2 && touchL >= 2 ? 'قوی' : ch.r2 >= 0.6 && touchU + touchL >= 3 ? 'متوسط' : 'ضعیف';
+    return { ok: true, W: W, R: R, ch: ch, n: n, win: win, t: t, last: last, date: W[t].date, up: up, mid: mid, lo: lo, pos: pos, zone: zone, read: read, dv: dv, rsi: R[t], r52: r52, r26: r26, daily: daily, unit: unit, f: f, ppy: ppy,
+      toMid: mid / last - 1, toLo: lo / last - 1, toUp: up / last - 1, upF1: ch.at(t + f[0], 1), upF2: ch.at(t + f[1], 1), midF1: ch.at(t + f[0], 0), midF2: ch.at(t + f[1], 0), loF1: ch.at(t + f[0], -1), loF2: ch.at(t + f[1], -1),
+      up26: ch.at(t + 26, 1), up52: ch.at(t + 52, 1), mid26: ch.at(t + 26, 0), mid52: ch.at(t + 52, 0), lo26: ch.at(t + 26, -1), touchU: touchU, touchL: touchL, quality: quality, width: up / lo - 1 };
+  }
+  /* ---------- time analysis on daily bars (same method as the Temporal tool, usable for any series) ----------
+   * cycles: least-squares fit of a cosine of every period minP…maxP to the detrended log price; the three strongest, well-separated periods.
+   * Offsets are in calendar days from the last bar. phase 0 = fitted peak, 0.5 = fitted trough. */
+  function cycles(rows, o) {
+    o = o || {}; var x = rows.filter(function (r) { return r.close > 0; }).slice(-(o.bars || 600)), N = x.length; if (N < 120) return { ok: false, N: N };
+    var y = x.map(function (r) { return Math.log(r.close); }), mt = (N - 1) / 2, my = 0, i; for (i = 0; i < N; i++) my += y[i] / N;
+    var sxy = 0, sxx = 0; for (i = 0; i < N; i++) { sxy += (i - mt) * (y[i] - my); sxx += (i - mt) * (i - mt); } var sl = sxy / sxx, dt = y.map(function (v, k) { return v - (my + sl * (k - mt)); }), sd = 0; for (i = 0; i < N; i++) sd += dt[i] * dt[i] / N; sd = Math.sqrt(sd);
+    var scan = [], maxP = Math.min(o.maxP || 250, Math.floor(N / 2));
+    for (var p = Math.max(4, o.minP || 20); p <= maxP; p++) { var a = 0, b = 0; for (i = 0; i < N; i++) { a += dt[i] * Math.cos(2 * Math.PI * i / p); b += dt[i] * Math.sin(2 * Math.PI * i / p); } a *= 2 / N; b *= 2 / N; scan.push({ p: p, amp: Math.sqrt(a * a + b * b), a: a, b: b }); }
+    var pk = scan.filter(function (s, k) { return (k === 0 || s.amp >= scan[k - 1].amp) && (k === scan.length - 1 || s.amp >= scan[k + 1].amp); }).sort(function (u, v) { return v.amp - u.amp; }), top = [];
+    pk.forEach(function (s) { if (top.length < 3 && top.every(function (q) { return Math.abs(s.p / q.p - 1) >= (o.sep || 0.15); })) top.push(s); });
+    var cpb = (jdnOf(x[N - 1].date) - jdnOf(x[0].date)) / Math.max(1, N - 1), last = x[N - 1].close;
+    return { ok: true, N: N, cpb: cpb, date: x[N - 1].date, last: last, weak: top.length > 1 && top[0].amp / top[1].amp < 1.15, cycles: top.map(function (s) {
+      var ph = Math.atan2(s.b, s.a), cur = (2 * Math.PI * (N - 1) / s.p - ph) % (2 * Math.PI); if (cur < 0) cur += 2 * Math.PI;
+      var toT = ((Math.PI - cur) / (2 * Math.PI) * s.p + s.p) % s.p, toP = ((2 * Math.PI - cur) / (2 * Math.PI) * s.p) % s.p, half = Math.round(s.p / 2), fld = N > half ? x[N - 1 - half].close : NaN;
+      return { period: s.p, calDays: Math.round(s.p * cpb), strength: sd ? s.amp / sd : 0, swing: Math.exp(2 * s.amp) - 1, phase: cur / (2 * Math.PI), barsToTrough: Math.round(toT), troughIn: Math.round(toT * cpb), peakIn: Math.round(toP * cpb), fld: fld, above: last > fld }; }) };
+  }
+  // the major low and high of the last `look` bars (by close), oldest first
+  function autoPivots(rows, look) {
+    var x = rows.filter(function (r) { return r.close > 0; }).slice(-(look || 300)); if (x.length < 30) return [];
+    var lo = x[0], hi = x[0]; x.forEach(function (r) { if (r.close < lo.close) lo = r; if (r.close > hi.close) hi = r; });
+    var P = [{ kind: 'low', date: lo.date, price: lo.close }, { kind: 'high', date: hi.date, price: hi.close }]; P.sort(function (u, v) { return u.date - v.date; }); return P;
+  }
+  // time windows as calendar-day offsets from the last bar: fixed day counts from each pivot, Fibonacci multiples of the last swing's duration, cycle troughs and peaks
+  function timeWindows(rows, cy, piv, o) {
+    o = o || {}; var x = rows.filter(function (r) { return r.close > 0; }); if (!x.length) return []; var d0 = jdnOf(x[x.length - 1].date), W = [];
+    (o.gann || [30, 45, 60, 90, 120, 144, 180, 360]).forEach(function (g) { piv.forEach(function (q) { W.push({ days: jdnOf(q.date) + g - d0, type: 'gann', n: g, from: q.kind }); }); });
+    if (piv.length >= 2) { var A = piv[piv.length - 2], B = piv[piv.length - 1], D = jdnOf(B.date) - jdnOf(A.date); (o.fibs || [0.382, 0.618, 1, 1.618, 2.618]).forEach(function (f) { W.push({ days: jdnOf(B.date) + Math.round(D * f) - d0, type: 'fib', n: f, span: D, from: A.kind + '>' + B.kind }); }); }
+    if (cy && cy.ok) cy.cycles.forEach(function (c) { W.push({ days: c.troughIn, type: 'trough', n: c.calDays, strength: c.strength }); W.push({ days: c.peakIn, type: 'peak', n: c.calDays, strength: c.strength }); });
+    return W.filter(function (w) { return w.days >= -3 && w.days <= (o.ahead || 120); }).sort(function (u, v) { return u.days - v.days; });
+  }
+  // square of nine: levels at ±k·45° around a base price (sqrt(base) ± k/4, squared); the ones nearest to the current price
+  function sq9(base, price, each) {
+    if (!(base > 0) || !(price > 0)) return []; var rt = Math.sqrt(base), L = [];
+    for (var k = -40; k <= 400; k++) { if (!k) continue; var r = rt + k / 4; if (r <= 0) continue; var v = r * r; L.push({ steps: k, angle: Math.abs(k) * 45, level: v, dist: v / price - 1 }); }
+    var up = L.filter(function (q) { return q.level > price; }).sort(function (u, v2) { return u.level - v2.level; }).slice(0, each || 3), dn = L.filter(function (q) { return q.level <= price; }).sort(function (u, v2) { return v2.level - u.level; }).slice(0, each || 3);
+    return dn.reverse().concat(up);
   }
   // causal votes for the trading engine, from daily data only (about a year): channel position and weekly divergence
   function votesAt(X, t, cache) {
@@ -20062,7 +20127,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     out.wdiv = { v: dv.bear ? -0.8 : dv.bull ? 0.8 : 0, why: dv.bear ? 'واگرایی منفی هفتگی: قیمت سقف بالاتر، RSI سقف پایین‌تر (' + Math.round(dv.bear.r1) + ' ← ' + Math.round(dv.bear.r2) + ')' : dv.bull ? 'واگرایی مثبت هفتگی: قیمت کف پایین‌تر، RSI کف بالاتر (' + Math.round(dv.bull.r1) + ' ← ' + Math.round(dv.bull.r2) + ')' : 'واگرایی هفتگی دیده نمی‌شود (RSI هفتگی ' + (isF(R[n - 1]) ? Math.round(R[n - 1]) : '—') + ')' };
     return out;
   }
-  Hub.longView = { weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
+  Hub.longView = { cycles: cycles, autoPivots: autoPivots, timeWindows: timeWindows, sq9: sq9, weekly: weekly, channel: channel, rsi: rsi, divergence: divergence, analyse: analyse, adjust: adjust, votesAt: votesAt, jdnOf: jdnOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.longView;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -21373,12 +21438,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
 /* js/models/longview.js */
 /* =====================================================================
- * LONG-TERM VIEW (Trading) — market commentary in the "log channel + weekly RSI divergence + macro" style:
- *   1 Outlook: every tracked series at a glance (position in its channel, weekly RSI, divergence, reading)
- *     and a ready-to-edit market note; inflation context and real (inflation-adjusted) returns
- *   2 Chart: weekly log chart with the channel projected a year ahead and the RSI panel
- *   3 Data: the series list (TSE index, TSE symbol, TGJU key), history fetch, inflation inputs, settings
- * The channel is a regression fit (reproducible), not a hand-drawn line. Not investment advice.
+ * IRAN MARKETS — financial analysis of Iran's economy and markets (tool id kept as `long-view`):
+ *   the same reproducible reading on three horizons for every series
+ *     short  : daily bars, last ~3 months        medium : weekly bars, last ~18 months        long : weekly bars, last ~5 years
+ *     (log-scale regression channel with quantile bands, RSI(14) on the same bars, divergence between the last two swing highs / lows)
+ *   series: TSE indices, free-market dollar, tether, euro, dirham, gold coin, 18k gold, world gold, bitcoin, Brent, plus ratios (index in dollars)
+ *   time analysis for every series: dominant cycles, day counts and Fibonacci time ratios from the major pivots, merged into one calendar of key dates
+ *   inflation context (user input) and real returns; a ready-to-edit market note; a plain-language guide to every model
+ * The channel is a regression fit, not a hand-drawn line. Rule-based output, not investment advice.
  * ===================================================================== */
 (function (root) {
   'use strict';
@@ -21387,133 +21454,257 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function fa(x, d) { if (typeof x !== 'number' || !isFinite(x)) return '—'; var s = Math.abs(x) >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d == null ? (Math.abs(x) >= 100 ? 0 : 2) : d); return s.replace(/,/g, '٬').replace(/\./g, '٫').replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }); }
   function pct(x, d) { return typeof x === 'number' && isFinite(x) ? (x > 0 ? '+' : '') + fa(x * 100, d == null ? 0 : d) + '٪' : '—'; }
   function sh(g) { var J = Hub.jalali, s = String(g || ''); return J && s.length === 8 ? J.jstr(J.g2d(+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8))) : s; }
-  var ASSETS = [['شاخص کل بورس', 'tse-index', '32097828799138957'], ['شاخص هم‌وزن بورس', 'tse-index', '67130298613737946'], ['دلار آزاد تهران', 'tgju', 'price_dollar_rl'], ['سکه امامی', 'tgju', 'sekee'], ['انس جهانی طلا', 'tgju', 'ons'], ['فولاد', 'tse', '46348559193224090']];
-  var READ = { correction: ['احتمال اصلاح', 'fit-no'], stretched: ['نزدیک سقف کانال', 'fit-cond'], rebound: ['احتمال بازگشت صعودی', 'fit-rec'], depressed: ['نزدیک کف کانال', 'fit-cond'], weakening: ['تضعیف مومنتوم', 'fit-cond'], improving: ['بهبود مومنتوم', 'fit-rec'], 'trend-up': ['روند صعودی، میانهٔ کانال', 'sev-info'], 'trend-down': ['روند نزولی', 'sev-info'] };
-  var ZONE = { top: 'نزدیک سقف', upper: 'نیمهٔ بالایی', mid: 'میانهٔ کانال', lower: 'نیمهٔ پایینی', bottom: 'نزدیک کف' };
-  function synth(seed, weeks, start, drift, vol) { var s = seed, r = function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }, g = function () { return Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(6.2832 * r()); }, out = [], p = start, d = new Date(Date.UTC(2026, 10, 7) - weeks * 7 * 864e5);
-    for (var i = 0; i < weeks; i++) { d = new Date(d.getTime() + 7 * 864e5); var o = p; p = p * Math.exp(drift + vol * g() + 0.02 * Math.sin(i / 23)); out.push({ date: d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate(), open: o, high: Math.max(o, p) * 1.01, low: Math.min(o, p) * 0.99, close: p }); } return out; }
-  function sample() {
-    var S = { version: 1, tool: 'long-view', meta: { title: 'Long-term view', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, settings: { lang: 'auto' }, sources: {},
-      assets: ASSETS.map(function (a) { return { name: a[0], kind: a[1], key: a[2], active: true }; }), data: {}, opt: { weeks: 0, cover: 0.95 }, sel: ASSETS[0][0],
-      macro: { annual: 0.714, point: 0.835, monthly: 0.046, asOf: 'مهر ۱۴۰۵', src: 'اعداد واردشدهٔ شما (منبع اعلامی: مرکز آمار ایران) — پیش از انتشار با منبع رسمی تطبیق دهید' } };
-    S.assets.forEach(function (a, i) { S.data[a.name] = synth(11 + i * 7, 300, [400000, 100000, 300000, 2e7, 1800, 800][i] || 1000, 0.006 + 0.001 * (i % 3), 0.03); });
+  var J = Hub.jalali;
+  // name, kind, key, priced in foreign currency (no comparison with rial inflation)
+  var ASSETS = [['شاخص کل بورس', 'tse-index', '32097828799138957'], ['شاخص هم‌وزن بورس', 'tse-index', '67130298613737946'], ['دلار آزاد تهران', 'tgju', 'price_dollar_rl'], ['تتر (USDT)', 'tgju', 'crypto-tether-irr'], ['یورو', 'tgju', 'price_eur'], ['درهم امارات', 'tgju', 'price_aed'],
+    ['سکه امامی', 'tgju', 'sekee'], ['طلای ۱۸ عیار', 'tgju', 'geram18'], ['انس جهانی طلا', 'tgju', 'ons', true], ['بیت‌کوین (دلار)', 'tgju', 'crypto-bitcoin', true], ['نفت برنت', 'tgju', 'oil_brent', true], ['شاخص کل به دلار', 'ratio', 'شاخص کل بورس / دلار آزاد تهران', true]];
+  var READ = { correction: ['احتمال اصلاح', 'fit-no'], stretched: ['نزدیک سقف کانال', 'fit-cond'], rebound: ['احتمال بازگشت صعودی', 'fit-rec'], depressed: ['نزدیک کف کانال', 'fit-cond'], weakening: ['تضعیف مومنتوم', 'fit-cond'], improving: ['بهبود مومنتوم', 'fit-rec'], 'trend-up': ['روند صعودی', 'sev-info'], 'trend-down': ['روند نزولی', 'sev-info'] };
+  var ZONE = { top: 'نزدیک سقف', upper: 'نیمهٔ بالایی', mid: 'میانه', lower: 'نیمهٔ پایینی', bottom: 'نزدیک کف' };
+  var HZ = [{ id: 's', name: 'کوتاه‌مدت', sub: 'حدود ۳ ماه · کندل روزانه', bars: 'd', key: 'sWin', def: 60, f: [5, 20], u: 'روز' }, { id: 'm', name: 'میان‌مدت', sub: 'حدود ۱۸ ماه · کندل هفتگی', bars: 'w', key: 'mWin', def: 78, f: [4, 13], u: 'هفته' }, { id: 'l', name: 'بلندمدت', sub: 'حدود ۵ سال · کندل هفتگی', bars: 'w', key: 'lWin', def: 260, f: [26, 52], u: 'هفته' }];
+  function hz(id) { return HZ.filter(function (x) { return x.id === id; })[0] || HZ[2]; }
+  var pack = function (rows) { return rows.map(function (r) { return [r.date, Math.round((r.open || r.close) * 1e4) / 1e4, Math.round((r.high || r.close) * 1e4) / 1e4, Math.round((r.low || r.close) * 1e4) / 1e4, Math.round(r.close * 1e4) / 1e4]; }); };
+  var unpack = function (a) { return (a || []).map(function (r) { return Array.isArray(r) ? { date: r[0], open: r[1], high: r[2], low: r[3], close: r[4] } : r; }); };
+  function series(S, name) { var d = (S.data || {})[name]; if (!d) return { w: [], d: [] }; if (Array.isArray(d)) return { w: unpack(d), d: [] }; return { w: unpack(d.w), d: unpack(d.d) }; }
+  function gdate(jdn) { var g = J.d2g(jdn); return g.gy * 10000 + g.gm * 100 + g.gd; }
+  function synthD(seed, n, start, drift, vol) { var s = seed, r = function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }, g = function () { return Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(6.2832 * r()); }, out = [], p = start, d0 = J.g2d(2026, 11, 10) - Math.round(n * 7 / 5);
+    for (var i = 0; i < n; i++) { var o = p; p = p * Math.exp(drift + vol * g() + 0.004 * Math.sin(i / 37) + 0.003 * Math.sin(i / 11)); out.push({ date: gdate(d0 + Math.round(i * 7 / 5)), open: o, high: Math.max(o, p) * 1.004, low: Math.min(o, p) * 0.996, close: p }); } return out; }
+  function store(rows) { return { w: pack(LV.weekly(rows)), d: pack(rows.slice(-600)) }; }
+  function ensure(S) {
+    if (!S.opt) S.opt = {}; ['sWin', 'mWin', 'lWin'].forEach(function (k, i) { if (!(S.opt[k] >= 0) || S.opt[k] === '') S.opt[k] = HZ[i].def; }); if (!S.opt.cover) S.opt.cover = 0.95; if (!S.opt.ahead) S.opt.ahead = 120;
+    if (!S.macro) S.macro = {}; if (!S.hz) S.hz = 'm';
+    if (!S.v2) { S.v2 = 1; ASSETS.forEach(function (a) { if (!S.assets.some(function (x) { return x.kind === a[1] && x.key === a[2]; })) S.assets.push({ name: a[0], kind: a[1], key: a[2], usd: !!a[3], active: true }); });
+      S.assets.forEach(function (x) { if (x.key === 'ons') x.usd = true; }); }
     return S;
   }
-  function fetchAll(S, progress) {
-    var D = Hub.data, list = S.assets.filter(function (a) { return a.active !== false && a.name && a.key; }), data = {}, errs = [], live = S.meta && !/synthetic|Illustrative/i.test(S.meta.source || '');
-    if (live) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });
-    return list.reduce(function (p, a, i) { return p.then(function () { progress && progress(i + 1, list.length, a.name);
-      var q = a.kind === 'tse-index' ? D.tse.index(a.key) : a.kind === 'tse' ? (/^\d{10,}$/.test(a.key) ? Promise.resolve(a.key) : D.tse.resolve(a.key)).then(function (c) { return D.tse.daily(c, 3000); }).then(LV.adjust) : D.tgju(a.key);
-      return q.then(function (rows) { var W = LV.weekly(rows).map(function (w) { return { date: w.date, open: w.open, high: w.high, low: w.low, close: w.close }; }); if (W.length < 30) throw new Error('فقط ' + W.length + ' هفته داده'); data[a.name] = W; }).catch(function (e) { errs.push(a.name + ': ' + e.message); }); }); }, Promise.resolve())
-      .then(function () { S.data = data; if (errs.length >= list.length && list.length) throw new Error(SG.summErr(errs)); SG.stampData(S, 'TSETMC + TGJU'); return errs; });
+  function sample() {
+    var S = { version: 1, v2: 1, tool: 'long-view', meta: { title: 'Iran markets', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, settings: { lang: 'auto' }, sources: {},
+      assets: ASSETS.map(function (a) { return { name: a[0], kind: a[1], key: a[2], usd: !!a[3], active: true }; }), data: {}, opt: { sWin: 60, mWin: 78, lWin: 260, cover: 0.95, ahead: 120 }, sel: ASSETS[0][0], hz: 'm',
+      macro: { annual: 0.714, point: 0.835, monthly: 0.046, asOf: 'مهر ۱۴۰۵', src: 'اعداد واردشدهٔ شما (منبع اعلامی: مرکز آمار ایران) — پیش از انتشار با منبع رسمی تطبیق دهید' } };
+    var st = [2.2e6, 6e5, 9e5, 9.2e5, 1.05e6, 2.5e5, 9e7, 8e6, 2600, 9e4, 75, 2.4];
+    S.assets.forEach(function (a, i) { S.data[a.name] = store(synthD(11 + i * 7, 1500, st[i] / 4 || 1000, 0.0011 + 0.0002 * (i % 3), 0.013)); });
+    return S;
   }
+  /* ---------- data ---------- */
+  function ratioRows(A, B) { var out = [], j = 0, lb = null; A.forEach(function (r) { while (j < B.length && B[j].date <= r.date) { lb = B[j]; j++; } if (lb && lb.close > 0 && r.close > 0) { var v = r.close / lb.close; out.push({ date: r.date, open: v, high: v, low: v, close: v }); } }); return out; }
+  function fetchAll(S, progress) {
+    ensure(S); var D = Hub.data, list = S.assets.filter(function (a) { return a.active !== false && a.name && a.key; }), data = {}, raw = {}, errs = [], live = S.meta && !/synthetic|Illustrative/i.test(S.meta.source || '');
+    if (live) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });
+    var direct = list.filter(function (a) { return a.kind !== 'ratio'; }), ratios = list.filter(function (a) { return a.kind === 'ratio'; }), i = 0;
+    var one = function () { if (i >= direct.length) return Promise.resolve(); var a = direct[i++]; progress && progress(i, direct.length, a.name);
+      var q = a.kind === 'tse-index' ? D.tse.index(a.key) : a.kind === 'tse' ? (/^\d{10,}$/.test(a.key) ? Promise.resolve(a.key) : D.tse.resolve(a.key)).then(function (c) { return D.tse.daily(c, 3000); }).then(LV.adjust) : D.tgju(a.key);
+      return q.then(function (rows) { rows = rows.filter(function (r) { return r.close > 0; }); if (rows.length < 60) throw new Error('فقط ' + rows.length + ' روز داده'); raw[a.name] = rows; data[a.name] = store(rows); }).catch(function (e) { errs.push(a.name + ': ' + e.message); }).then(one); };
+    return Promise.all([one(), one(), one()]).then(function () {
+      ratios.forEach(function (a) { var p = String(a.key).split('/').map(function (x) { return x.trim(); }), A = raw[p[0]], B = raw[p[1]];
+        if (!A || !B) { if (!data[a.name]) errs.push(a.name + ': دو سری پایه دریافت نشد'); return; } var r = ratioRows(A, B); if (r.length >= 60) data[a.name] = store(r); else errs.push(a.name + ': هم‌پوشانی تاریخ کم است'); });
+      S.data = data; if (errs.length >= list.length && list.length) throw new Error(SG.summErr(errs)); SG.stampData(S, 'TSETMC + TGJU'); S.lastErrs = errs.slice(0, 20); return errs; });
+  }
+  function family(a) { var k = String(a.key || ''); return a.kind === 'tse-index' || a.kind === 'tse' || a.kind === 'ratio' ? 'بورس' : /^crypto-tether|^price_/.test(k) ? 'ارز' : /^(sek|geram|gerami|mesghal|ons|nim|rob|silver)/.test(k) ? 'طلا' : /^crypto-/.test(k) ? 'رمزارز' : /oil/.test(k) ? 'نفت' : a.name; }
+  function retSince(rows, days) { if (!rows.length) return NaN; var t = rows[rows.length - 1], target = LV.jdnOf(t.date) - days, k = rows.length - 1; while (k > 0 && LV.jdnOf(rows[k].date) > target) k--; if (LV.jdnOf(rows[k].date) > target + 10 || LV.jdnOf(rows[k].date) < target - 20) return NaN; return t.close / rows[k].close - 1; }
   function run(S) {
-    if (!S.opt) S.opt = { weeks: 0, cover: 0.95 }; if (!S.macro) S.macro = {};
-    var rows = S.assets.filter(function (a) { return a.active !== false && a.name; }).map(function (a) { var d = (S.data || {})[a.name], A = d && d.length ? LV.analyse(d, { weeks: Number(S.opt.weeks) || 0, cover: Number(S.opt.cover) || 0.95 }) : { ok: false, why: 'داده ندارد' }; A.name = a.name; A.kind = a.kind; A.usd = a.key === 'ons'; return A; });
+    ensure(S); var cover = Number(S.opt.cover) || 0.95, today = 0;
+    var rows = S.assets.filter(function (a) { return a.active !== false && a.name; }).map(function (a) {
+      var D = series(S, a.name), A = { name: a.name, kind: a.kind, usd: !!a.usd, h: {}, ok: false };
+      HZ.forEach(function (H) { var src = H.bars === 'd' ? D.d : D.w, win = Number(S.opt[H.key]); A.h[H.id] = src.length ? LV.analyse(src, { bars: H.bars, win: win, cover: cover, f: H.f }) : { ok: false, why: H.bars === 'd' ? 'دادهٔ روزانه ندارد؛ دوباره دریافت کنید' : 'داده ندارد' }; if (A.h[H.id].ok) A.ok = true; });
+      var base = D.d.length ? D.d : D.w; if (base.length) { A.last = base[base.length - 1].close; A.date = base[base.length - 1].date; today = Math.max(today, LV.jdnOf(A.date)); }
+      var long = D.d.length && LV.jdnOf(D.d[D.d.length - 1].date) - LV.jdnOf(D.d[0].date) > 380 ? D.d : D.w;
+      A.ret = { m1: retSince(D.d.length ? D.d : D.w, 30), m3: retSince(D.d.length ? D.d : D.w, 91), y1: retSince(long, 365) };
+      if (D.d.length >= 120) { A.cy = LV.cycles(D.d, { bars: 600 }); A.piv = LV.autoPivots(D.d, 300); A.tw = LV.timeWindows(D.d, A.cy, A.piv, { ahead: Number(S.opt.ahead) || 120 }).filter(function (w) { return (w.type !== 'peak' && w.type !== 'trough') || w.strength >= 0.4; }); var low = A.piv.filter(function (q) { return q.kind === 'low'; })[0]; A.sq = low ? LV.sq9(low.price, A.last, 3) : []; A.sqBase = low && low.price; }
+      return A; });
+    // one calendar for all series: windows within 4 days of each other form one date
+    var all = []; rows.forEach(function (A) { (A.tw || []).forEach(function (w) { all.push({ day: LV.jdnOf(A.date) + w.days, w: w, name: A.name }); }); }); all.sort(function (u, v) { return u.day - v.day; });
+    var cal = [], cur = null; all.forEach(function (x) { if (x.day < today - 3) return; if (!cur || x.day - cur.from > 4) { cur = { from: x.day, to: x.day, items: [] }; cal.push(cur); } cur.to = x.day; cur.items.push(x); });
+    // importance is judged against what is normal for this calendar: with many series, a few coincidences in any 5 days are expected.
+    // Related markets count once (dollar, tether, euro and dirham are one family), so four currencies agreeing is not four confirmations.
+    var fam = {}; S.assets.forEach(function (a) { fam[a.name] = family(a); });
+    var ahead = Number(S.opt.ahead) || 120, mean = cal.length ? cal.reduce(function (t, c) { return t + c.items.length; }, 0) / Math.max(1, cal.length) : 0;
+    cal.forEach(function (c) { var as = {}, fm = {}, ty = {}; c.items.forEach(function (x) { as[x.name] = 1; fm[fam[x.name] || x.name] = 1; ty[x.w.type === 'peak' || x.w.type === 'trough' ? 'cycle' : x.w.type] = 1; }); c.assets = Object.keys(as); c.fams = Object.keys(fm); c.types = Object.keys(ty).length; c.n = c.items.length; c.in = c.from - today; c.x = mean ? c.n / mean : 0;
+      c.rank = c.fams.length >= 3 && c.types >= 2 && c.x >= 1.6 ? 2 : c.fams.length >= 2 && c.x >= 1.25 ? 1 : 0; });
     var smp = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || '');
-    return { rows: rows, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
+    return { rows: rows, cal: cal, calMean: mean, today: today, sample: smp, checks: smp ? [{ level: 'warning', msg: 'دادهٔ نمونه (ساختگی) — برای تحلیل واقعی «دریافت» را بزنید.' }] : [] };
   }
   /* ---------- text ---------- */
-  function lines(A, M) {
-    if (!A.ok) return [A.name + ': ' + (A.why || 'دادهٔ کافی نیست')];
-    var L = [], dv = A.dv;
-    L.push('قیمت فعلی ' + fa(A.last) + ' (هفتهٔ منتهی به ' + sh(A.date) + ')؛ جایگاه در کانال لگاریتمی: ' + fa(A.pos * 100, 0) + '٪ از کف تا سقف — ' + ZONE[A.zone] + '.');
-    if (dv.bear) L.push('واگرایی منفی در تایم‌فریم هفتگی: قیمت سقف بالاتری زده (' + fa(dv.bear.p1) + ' ← ' + fa(dv.bear.p2) + ') اما RSI سقف پایین‌تری ساخته (' + fa(dv.bear.r1, 0) + ' ← ' + fa(dv.bear.r2, 0) + ')؛ نشانهٔ تضعیف مومنتوم صعودی.');
-    if (dv.bull) L.push('واگرایی مثبت در تایم‌فریم هفتگی: قیمت کف پایین‌تری زده اما RSI کف بالاتری ساخته (' + fa(dv.bull.r1, 0) + ' ← ' + fa(dv.bull.r2, 0) + ')؛ نشانهٔ تضعیف فشار فروش.');
-    if (!dv.bear && !dv.bull) L.push('RSI هفتگی ' + fa(A.rsi, 0) + '؛ واگرایی فعالی دیده نمی‌شود.');
-    if (A.pos >= 0.65) L.push('محدودهٔ احتمالی اصلاح: خط میانی کانال ≈ ' + fa(A.mid) + ' (' + pct(A.toMid) + ') و در اصلاح عمیق‌تر کف کانال ≈ ' + fa(A.lo) + ' (' + pct(A.toLo) + ').');
-    L.push('مسیر کانال: سقف اکنون ' + fa(A.up) + ' (' + pct(A.toUp) + ')، در ۲۶ هفته ≈ ' + fa(A.up26) + ' و در ۵۲ هفته ≈ ' + fa(A.up52) + ' (' + pct(A.up52 / A.last - 1) + ')؛ خط میانی در ۵۲ هفته ≈ ' + fa(A.mid52) + '. شیب کانال: ' + pct(A.ch.growth) + ' در سال.');
-    if (isFinite(A.r52)) L.push('بازده ۵۲ هفته: ' + pct(A.r52) + (isFinite(M.point) && M.point && !A.usd ? '؛ در برابر تورم نقطه‌به‌نقطهٔ ' + pct(M.point, 1).replace('+', '') + ' یعنی بازده واقعی ' + pct((1 + A.r52) / (1 + M.point) - 1) + '.' : '.'));
-    L.push('اعتبار کانال: ' + A.quality + ' (R² = ' + fa(A.ch.r2, 2) + '، ' + fa(A.win, 0) + ' هفته، برخورد به محدودهٔ سقف ' + fa(A.touchU, 0) + ' بار و کف ' + fa(A.touchL, 0) + ' بار).');
+  function lines(A0, H, M) {
+    var A = A0.h[H.id]; if (!A.ok) return [A0.name + ' (' + H.name + '): ' + (A.why || 'دادهٔ کافی نیست')];
+    var L = [], dv = A.dv, tf = H.bars === 'd' ? 'روزانه' : 'هفتگی';
+    L.push('قیمت ' + fa(A.last) + ' (' + sh(A.date) + ')؛ جایگاه در کانال ' + H.name + ': ' + fa(A.pos * 100, 0) + '٪ از کف تا سقف — ' + ZONE[A.zone] + '.');
+    if (dv.bear) L.push('واگرایی منفی ' + tf + ': قیمت سقف بالاتری زده (' + fa(dv.bear.p1) + ' ← ' + fa(dv.bear.p2) + ') اما RSI سقف پایین‌تری ساخته (' + fa(dv.bear.r1, 0) + ' ← ' + fa(dv.bear.r2, 0) + ')؛ نشانهٔ تضعیف مومنتوم صعودی.');
+    if (dv.bull) L.push('واگرایی مثبت ' + tf + ': قیمت کف پایین‌تری زده اما RSI کف بالاتری ساخته (' + fa(dv.bull.r1, 0) + ' ← ' + fa(dv.bull.r2, 0) + ')؛ نشانهٔ تضعیف فشار فروش.');
+    if (!dv.bear && !dv.bull) L.push('RSI ' + tf + ' ' + fa(A.rsi, 0) + '؛ واگرایی فعالی دیده نمی‌شود.');
+    L.push('سطوح کانال اکنون: سقف ' + fa(A.up) + ' (' + pct(A.toUp) + ')، میانه ' + fa(A.mid) + ' (' + pct(A.toMid) + ')، کف ' + fa(A.lo) + ' (' + pct(A.toLo) + '). پهنای کانال (سقف به کف): ' + pct(A.width).replace('+', '') + '.');
+    L.push('ادامهٔ کانال: در ' + fa(H.f[0], 0) + ' ' + H.u + ' سقف ≈ ' + fa(A.upF1) + ' و کف ≈ ' + fa(A.loF1) + '؛ در ' + fa(H.f[1], 0) + ' ' + H.u + ' سقف ≈ ' + fa(A.upF2) + '، میانه ≈ ' + fa(A.midF2) + ' و کف ≈ ' + fa(A.loF2) + '. شیب کانال: ' + pct(A.ch.growth) + ' سالانه‌شده.');
+    if (H.id === 'l' && isFinite(A0.ret.y1)) L.push('بازده یک‌ساله: ' + pct(A0.ret.y1) + (isFinite(M.point) && M.point && !A0.usd ? '؛ در برابر تورم نقطه‌به‌نقطهٔ ' + pct(M.point, 1).replace('+', '') + ' یعنی بازده واقعی ' + pct((1 + A0.ret.y1) / (1 + M.point) - 1) + '.' : '.'));
+    L.push('اعتبار کانال: ' + A.quality + ' (R² = ' + fa(A.ch.r2, 2) + '، ' + fa(A.win, 0) + ' ' + H.u + '، نزدیک‌شدن به سقف ' + fa(A.touchU, 0) + ' بار و به کف ' + fa(A.touchL, 0) + ' بار)' + (A.quality === 'ضعیف' ? ' — در این افق خط مستقیم توصیف خوبی از قیمت نیست؛ به سطوح این کانال کم‌تر تکیه کنید.' : '.'));
     return L;
   }
+  function brief(A) { return HZ.map(function (H) { var x = A.h[H.id]; return H.name + ': ' + (x.ok ? READ[x.read][0] + ' (' + fa(x.pos * 100, 0) + '٪ کانال)' : '—'); }).join(' · '); }
+  function winText(w) { var pv = function (k) { return k === 'low' ? 'کف اصلی' : 'سقف اصلی'; };
+    return w.type === 'gann' ? fa(w.n, 0) + ' روز پس از ' + pv(w.from) : w.type === 'fib' ? 'نسبت زمانی ' + String(w.n).replace('.', '٫').replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }) + ' × فاصلهٔ ' + w.from.split('>').map(pv).join(' تا ') + ' (' + fa(w.span, 0) + ' روز)' : (w.type === 'trough' ? 'کف' : 'قلهٔ') + ' چرخهٔ حدود ' + fa(w.n, 0) + ' روزه'; }
+  var RANK = [['کم', 'sev-info'], ['متوسط', 'fit-cond'], ['زیاد', 'fit-no']];
+  function calDate(c) { return c.from === c.to ? J.jstr(c.from) : J.jstr(c.from) + ' تا ' + J.jstr(c.to).slice(5); }
   function note(R, S) {
-    var M = S.macro || {}, T = [], ix = R.rows.filter(function (a) { return a.ok && a.kind === 'tse-index'; }), warn = ix.filter(function (a) { return a.read === 'correction' || a.read === 'stretched'; }), low = ix.filter(function (a) { return a.read === 'rebound' || a.read === 'depressed'; });
+    var M = S.macro || {}, T = [], ix = R.rows.filter(function (a) { return a.ok && a.kind === 'tse-index'; });
     if (isFinite(M.annual) || isFinite(M.point)) { T.push('تورم ' + (M.asOf || '') + ': سالانه ' + pct(M.annual, 1).replace('+', '') + '، نقطه‌به‌نقطه ' + pct(M.point, 1).replace('+', '') + '، ماهانه ' + pct(M.monthly, 1).replace('+', '') + (isFinite(M.monthly) ? ' (سالانه‌شده: ' + pct(Math.pow(1 + M.monthly, 12) - 1).replace('+', '') + ')' : '') + '.');
-      T.push('کاهش تورم نقطه‌ای به معنای ارزان‌شدن نیست؛ یعنی قیمت‌ها همچنان به‌طور متوسط ' + pct(M.point, 1).replace('+', '') + ' بالاتر از ماه مشابه سال قبل‌اند. هر دارایی که بازده ۵۲ هفته‌اش کمتر از این عدد باشد، قدرت خرید از دست داده است.'); T.push(''); }
-    R.rows.forEach(function (a) { if (!a.ok) return; T.push('▪ ' + a.name + ' — ' + READ[a.read][0]); lines(a, M).slice(0, 5).forEach(function (l) { T.push('  ' + l); }); T.push(''); });
-    if (warn.length) T.push('جمع‌بندی مدل: ' + warn.map(function (a) { return a.name; }).join(' و ') + ' در محدودهٔ سقف کانال' + (warn.some(function (a) { return a.dv.bear; }) ? ' با واگرایی منفی هفتگی' : '') + ' است. قاعدهٔ این مدل در چنین وضعی: شناسایی بخشی از سود یا کاهش بخشی از وزن سهام (مثلاً یک‌سوم) و بالا آوردن حد ضرر باقی‌مانده؛ ورود جدید فقط پس از اصلاح به خط میانی یا رفع واگرایی.');
-    else if (low.length) T.push('جمع‌بندی مدل: ' + low.map(function (a) { return a.name; }).join(' و ') + ' در محدودهٔ کف کانال است. قاعدهٔ این مدل: خرید پله‌ای با حد ضرر زیر کف کانال؛ تأیید با واگرایی مثبت یا بازگشت RSI هفتگی به بالای ۴۰.');
-    else T.push('جمع‌بندی مدل: شاخص‌ها در میانهٔ کانال‌اند؛ قاعدهٔ این مدل اقدام خاصی نمی‌خواهد (نگه‌داری در جهت شیب کانال).');
-    T.push('این متن خروجی قاعده‌محور یک مدل است، نه توصیهٔ خرید یا فروش؛ کانال توصیف گذشته است و واگرایی هشدار است، نه زمان‌سنج.' + (R.sample ? ' (دادهٔ نمونه)' : ''));
+      T.push('کاهش تورم نقطه‌ای به معنای ارزان‌شدن نیست؛ یعنی قیمت‌ها همچنان به‌طور متوسط ' + pct(M.point, 1).replace('+', '') + ' بالاتر از ماه مشابه سال قبل‌اند. هر دارایی ریالی که بازده یک‌ساله‌اش کمتر از این عدد باشد، قدرت خرید از دست داده است.'); T.push(''); }
+    R.rows.forEach(function (a) { if (!a.ok) return; T.push('▪ ' + a.name + ' — ' + fa(a.last) + ' — بازده ۱ ماه ' + pct(a.ret.m1) + '، ۳ ماه ' + pct(a.ret.m3) + '، ۱ سال ' + pct(a.ret.y1) + (isFinite(M.point) && isFinite(a.ret.y1) && !a.usd ? ' (واقعی ' + pct((1 + a.ret.y1) / (1 + M.point) - 1) + ')' : ''));
+      HZ.forEach(function (H) { var x = a.h[H.id]; if (!x.ok) return; T.push('  ' + H.name + ': ' + READ[x.read][0] + '؛ جایگاه ' + fa(x.pos * 100, 0) + '٪ کانال؛ RSI ' + fa(x.rsi, 0) + (x.dv.bear ? '؛ واگرایی منفی' : x.dv.bull ? '؛ واگرایی مثبت' : '') + '؛ تا میانه ' + pct(x.toMid) + '، تا کف ' + pct(x.toLo) + '، تا سقف ' + pct(x.toUp) + (x.quality === 'ضعیف' ? ' (اعتبار کانال ضعیف)' : '') + '.'); }); T.push(''); });
+    var hot = R.cal.filter(function (c) { return c.rank >= 1 && c.in <= 60; }).slice(0, 5);
+    if (hot.length) { T.push('تاریخ‌های کلیدی ۶۰ روز آینده (هم‌زمانی چند نشانهٔ زمانی):'); hot.forEach(function (c) { T.push('  ' + calDate(c) + ' — ' + fa(c.n, 0) + ' نشانه در ' + c.fams.join('، ') + ' (اهمیت ' + RANK[c.rank][0] + ')'); }); T.push(''); }
+    var warn = ix.filter(function (a) { return ['m', 'l'].some(function (k) { return a.h[k].ok && (a.h[k].read === 'correction' || a.h[k].read === 'stretched'); }); }), low = ix.filter(function (a) { return ['m', 'l'].some(function (k) { return a.h[k].ok && (a.h[k].read === 'rebound' || a.h[k].read === 'depressed'); }); });
+    if (warn.length) T.push('جمع‌بندی مدل: ' + warn.map(function (a) { return a.name; }).join(' و ') + ' در افق میان‌مدت یا بلندمدت در محدودهٔ سقف کانال است' + (warn.some(function (a) { return a.h.m.ok && a.h.m.dv.bear || a.h.l.ok && a.h.l.dv.bear; }) ? ' و واگرایی منفی هفتگی دارد' : '') + '. قاعدهٔ این مدل در چنین وضعی: شناسایی بخشی از سود یا کاهش بخشی از وزن سهام (مثلاً یک‌سوم) و بالا آوردن حد ضرر باقی‌مانده؛ ورود جدید پس از اصلاح به خط میانی یا رفع واگرایی.');
+    else if (low.length) T.push('جمع‌بندی مدل: ' + low.map(function (a) { return a.name; }).join(' و ') + ' در افق میان‌مدت یا بلندمدت در محدودهٔ کف کانال است. قاعدهٔ این مدل: خرید پله‌ای با حد ضرر زیر کف کانال؛ تأیید با واگرایی مثبت یا بازگشت RSI هفتگی به بالای ۴۰.');
+    else T.push('جمع‌بندی مدل: شاخص‌های بورس در افق میان‌مدت و بلندمدت در محدودهٔ سقف یا کف کانال نیستند؛ قاعدهٔ این مدل اقدام خاصی نمی‌خواهد.');
+    T.push('این متن خروجی قاعده‌محور یک مدل است، نه توصیهٔ خرید یا فروش. کانال توصیف گذشته است، واگرایی هشدار است نه زمان‌سنج، و تاریخ‌های زمانی فقط فهرست بازبینی‌اند.' + (R.sample ? ' (دادهٔ نمونه)' : ''));
     return T.join('\n');
   }
   /* ---------- chart ---------- */
-  function chart(A) {
+  function chart(A, H, name) {
     var NS = 'http://www.w3.org/2000/svg', el = function (t, a, txt) { var e = document.createElementNS(NS, t); Object.keys(a || {}).forEach(function (k) { e.setAttribute(k, a[k]); }); if (txt != null) e.textContent = txt; return e; };
-    var W = 920, H1 = 330, H2 = 110, PL = 8, PR = 86, PT = 10, GAP = 26, n = A.n, fwd = 52, N = n + fwd, x = function (i) { return PL + (W - PL - PR) * i / (N - 1); };
-    var from = A.ch.from, vals = [A.ch.at(from, -1), A.ch.at(n - 1 + fwd, 1)]; A.W.forEach(function (w) { vals.push(w.low || w.close, w.high || w.close); });
-    var mn = Math.log(Math.min.apply(null, vals) * 0.95), mx = Math.log(Math.max.apply(null, vals) * 1.05), y = function (v) { return PT + (H1 - PT) * (1 - (Math.log(v) - mn) / (mx - mn)); }, yr = function (v) { return H1 + GAP + H2 * (1 - v / 100); };
-    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + (H1 + GAP + H2 + 22), role: 'img', 'aria-label': 'نمودار هفتگی لگاریتمی ' + A.name + ' با کانال روند و RSI', style: 'width:100%;height:auto;display:block' });
-    // price grid (log) and year marks
-    var step = Math.pow(10, Math.floor(Math.log10(Math.exp(mx) - Math.exp(mn)))), ticks = [], e0 = Math.floor(mn / Math.LN10), e1 = Math.ceil(mx / Math.LN10);
-    for (var e = e0; e <= e1; e++) [1, 2, 5].forEach(function (k) { var v = k * Math.pow(10, e); if (Math.log(v) > mn && Math.log(v) < mx) ticks.push(v); });
+    var from = A.ch.from, s0 = Math.max(0, from - Math.round(A.win * 0.35)), fwd = H.f[1], n = A.n, N = n - s0 + fwd, W = 920, H1 = 330, H2 = 110, PL = 8, PR = 86, PT = 10, GAP = 26, x = function (i) { return PL + (W - PL - PR) * (i - s0) / (N - 1); };
+    var vis = A.W.slice(s0), vals = [A.ch.at(from, -1), A.ch.at(from, 1), A.ch.at(n - 1 + fwd, 1), A.ch.at(n - 1 + fwd, -1)]; vis.forEach(function (w) { vals.push(w.low || w.close, w.high || w.close); });
+    var mn = Math.log(Math.min.apply(null, vals) * 0.97), mx = Math.log(Math.max.apply(null, vals) * 1.03), y = function (v) { return PT + (H1 - PT) * (1 - (Math.log(v) - mn) / (mx - mn)); }, yr = function (v) { return H1 + GAP + H2 * (1 - v / 100); }, tf = H.bars === 'd' ? 'روزانه' : 'هفتگی';
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + (H1 + GAP + H2 + 22), role: 'img', 'aria-label': 'نمودار ' + tf + ' لگاریتمی ' + name + ' با کانال روند و RSI', style: 'width:100%;height:auto;display:block' });
+    var ticks = [], e0 = Math.floor(mn / Math.LN10), e1 = Math.ceil(mx / Math.LN10), ks = (mx - mn) < 0.9 ? [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8] : [1, 2, 5];
+    var mk = function (set) { var t = []; for (var e = e0 - 1; e <= e1; e++) set.forEach(function (k) { var v = k * Math.pow(10, e); if (Math.log(v) > mn && Math.log(v) < mx) t.push(v); }); return t; };
+    ticks = mk(ks); if (ticks.length < 4) ticks = mk([1, 1.5, 2, 3, 4, 5, 7]); if (ticks.length < 4) ticks = mk([1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2, 2.2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 8, 9]); if (ticks.length > 9) ticks = ticks.filter(function (_, i) { return i % 2 === 0; });
     ticks.forEach(function (v) { svg.appendChild(el('line', { x1: PL, x2: W - PR, y1: y(v), y2: y(v), stroke: 'var(--line)', 'stroke-width': 0.6 })); svg.appendChild(el('text', { x: W - PR + 6, y: y(v) + 4, fill: 'var(--muted)', 'font-size': 11 }, fa(v))); });
-    var lastY = null; A.W.forEach(function (w, i) { var jy = sh(w.date).slice(0, 4); if (jy !== lastY) { if (lastY !== null) { svg.appendChild(el('line', { x1: x(i), x2: x(i), y1: PT, y2: H1 + GAP + H2, stroke: 'var(--line)', 'stroke-width': 0.5, 'stroke-dasharray': '2 4' })); svg.appendChild(el('text', { x: x(i) + 3, y: H1 + GAP + H2 + 16, fill: 'var(--muted)', 'font-size': 11 }, fa(+jy, 0).replace(/٬/g, ''))); } lastY = jy; } });
-    // channel (solid inside the fitted window, dashed projection)
+    var cut = H.bars === 'd' ? 7 : 4, lastK = null; vis.forEach(function (w, k) { var i = s0 + k, key = sh(w.date).slice(0, cut); if (key !== lastK) { if (lastK !== null) { svg.appendChild(el('line', { x1: x(i), x2: x(i), y1: PT, y2: H1 + GAP + H2, stroke: 'var(--line)', 'stroke-width': 0.5, 'stroke-dasharray': '2 4' })); svg.appendChild(el('text', { x: x(i) + 3, y: H1 + GAP + H2 + 16, fill: 'var(--muted)', 'font-size': 11 }, key.replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }))); } lastK = key; } });
     [[1, 'var(--crit)'], [0, 'var(--muted)'], [-1, 'var(--good, #3fb27f)']].forEach(function (b) {
       svg.appendChild(el('line', { x1: x(from), y1: y(A.ch.at(from, b[0])), x2: x(n - 1), y2: y(A.ch.at(n - 1, b[0])), stroke: b[1], 'stroke-width': 1.4, 'stroke-dasharray': b[0] === 0 ? '5 4' : '' }));
-      svg.appendChild(el('line', { x1: x(n - 1), y1: y(A.ch.at(n - 1, b[0])), x2: x(N - 1), y2: y(A.ch.at(N - 1, b[0])), stroke: b[1], 'stroke-width': 1.2, 'stroke-dasharray': '3 5', opacity: 0.8 })); });
-    svg.appendChild(el('polyline', { points: A.W.map(function (w, i) { return x(i).toFixed(1) + ',' + y(w.close).toFixed(1); }).join(' '), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.6 }));
+      svg.appendChild(el('line', { x1: x(n - 1), y1: y(A.ch.at(n - 1, b[0])), x2: x(n - 1 + fwd), y2: y(A.ch.at(n - 1 + fwd, b[0])), stroke: b[1], 'stroke-width': 1.2, 'stroke-dasharray': '3 5', opacity: 0.8 })); });
+    svg.appendChild(el('polyline', { points: vis.map(function (w, k) { return x(s0 + k).toFixed(1) + ',' + y(w.close).toFixed(1); }).join(' '), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.6 }));
     svg.appendChild(el('circle', { cx: x(n - 1), cy: y(A.last), r: 3.5, fill: 'var(--accent)' })); svg.appendChild(el('text', { x: x(n - 1) + 8, y: y(A.last) - 6, fill: 'var(--text)', 'font-size': 12, 'font-weight': 600 }, fa(A.last)));
-    // RSI panel
     [30, 50, 70].forEach(function (v) { svg.appendChild(el('line', { x1: PL, x2: W - PR, y1: yr(v), y2: yr(v), stroke: 'var(--line)', 'stroke-width': 0.6, 'stroke-dasharray': v === 50 ? '2 4' : '' })); svg.appendChild(el('text', { x: W - PR + 6, y: yr(v) + 4, fill: 'var(--muted)', 'font-size': 11 }, fa(v, 0))); });
-    svg.appendChild(el('polyline', { points: A.R.map(function (v, i) { return isFinite(v) ? x(i).toFixed(1) + ',' + yr(v).toFixed(1) : ''; }).filter(Boolean).join(' '), fill: 'none', stroke: '#9b7fd1', 'stroke-width': 1.3 }));
-    svg.appendChild(el('text', { x: PL + 4, y: H1 + GAP - 6, fill: 'var(--muted)', 'font-size': 11 }, 'RSI هفتگی (۱۴): ' + fa(A.rsi, 0)));
-    [['bear', 'var(--crit)'], ['bull', 'var(--good, #3fb27f)']].forEach(function (d) { var v = A.dv[d[0]]; if (!v) return;
+    svg.appendChild(el('polyline', { points: A.R.map(function (v, i) { return i >= s0 && isFinite(v) ? x(i).toFixed(1) + ',' + yr(v).toFixed(1) : ''; }).filter(Boolean).join(' '), fill: 'none', stroke: '#9b7fd1', 'stroke-width': 1.3 }));
+    svg.appendChild(el('text', { x: PL + 4, y: H1 + GAP - 6, fill: 'var(--muted)', 'font-size': 11 }, 'RSI ' + tf + ' (۱۴): ' + fa(A.rsi, 0)));
+    [['bear', 'var(--crit)'], ['bull', 'var(--good, #3fb27f)']].forEach(function (d) { var v = A.dv[d[0]]; if (!v || v.i1 < s0) return;
       svg.appendChild(el('line', { x1: x(v.i1), y1: y(v.p1), x2: x(v.i2), y2: y(v.p2), stroke: d[1], 'stroke-width': 2 })); svg.appendChild(el('line', { x1: x(v.i1), y1: yr(v.r1), x2: x(v.i2), y2: yr(v.r2), stroke: d[1], 'stroke-width': 2 }));
       svg.appendChild(el('text', { x: x(v.i2) - 4, y: yr(Math.max(v.r1, v.r2)) - 6, fill: d[1], 'font-size': 12, 'font-weight': 600, 'text-anchor': 'end' }, d[0] === 'bear' ? 'واگرایی منفی' : 'واگرایی مثبت')); });
     return h('div', { class: 'lv-chart', dir: 'ltr' }, [svg]);
   }
-  function table(head, rows) { return h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, head.map(function (t) { return h('th', { class: 'lbl', 'data-notr': '1', text: t }); }))]), h('tbody', null, rows.map(function (r) { return h('tr', null, r.map(function (c) { return c && c.nodeType ? h('td', null, [c]) : h('td', { class: 'small', 'data-notr': '1', style: 'white-space:normal', text: c == null ? '' : String(c) }); })); }))])]); }
-  function chip(k) { var r = READ[k] || ['—', 'sev-info']; return h('span', { class: 'sev ' + r[1], 'data-notr': '1', text: r[0] }); }
+  function table(head, rows, cls) { return h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, head.map(function (t) { return h('th', { class: 'lbl', 'data-notr': '1', text: t }); }))]), h('tbody', null, rows.map(function (r, i) { return h('tr', { class: cls ? cls(i) : '' }, r.map(function (c) { return c && c.nodeType ? h('td', null, [c]) : h('td', { class: 'small', 'data-notr': '1', style: 'white-space:normal', text: c == null ? '' : String(c) }); })); }))])]); }
+  function chip(k, extra) { var r = READ[k] || ['—', 'sev-info']; return h('span', { class: 'sev ' + r[1], 'data-notr': '1', text: r[0] + (extra || '') }); }
+  function P(t, cls) { return h('p', { class: cls || 'f-help', 'data-notr': '1', text: t }); }
+  function goTab(id) { setTimeout(function () { var b = document.querySelectorAll('[data-tab="' + id + '"]'); if (b.length) b[b.length - 1].click(); }, 50); }
+  function hzPick(ctx, id) { var S = ctx.S; return { key: id, label: 'افق', options: HZ.map(function (H) { return [H.id, H.name + ' — ' + H.sub]; }), get: function () { return S.hz; }, set: function (v) { S.hz = v; } }; }
 
-  function outlookTab(ctx) {
-    var S = ctx.S, R = ctx.R, M = S.macro || {}, txt = note(R, S), ta = h('textarea', { class: 'f-area', rows: 16, 'aria-label': 'یادداشت بازار', dir: 'rtl' }); ta.value = txt;
-    var rows = R.rows.map(function (a) { if (!a.ok) return [a.name, '—', '—', '—', '—', '—', '—', '—', a.why || '—'];
-      var link = h('a', { href: '#', 'data-notr': '1', text: a.name, onclick: function (e) { e.preventDefault(); S.sel = a.name; var t = document.querySelector('.tool nav.tabs [data-tab="chart"]'); ctx.rerender(); setTimeout(function () { var b = document.querySelectorAll('[data-tab="chart"]'); if (b.length) b[b.length - 1].click(); }, 50); } });
-      return [link, fa(a.last), fa(a.pos * 100, 0) + '٪ — ' + ZONE[a.zone], fa(a.rsi, 0), a.dv.bear ? 'منفی' : a.dv.bull ? 'مثبت' : '—', chip(a.read), pct(a.toMid) + ' / ' + pct(a.toLo), pct(a.up52 / a.last - 1), pct(a.r52) + (isFinite(M.point) && isFinite(a.r52) && !a.usd ? ' (واقعی ' + pct((1 + a.r52) / (1 + M.point) - 1) + ')' : ''), a.quality]; });
-    var copy = h('button', { class: 'btn primary', type: 'button', text: 'کپی یادداشت', onclick: function () { if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(function () { U.toast('کپی شد.', 'good'); }); else ta.select(); } });
-    return ctx.group([ctx.panel('چشم‌انداز بلندمدت بازارها', [R.sample ? h('p', { class: 'neg', text: 'دادهٔ نمونه است؛ از زبانهٔ «داده و تنظیمات» دریافت کنید.' }) : null,
-      h('p', { class: 'f-help', text: 'برای هر سری: کانال روند در مقیاس لگاریتمی (رگرسیون روی بسته‌شدن هفتگی، دو خط موازی که ۹۵٪ قیمت‌ها را در بر می‌گیرند)، RSI هفتگی و واگرایی میان دو سقف یا دو کف آخر. «تا میانه / کف» فاصلهٔ قیمت تا خط میانی و کف کانال است؛ «سقف ۵۲ هفته» جایی است که خط بالایی کانال یک سال دیگر خواهد بود.' }),
-      table(['سری', 'آخرین', 'جایگاه در کانال', 'RSI هفتگی', 'واگرایی', 'خوانش', 'تا میانه / کف', 'تا سقف ۵۲ هفته', 'بازده ۵۲ هفته', 'اعتبار کانال'], rows)]),
-      ctx.panel('یادداشت بازار (قابل ویرایش)', [h('p', { class: 'f-help', text: 'متن از روی همین اعداد ساخته می‌شود؛ پیش از انتشار ویرایش کنید. اعداد تورم ورودی شماست.' }), ta, h('div', { class: 'row-ctl' }, [copy])])]);
+  /* ---------- tabs ---------- */
+  function overviewTab(ctx) {
+    var S = ctx.S, R = ctx.R, M = S.macro || {}, ta = h('textarea', { class: 'f-area', rows: 18, 'aria-label': 'یادداشت بازار', dir: 'rtl' }); ta.value = note(R, S);
+    var cell = function (a, id) { var x = a.h[id]; if (!x.ok) return '—'; return h('a', { href: '#', title: 'نمودار', onclick: function (e) { e.preventDefault(); S.sel = a.name; S.hz = id; ctx.rerender(); goTab('chart'); } }, [chip(x.read, ' · ' + fa(x.pos * 100, 0) + '٪' + (x.dv.bear ? ' · واگرایی −' : x.dv.bull ? ' · واگرایی +' : ''))]); };
+    var rows = R.rows.map(function (a) { return [a.name, fa(a.last), cell(a, 's'), cell(a, 'm'), cell(a, 'l'), pct(a.ret.m1), pct(a.ret.m3), pct(a.ret.y1) + (isFinite(M.point) && isFinite(a.ret.y1) && !a.usd ? ' (واقعی ' + pct((1 + a.ret.y1) / (1 + M.point) - 1) + ')' : '')]; });
+    var hot = R.cal.filter(function (c) { return c.rank >= 1; }).slice(0, 6), fail = (S.lastErrs || []);
+    var copy = h('button', { class: 'btn primary', type: 'button', text: 'کپی یادداشت', 'data-notr': '1', onclick: function () { if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(function () { U.toast('کپی شد.', 'good'); }); else ta.select(); } });
+    return ctx.group([ctx.panel('نمای کلی بازارها در سه افق', [R.sample ? P('دادهٔ نمونه است؛ از زبانهٔ «داده و تنظیمات» دریافت کنید.', 'neg') : null,
+      P('هر خانه: خوانش مدل · جایگاه قیمت در کانال همان افق (۰٪ = کف کانال، ۱۰۰٪ = سقف) · واگرایی RSI اگر باشد. روی هر خانه بزنید تا نمودارش باز شود. کوتاه‌مدت: حدود ۳ ماه با کندل روزانه؛ میان‌مدت: حدود ۱۸ ماه هفتگی؛ بلندمدت: حدود ۵ سال هفتگی.'),
+      table(['سری', 'آخرین', 'کوتاه‌مدت', 'میان‌مدت', 'بلندمدت', 'بازده ۱ ماه', 'بازده ۳ ماه', 'بازده ۱ سال'], rows),
+      !R.sample && R.rows.some(function (a) { return !a.h.s.ok; }) ? P('برای سری‌های بدون داده یا بدون ستون کوتاه‌مدت، یک بار از زبانهٔ «داده و تنظیمات» دریافت کنید (این نسخه دادهٔ روزانه را هم نگه می‌دارد).', 'small warn-t') : null,
+      fail.length && !R.sample ? P('دریافت‌نشده در آخرین به‌روزرسانی: ' + fail.join(' · '), 'small warn-t') : null,
+      isFinite(M.point) ? P('تورم ' + (M.asOf || '') + ' (ورودی شما): سالانه ' + pct(M.annual, 1).replace('+', '') + ' · نقطه‌به‌نقطه ' + pct(M.point, 1).replace('+', '') + ' · ماهانه ' + pct(M.monthly, 1).replace('+', '') + '. «واقعی» = بازده یک‌ساله پس از کسر تورم نقطه‌به‌نقطه؛ برای سری‌های ارزی حساب نمی‌شود.', 'small muted') : null]),
+      ctx.panel('نزدیک‌ترین تاریخ‌های کلیدی', [hot.length ? table(['تاریخ', 'چند روز دیگر', 'اهمیت', 'نشانه', 'در کدام بازارها'], hot.map(function (c) { return [calDate(c), fa(Math.max(0, c.in), 0), h('span', { class: 'sev ' + RANK[c.rank][1], 'data-notr': '1', text: RANK[c.rank][0] }), fa(c.n, 0) + ' (' + fa(c.x, 1) + ' برابر عادی)', c.assets.join('، ')]; })) : P('تاریخ هم‌زمانی در بازهٔ تعیین‌شده نیست.', 'muted'), P('شرح هر تاریخ و روش محاسبه: زبانهٔ «تحلیل زمانی و تاریخ‌های کلیدی».', 'small muted')]),
+      ctx.panel('یادداشت بازار (قابل ویرایش)', [P('متن از روی همین اعداد ساخته می‌شود؛ پیش از انتشار ویرایش کنید.'), ta, h('div', { class: 'row-ctl' }, [copy])])]);
+  }
+  function horizonTab(ctx) {
+    var S = ctx.S, R = ctx.R, H = hz(S.hz), f = G.form({ id: 'lv-h', onChange: ctx.rerender, fields: [hzPick(ctx, 'hz')] });
+    var rows = R.rows.map(function (a) { var x = a.h[H.id]; if (!x.ok) return [a.name, '—', '—', '—', '—', '—', '—', '—', '—', x.why || '—'];
+      var link = h('a', { href: '#', 'data-notr': '1', text: a.name, onclick: function (e) { e.preventDefault(); S.sel = a.name; ctx.rerender(); goTab('chart'); } });
+      return [link, fa(x.last), fa(x.pos * 100, 0) + '٪ — ' + ZONE[x.zone], fa(x.rsi, 0), x.dv.bear ? 'منفی' : x.dv.bull ? 'مثبت' : '—', chip(x.read), pct(x.toUp), pct(x.toMid), pct(x.toLo), fa(x.upF2) + ' / ' + fa(x.loF2), pct(x.ch.growth), x.quality]; });
+    return ctx.group([ctx.panel('جزئیات افق ' + H.name + ' (' + H.sub + ')', [f, P('«تا سقف / میانه / کف» فاصلهٔ قیمت امروز تا سه خط کانال است. «سقف / کف آینده» جای همان خط‌ها در ' + fa(H.f[1], 0) + ' ' + H.u + ' بعد است. «شیب» رشد سالانه‌شدهٔ خط میانی است. اگر «اعتبار» ضعیف است، خط مستقیم توصیف خوبی از این دوره نیست و فاصله‌ها را جدی نگیرید.'),
+      table(['سری', 'آخرین', 'جایگاه در کانال', 'RSI', 'واگرایی', 'خوانش', 'تا سقف', 'تا میانه', 'تا کف', 'سقف / کف در ' + fa(H.f[1], 0) + ' ' + H.u, 'شیب سالانه', 'اعتبار'], rows)])]);
   }
   function chartTab(ctx) {
-    var S = ctx.S, R = ctx.R, ok = R.rows.filter(function (a) { return a.ok; }), A = ok.filter(function (a) { return a.name === S.sel; })[0] || ok[0];
-    if (!A) return ctx.group([ctx.panel('نمودار', [h('p', { class: 'muted', text: 'سری با دادهٔ کافی نیست.' })])]);
-    var f = G.form({ id: 'lv-c', onChange: ctx.rerender, fields: [{ key: 's', label: 'سری', options: ok.map(function (a) { return [a.name, a.name]; }), get: function () { return A.name; }, set: function (v) { S.sel = v; } },
-      { key: 'w', label: 'پنجرهٔ کانال', options: [['0', 'همهٔ تاریخچه'], ['520', '۱۰ سال'], ['260', '۵ سال'], ['156', '۳ سال'], ['104', '۲ سال']], get: function () { return String(S.opt.weeks || 0); }, set: function (v) { S.opt.weeks = Number(v); } }] });
-    return ctx.group([ctx.panel(A.name + ' — ' + READ[A.read][0], [f, chart(A), h('p', { class: 'small muted', text: 'خط قرمز: سقف کانال · خط‌چین خاکستری: میانه · خط سبز: کف · خط‌چین‌های سمت راست: ادامهٔ کانال تا ۵۲ هفتهٔ آینده · محور قیمت لگاریتمی است.' }),
-      h('ul', { class: 'studio-l' }, lines(A, S.macro || {}).map(function (l) { return h('li', { 'data-notr': '1', text: l }); })),
-      table(['سطح', 'اکنون', '۲۶ هفته بعد', '۵۲ هفته بعد'], [['سقف کانال', fa(A.up), fa(A.up26), fa(A.up52)], ['خط میانی', fa(A.mid), fa(A.mid26), fa(A.mid52)], ['کف کانال', fa(A.lo), fa(A.lo26), fa(A.ch.at(A.t + 52, -1))]])])]);
+    var S = ctx.S, R = ctx.R, H = hz(S.hz), ok = R.rows.filter(function (a) { return a.h[H.id].ok; }), A0 = ok.filter(function (a) { return a.name === S.sel; })[0] || ok[0];
+    var f = G.form({ id: 'lv-c', onChange: ctx.rerender, fields: [{ key: 's', label: 'سری', options: (ok.length ? ok : R.rows).map(function (a) { return [a.name, a.name]; }), get: function () { return A0 ? A0.name : ''; }, set: function (v) { S.sel = v; } }, hzPick(ctx, 'hz')] });
+    if (!A0) return ctx.group([ctx.panel('نمودار', [f, P('در این افق سری با دادهٔ کافی نیست.', 'muted')])]);
+    var A = A0.h[H.id];
+    return ctx.group([ctx.panel(A0.name + ' — ' + H.name + ' — ' + READ[A.read][0], [f, chart(A, H, A0.name), P('خط قرمز: سقف کانال · خط‌چین خاکستری: میانه · خط سبز: کف · خط‌چین‌های سمت راست: ادامهٔ کانال تا ' + fa(H.f[1], 0) + ' ' + H.u + ' آینده · محور قیمت لگاریتمی است.', 'small muted'),
+      h('ul', { class: 'studio-l' }, lines(A0, H, S.macro || {}).map(function (l) { return h('li', { 'data-notr': '1', text: l }); })),
+      table(['سطح', 'اکنون', fa(H.f[0], 0) + ' ' + H.u + ' بعد', fa(H.f[1], 0) + ' ' + H.u + ' بعد'], [['سقف کانال', fa(A.up), fa(A.upF1), fa(A.upF2)], ['خط میانی', fa(A.mid), fa(A.midF1), fa(A.midF2)], ['کف کانال', fa(A.lo), fa(A.loF1), fa(A.loF2)]]),
+      P('سه افق این سری: ' + brief(A0), 'small muted')])]);
+  }
+  function STR(v) { return v >= 0.7 ? 'قوی' : v >= 0.4 ? 'متوسط' : 'ضعیف'; }
+  function timeTab(ctx) {
+    var S = ctx.S, R = ctx.R, withT = R.rows.filter(function (a) { return a.cy && a.cy.ok; }), A = withT.filter(function (a) { return a.name === S.sel; })[0] || withT[0];
+    var only = S.calAll ? R.cal : R.cal.filter(function (c) { return c.rank >= 1; });
+    var tg = h('label', { class: 'chk-l' }, [(function () { var i = h('input', { type: 'checkbox', 'aria-label': 'نمایش همه' }); i.checked = !!S.calAll; i.addEventListener('change', function () { S.calAll = i.checked; ctx.rerender(); }); return i; })(), document.createTextNode(' تاریخ‌های کم‌اهمیت (تک‌نشانه) هم نشان داده شود')]);
+    var calRows = only.map(function (c) { var by = {}; c.items.forEach(function (x) { (by[x.name] = by[x.name] || []).push(winText(x.w)); });
+      return [calDate(c), fa(Math.max(0, c.in), 0), h('span', { class: 'sev ' + RANK[c.rank][1], 'data-notr': '1', text: RANK[c.rank][0] }), fa(c.n, 0) + ' (' + fa(c.x, 1) + '×)', Object.keys(by).map(function (k) { return k + ': ' + by[k].join('؛ '); }).join('  |  ')]; });
+    var cyRows = withT.map(function (a) { var c = a.cy.cycles[0]; if (!c) return [a.name, '—', '—', '—', '—', '—', '—'];
+      return [a.name, 'حدود ' + fa(c.calDays, 0) + ' روز (' + fa(c.period, 0) + ' کندل)', STR(c.strength) + (a.cy.weak ? ' · نامطمئن' : ''), c.phase < 0.5 ? 'نیمهٔ نزولی (از قله به سمت کف)' : 'نیمهٔ صعودی (از کف به سمت قله)', J.jstr(LV.jdnOf(a.date) + c.troughIn) + ' (' + fa(c.troughIn, 0) + ' روز)', J.jstr(LV.jdnOf(a.date) + c.peakIn) + ' (' + fa(c.peakIn, 0) + ' روز)', '±' + pct(c.swing / 2).replace('+', '')]; });
+    var parts = [ctx.panel('تقویم تاریخ‌های کلیدی پیش رو (همهٔ بازارها)', [P('برای هر سری سه نوع «نشانهٔ زمانی» حساب می‌شود و همه روی یک تقویم می‌آیند. وقتی چند نشانه از چند بازار در فاصلهٔ ۴ روز کنار هم بیفتند، آن بازه یک «تاریخ کلیدی» است: زمانی برای دقت بیشتر به بازار، نه پیش‌بینی جهت. اهمیت نسبت به وضع عادی همین تقویم سنجیده می‌شود (میانگین فعلی: ' + fa(R.calMean || 0, 1) + ' نشانه در هر بازه)، چون با این تعداد سری، چند هم‌زمانی در هر چند روز عادی است. «زیاد»: دست‌کم سه خانوادهٔ بازار (بورس، ارز، طلا، رمزارز، نفت)، دو نوع نشانه و تراکم دست‌کم ۱٫۶ برابر میانگین. «متوسط»: دو خانواده و ۱٫۲۵ برابر میانگین. ارزها با هم یک خانواده‌اند، پس هم‌زمانی دلار و تتر و یورو یک تأیید حساب می‌شود، نه سه.'),
+      h('div', { class: 'row-ctl' }, [tg]), calRows.length ? table(['تاریخ', 'چند روز دیگر', 'اهمیت', 'تعداد نشانه', 'شرح (بازار: نشانه‌ها)'], calRows, function (i) { return only[i].rank === 2 ? 'total' : ''; }) : P('در ' + fa(S.opt.ahead, 0) + ' روز آینده تاریخ هم‌زمانی نیست.', 'muted')]),
+      ctx.panel('چرخهٔ غالب هر بازار', [P('چرخهٔ غالب = دوره‌ای که نوسان قیمت حول روندش بیشترین شباهت را به یک موج منظم با آن طول دارد (از ۶۰۰ کندل روزانهٔ اخیر). «قدرت» نسبت دامنهٔ این موج به کل نوسان حول روند است؛ «نامطمئن» یعنی چرخهٔ دوم تقریباً به همان اندازه قوی است و نمی‌شود یکی را غالب دانست. «دامنه» نوسان معمول قیمت حول روند در این چرخه است.'),
+        table(['بازار', 'طول چرخه', 'قدرت', 'اکنون در', 'کف بعدی چرخه', 'قلهٔ بعدی چرخه', 'دامنه'], cyRows)])];
+    if (A) { var f = G.form({ id: 'lv-t', onChange: ctx.rerender, fields: [{ key: 's', label: 'سری', options: withT.map(function (a) { return [a.name, a.name]; }), get: function () { return A.name; }, set: function (v) { S.sel = v; } }] }), d0 = LV.jdnOf(A.date), pv = function (k) { return k === 'low' ? 'کف اصلی' : 'سقف اصلی'; };
+      parts.push(ctx.panel('جزئیات زمانی یک بازار: ' + A.name, [f,
+        h('h4', { 'data-notr': '1', text: 'نقاط محوری (خودکار: کف و سقف ۳۰۰ کندل اخیر)' }), table(['نقطه', 'تاریخ', 'قیمت', 'چند روز پیش'], A.piv.map(function (q) { return [pv(q.kind), sh(q.date), fa(q.price), fa(d0 - LV.jdnOf(q.date), 0)]; })),
+        h('h4', { 'data-notr': '1', text: 'سه چرخهٔ قوی‌تر' }), table(['طول (کندل)', '≈ روز تقویمی', 'قدرت', 'فاز', 'کندل تا کف', 'کف بعدی', 'قلهٔ بعدی', 'FLD', 'قیمت در برابر FLD'], A.cy.cycles.map(function (c) { return [fa(c.period, 0), fa(c.calDays, 0), fa(c.strength, 2) + ' (' + STR(c.strength) + ')', fa(c.phase, 2), fa(c.barsToTrough, 0), J.jstr(d0 + c.troughIn), J.jstr(d0 + c.peakIn), fa(c.fld), c.above ? 'بالاتر (نیم‌چرخه صعودی بوده)' : 'پایین‌تر (نیم‌چرخه نزولی بوده)']; })),
+        h('h4', { 'data-notr': '1', text: 'پنجره‌های زمانی پیش روی این بازار' }), table(['تاریخ', 'چند روز دیگر', 'نشانه'], (A.tw || []).map(function (w) { return [J.jstr(d0 + w.days), fa(Math.max(0, w.days), 0), winText(w)]; })),
+        h('h4', { 'data-notr': '1', text: 'سطوح مربع نُه گن حول کف اصلی (' + fa(A.sqBase) + ')' }), table(['سطح قیمت', 'فاصله از قیمت امروز', 'زاویه از کف اصلی'], (A.sq || []).map(function (q) { return [fa(q.level), pct(q.dist, 1), fa(q.angle, 0) + '°']; })),
+        P('مربع نُه: ریشهٔ دوم قیمت کف اصلی را هر بار ۰٫۲۵ (معادل ۴۵ درجه) بالا می‌برد و دوباره به توان دو می‌رساند. فقط سه سطح بالاتر و سه سطح پایین‌تر از قیمت امروز نشان داده می‌شود.', 'small muted')])); }
+    return ctx.group(parts);
+  }
+  function guideTab(ctx) {
+    var sec = function (t, items) { return ctx.panel(t, [h('ul', { class: 'studio-l' }, items.map(function (x) { return h('li', { 'data-notr': '1', text: x }); }))]); };
+    return ctx.group([
+      sec('۱. کانال روند (در هر سه افق)', ['چه می‌کند: روی لگاریتم قیمت یک خط راست برازش می‌شود (رگرسیون). این «خط میانی» است. خط سقف و کف با همان شیب، جایی کشیده می‌شوند که ۹۵٪ قیمت‌های آن دوره میانشان بماند (سقف از بالاترین انحراف‌ها و کف از پایین‌ترین‌ها، هر کدام جدا).',
+        'جایگاه در کانال: ۰٪ یعنی قیمت روی کف کانال، ۵۰٪ حدود میانه، ۱۰۰٪ روی سقف. بالای ۹۰٪ «نزدیک سقف» و زیر ۱۰٪ «نزدیک کف» خوانده می‌شود.',
+        'تا سقف / میانه / کف: درصد فاصلهٔ قیمت امروز تا هر خط. منفی یعنی آن خط پایین‌تر از قیمت است.',
+        'چرا قبلاً فاصله‌ها خیلی بزرگ بود: کانال روی کل تاریخچه (برای شاخص کل بیش از ۱۵ سال) و با پهنای یکسان در دو طرف کشیده می‌شد؛ یک دورهٔ پرنوسان قدیمی کل کانال را پهن می‌کرد. حالا بلندمدت ۵ سال اخیر است، دو طرف جدا اندازه‌گیری می‌شود و افق‌های کوتاه‌تر کانال خودشان را دارند.',
+        'اعتبار: «قوی» یعنی خط راست دوره را خوب توصیف می‌کند (R² بالا) و قیمت چند بار به هر دو خط نزدیک شده. «ضعیف» یعنی به سطوح آن کانال تکیه نکنید. کانال توصیف گذشته است؛ شکست کانال همیشه ممکن است.']),
+      sec('۲. RSI و واگرایی', ['RSI (۱۴ کندل) قدرت نسبی افزایش‌ها به کاهش‌هاست، بین ۰ و ۱۰۰. کوتاه‌مدت روی کندل روزانه و دو افق دیگر روی کندل هفتگی.',
+        'واگرایی منفی: قیمت سقف تازه‌ای بالاتر از سقف قبلی می‌زند ولی RSI در سقف دوم پایین‌تر است (و در سقف اول دست‌کم ۶۰ بوده). یعنی صعود با قدرت کمتری ادامه یافته.',
+        'واگرایی مثبت: برعکس، در دو کف پیاپی (RSI کف اول حداکثر ۴۰).', 'واگرایی هشدار است، نه زمان‌سنج: می‌تواند هفته‌ها پیش از برگشت قیمت دیده شود یا اصلاً به برگشت نرسد.']),
+      sec('۳. خوانش‌ها', ['احتمال اصلاح: نزدیک سقف کانال و واگرایی منفی با هم.', 'نزدیک سقف کانال: بالای ۹۰٪ کانال، بدون واگرایی.', 'احتمال بازگشت صعودی: نزدیک کف و واگرایی مثبت.', 'نزدیک کف کانال: زیر ۱۰٪ کانال، بدون واگرایی.', 'تضعیف / بهبود مومنتوم: واگرایی هست ولی قیمت در لبهٔ کانال نیست.', 'روند صعودی / نزولی: هیچ‌کدام از موارد بالا؛ فقط جهت شیب کانال.',
+        'وقتی افق‌ها هم‌نظر نیستند (مثلاً کوتاه‌مدت «احتمال اصلاح» و بلندمدت «روند صعودی») یعنی اصلاح در دل روند بزرگ‌تر؛ افق تصمیم خودتان را ملاک بگیرید.']),
+      sec('۴. تحلیل زمانی: چرخه‌ها', ['روند کلی از لگاریتم قیمت کم می‌شود؛ بعد برای هر طول موج از ۲۰ تا ۲۵۰ کندل سنجیده می‌شود که باقی‌مانده چقدر به یک موج منظم با آن طول شبیه است. سه طول موج قوی‌تر و جدا از هم «چرخه‌های غالب»اند.',
+        'دوره (کندل): طول چرخه برحسب روز معاملاتی. «≈ روز»: همان به روز تقویمی.', 'دامنه / قدرت: دامنهٔ موج نسبت به کل نوسان حول روند. نزدیک ۱ یعنی بیشتر نوسان را همین چرخه توضیح می‌دهد؛ زیر ۰٫۴ ضعیف است.',
+        'فاز: جای امروز در چرخه. ۰ = قله، ۰٫۵ = کف، ۱ = قلهٔ بعد. پس فاز ۰٫۱۴ یعنی تازه از قلهٔ چرخه گذشته‌ایم.', 'کندل تا کف / کف بعدی / قلهٔ بعدی: اگر همین موج ادامه یابد، کف و قلهٔ بعدی‌اش کِی می‌رسد.',
+        'FLD: قیمتِ نیم‌چرخه پیش. قیمت بالاتر از آن یعنی در نیم‌چرخهٔ اخیر بازار بالا آمده است. (در نسخهٔ قبل به اشتباه «بالای ابر» ترجمه شده بود.)',
+        'محدودیت: طول چرخهٔ غالب با اضافه‌شدن داده جابه‌جا می‌شود و بازارها موج منظم نیستند. این خروجی فهرست بازبینی است، نه سیگنال.']),
+      sec('۵. تحلیل زمانی: شمارش روز و نسبت‌های زمانی', ['نقاط محوری: کف اصلی و سقف اصلی ۳۰۰ کندل اخیر هر بازار (خودکار).', 'شمارش روز گن: ۳۰، ۴۵، ۶۰، ۹۰، ۱۲۰، ۱۴۴، ۱۸۰ و ۳۶۰ روز تقویمی پس از هر نقطهٔ محوری. مثال: «۶۰ روز پس از سقف اصلی».',
+        'نسبت زمانی فیبوناچی: فاصلهٔ زمانی دو نقطهٔ محوری آخر در ۰٫۳۸۲، ۰٫۶۱۸، ۱، ۱٫۶۱۸ و ۲٫۶۱۸ ضرب و از نقطهٔ دوم جلو برده می‌شود. مثال: «۰٫۳۸۲ × ۲۵۳ روز» یعنی ۹۷ روز پس از نقطهٔ دوم.',
+        'مربع نُه گن: سطوح قیمتی حول یک قیمت پایه (این‌جا کف اصلی). در ابزار تفصیلی قبلی قیمت پایه و نقاط محوری پس از دریافت داده به‌روز نمی‌شد و از دادهٔ نمونه می‌ماند؛ برای همین فاصله‌هایی مثل «۶۹٪−» می‌دیدید. اصلاح شد.',
+        'پشتوانهٔ آماری این شمارش‌ها ضعیف است. ارزش عملی‌شان فقط در «هم‌زمانی» است: وقتی چند نشانهٔ مستقل از چند بازار روی یک بازه می‌افتد، آن بازه را برای بازبینی موقعیت‌ها علامت بزنید.']),
+      sec('۶. بازده واقعی و سری‌های نسبت', ['بازده واقعی = (۱ + بازده یک‌ساله) ÷ (۱ + تورم نقطه‌به‌نقطه) − ۱. تورم ورودی شماست و خودکار دریافت نمی‌شود.', '«شاخص کل به دلار» = شاخص کل تقسیم بر دلار آزاد همان روز؛ نشان می‌دهد بورس نسبت به دلار گران یا ارزان شده است. هر نسبت دیگری را در «داده و تنظیمات» با نوع «نسبت دو سری» و نوشتن «نام اول / نام دوم» بسازید.',
+        'تفاوت تتر و دلار آزاد، یا طلای ۱۸ و انس × دلار (حباب)، در ابزارهای «سیگنال ارز و تتر» و «سیگنال طلا و سکه» حساب می‌شود.'])]);
   }
   function dataTab(ctx) {
     var S = ctx.S;
-    var lst = ctx.list({ id: 'lv-a', path: 'assets', onChange: ctx.rerender, newRow: function () { return { name: '', kind: 'tse', key: '', active: true }; }, cols: [{ key: 'name', label: 'نام نمایشی', kind: 'text' },
-      { key: 'kind', label: 'نوع', kind: 'select', options: function () { return [['tse-index', 'شاخص (کد TSETMC)'], ['tse', 'نماد بورسی (نماد یا کد)'], ['tgju', 'کلید TGJU']]; } }, { key: 'key', label: 'نماد / کد / کلید', kind: 'text' }, { key: 'active', label: 'فعال', kind: 'bool' }] });
+    var lst = ctx.list({ id: 'lv-a', path: 'assets', onChange: ctx.rerender, newRow: function () { return { name: '', kind: 'tgju', key: '', usd: false, active: true }; }, cols: [{ key: 'name', label: 'نام نمایشی', kind: 'text' },
+      { key: 'kind', label: 'نوع', kind: 'select', options: function () { return [['tse-index', 'شاخص (کد TSETMC)'], ['tse', 'نماد بورسی (نماد یا کد)'], ['tgju', 'کلید TGJU'], ['ratio', 'نسبت دو سری (نام اول / نام دوم)']]; } }, { key: 'key', label: 'نماد / کد / کلید / نسبت', kind: 'text' }, { key: 'usd', label: 'ارزی', kind: 'bool' }, { key: 'active', label: 'فعال', kind: 'bool' }] });
+    var o = G.form({ id: 'lv-o', onChange: ctx.rerender, fields: [ctx.field('ws', 'پنجرهٔ کوتاه‌مدت (کندل روزانه)', 'opt.sWin', 'int'), ctx.field('wm', 'پنجرهٔ میان‌مدت (هفته)', 'opt.mWin', 'int'), ctx.field('wl', 'پنجرهٔ بلندمدت (هفته؛ ۰ = کل تاریخچه)', 'opt.lWin', 'int'), ctx.field('cv', 'پوشش کانال', 'opt.cover', 'pct'), ctx.field('ah', 'افق تقویم زمانی (روز)', 'opt.ahead', 'int')] });
     var m = G.form({ id: 'lv-m', onChange: ctx.rerender, fields: [ctx.field('ma', 'تورم سالانه (میانگین ۱۲ ماه)', 'macro.annual', 'pct', { optional: true }), ctx.field('mp', 'تورم نقطه‌به‌نقطه', 'macro.point', 'pct', { optional: true }), ctx.field('mm', 'تورم ماهانه', 'macro.monthly', 'pct2', { optional: true }),
       { key: 'md', label: 'ماه گزارش', type: 'text', get: function () { return S.macro.asOf || ''; }, set: function (v) { S.macro.asOf = v; } }, { key: 'ms', label: 'منبع', type: 'text', get: function () { return S.macro.src || ''; }, set: function (v) { S.macro.src = v; } }] });
-    return ctx.group([ctx.panel('دریافت تاریخچهٔ بلندمدت', [SG.fetchBar ? SG.fetchBar(ctx, fetchAll, 'Fetch long history (TSETMC, TGJU)') : null,
-      h('p', { class: 'f-help', text: 'تا ۳۰۰۰ روز معاملاتی برای نمادها (تعدیل‌شده برای افزایش سرمایه و سود)، کل تاریخچهٔ شاخص‌ها و تا ۴۰۰۰ روز از TGJU؛ به‌صورت هفتگی ذخیره می‌شود. برای شاخص هم‌وزن فرابورس یا هر شاخص دیگر، کد TSETMC آن را با نوع «شاخص» اضافه کنید. دادهٔ TSETMC فقط از داخل ایران (کامپیوتر با پروکسی محلی) می‌آید و با «همگام‌سازی با گوشی» به گوشی می‌رسد.' })]),
-      ctx.panel('سری‌ها', [lst]), ctx.panel('تورم (ورودی شما)', [h('p', { class: 'f-help', text: 'این اعداد خودکار دریافت نمی‌شوند. از گزارش ماهانهٔ مرکز آمار ایران وارد کنید؛ برنامه فقط بازده واقعی و متن یادداشت را با آن‌ها می‌سازد.' }), m])]);
+    return ctx.group([ctx.panel('دریافت داده', [SG.fetchBar ? SG.fetchBar(ctx, fetchAll, 'Fetch all series (TSETMC, TGJU)') : null,
+      P('برای هر سری کل تاریخچهٔ در دسترس گرفته می‌شود (شاخص‌ها: کل تاریخچه؛ نمادها: تا ۳۰۰۰ روز، تعدیل‌شده؛ TGJU: هرچه برمی‌گرداند). ۶۰۰ کندل روزانهٔ آخر و کل کندل‌های هفتگی ذخیره می‌شود. بورس فقط با اینترنت داخل ایران می‌آید.'),
+      (S.lastErrs || []).length ? P('دریافت‌نشده در آخرین بار: ' + S.lastErrs.join(' · '), 'small warn-t') : null]),
+      ctx.panel('سری‌ها', [P('کلیدهای TGJU همان نشانی صفحهٔ هر شاخص در tgju.org است (مثلاً price_dollar_rl). کلیدهای بیت‌کوین (crypto-bitcoin) و نفت برنت (oil_brent) را نتوانستم از این‌جا بیازمایم؛ اگر دریافت نشدند، کلید درست را از نشانی صفحهٔ همان شاخص بردارید و این‌جا اصلاح کنید. «ارزی» یعنی قیمت به دلار است و با تورم ریالی مقایسه نمی‌شود.'), lst]),
+      ctx.panel('پنجره‌ها و تنظیمات', [o]), ctx.panel('تورم (ورودی شما)', [P('این اعداد خودکار دریافت نمی‌شوند. از گزارش ماهانهٔ مرکز آمار ایران وارد کنید.'), m])]);
   }
-  SG.feeds.push({ id: 'long-view', title: 'Long-term view (weekly history)', storeKey: KEY, sample: sample, fetch: fetchAll, size: function (S) { return S.assets.filter(function (a) { return a.active !== false; }).length + ' سری'; }, src: 'TSETMC + TGJU' });
+  SG.feeds.push({ id: 'long-view', title: 'Iran markets: three-horizon history', storeKey: KEY, sample: sample, fetch: fetchAll, size: function (S) { return S.assets.filter(function (a) { return a.active !== false; }).length + ' سری'; }, src: 'TSETMC + TGJU' });
   TK.define({
-    id: 'long-view', title: 'Long-term view: channels and divergence', sections: ['trading'], priority: 6, version: 1, storeKey: KEY,
-    summary: 'Market commentary from reproducible rules: log-scale trend channel on weekly data, weekly RSI divergence, correction and target levels projected a year ahead, inflation-adjusted returns and a ready-to-edit market note.',
+    id: 'long-view', title: 'Iran economy: financial market analysis', sections: ['iran'], priority: 1, version: 1, storeKey: KEY,
+    summary: 'Tehran exchange, dollar, tether, gold, coin, bitcoin and oil on three horizons (short, medium, long): trend channel, RSI divergence, time cycles and one calendar of key dates, inflation-adjusted returns and a ready-to-edit market note.',
     sample: sample, blank: sample, run: run, scenarios: false,
-    eyebrow: function () { return 'Trading · Long-term view'; }, heading: function () { return 'تحلیل بلندمدت: کانال و واگرایی'; }, filename: function () { return 'Long_view'; },
-    xlsx: function (S, R) { var b = Hub.xl.book(root.ExcelJS, 'LongView'), s1 = b.sheet('چشم‌انداز', [2, 22, 14, 12, 10, 10, 18, 14, 14, 14, 14, 14, 14, 10], { rightToLeft: true }); s1.title('تحلیل بلندمدت: کانال لگاریتمی و واگرایی هفتگی', (S.meta.asOf || '') + (R.sample ? ' · دادهٔ نمونه' : ''));
-      ['سری', 'آخرین', 'جایگاه (٪)', 'RSI هفتگی', 'واگرایی', 'خوانش', 'سقف', 'میانه', 'کف', 'سقف ۲۶ هفته', 'سقف ۵۲ هفته', 'بازده ۵۲ هفته', 'R²'].forEach(function (t, i) { s1.put(1 + i, 4, t, 'hdr'); });
-      R.rows.forEach(function (a, k) { if (!a.ok) { s1.put(1, 5 + k, a.name, 'wrap'); return; } [a.name, Math.round(a.last), Math.round(a.pos * 100), Math.round(a.rsi), a.dv.bear ? 'منفی' : a.dv.bull ? 'مثبت' : '', READ[a.read][0], Math.round(a.up), Math.round(a.mid), Math.round(a.lo), Math.round(a.up26), Math.round(a.up52), isFinite(a.r52) ? Math.round(a.r52 * 1000) / 10 : '', Math.round(a.ch.r2 * 100) / 100].forEach(function (v, i) { s1.put(1 + i, 5 + k, v, typeof v === 'number' ? 'calc' : 'wrap', typeof v === 'number' ? (Math.abs(v) < 10 && v % 1 ? 'dec' : 'money') : undefined); }); });
+    eyebrow: function () { return 'Iran economy · Markets'; }, heading: function () { return 'تحلیل مالی اقتصاد ایران'; }, filename: function () { return 'Iran_Markets'; },
+    xlsx: function (S, R) { var b = Hub.xl.book(root.ExcelJS, 'IranMarkets'), put = function (s, r, vals) { vals.forEach(function (v, i) { s.put(1 + i, r, v, typeof v === 'number' ? 'calc' : 'wrap', typeof v === 'number' ? (Math.abs(v) < 10 && v % 1 ? 'dec' : 'money') : undefined); }); }, rd = function (v, k) { return isFinite(v) ? Math.round(v * (k || 1) * 10) / 10 : ''; };
+      HZ.forEach(function (H) { var s = b.sheet(H.name, [2, 22, 14, 12, 8, 10, 18, 14, 14, 14, 10, 10, 10, 14, 14, 10, 8], { rightToLeft: true }); s.title('تحلیل ' + H.name + ' — ' + H.sub, (S.meta.asOf || '') + (R.sample ? ' · دادهٔ نمونه' : ''));
+        ['سری', 'آخرین', 'جایگاه (٪)', 'RSI', 'واگرایی', 'خوانش', 'سقف', 'میانه', 'کف', 'تا سقف ٪', 'تا میانه ٪', 'تا کف ٪', 'سقف آینده', 'کف آینده', 'شیب سالانه ٪', 'R²'].forEach(function (t, i) { s.put(1 + i, 4, t, 'hdr'); });
+        R.rows.forEach(function (a, k) { var x = a.h[H.id]; if (!x.ok) { s.put(1, 5 + k, a.name, 'wrap'); return; } put(s, 5 + k, [a.name, x.last, Math.round(x.pos * 100), Math.round(x.rsi), x.dv.bear ? 'منفی' : x.dv.bull ? 'مثبت' : '', READ[x.read][0], x.up, x.mid, x.lo, rd(x.toUp, 100), rd(x.toMid, 100), rd(x.toLo, 100), x.upF2, x.loF2, rd(x.ch.growth, 100), Math.round(x.ch.r2 * 100) / 100]); }); });
+      var s3 = b.sheet('بازده', [2, 22, 14, 12, 12, 12], { rightToLeft: true }); s3.title('بازده‌ها (٪)'); ['سری', 'آخرین', '۱ ماه', '۳ ماه', '۱ سال'].forEach(function (t, i) { s3.put(1 + i, 4, t, 'hdr'); }); R.rows.forEach(function (a, k) { put(s3, 5 + k, [a.name, a.last || '', rd(a.ret.m1, 100), rd(a.ret.m3, 100), rd(a.ret.y1, 100)]); });
+      var s4 = b.sheet('تقویم زمانی', [2, 22, 12, 10, 10, 110], { rightToLeft: true }); s4.title('تاریخ‌های کلیدی پیش رو'); ['تاریخ', 'روز دیگر', 'اهمیت', 'تعداد', 'شرح'].forEach(function (t, i) { s4.put(1 + i, 4, t, 'hdr'); });
+      R.cal.forEach(function (c, k) { put(s4, 5 + k, [calDate(c), Math.max(0, c.in), RANK[c.rank][0], c.n, c.items.map(function (x) { return x.name + ': ' + winText(x.w); }).join(' | ')]); });
+      var s5 = b.sheet('چرخه‌ها', [2, 22, 12, 12, 10, 10, 14, 14], { rightToLeft: true }); s5.title('چرخه‌های غالب'); ['سری', 'طول (کندل)', 'روز تقویمی', 'قدرت', 'فاز', 'کف بعدی', 'قلهٔ بعدی'].forEach(function (t, i) { s5.put(1 + i, 4, t, 'hdr'); }); var r5 = 5;
+      R.rows.forEach(function (a) { if (!a.cy || !a.cy.ok) return; a.cy.cycles.forEach(function (c) { put(s5, r5++, [a.name, c.period, c.calDays, Math.round(c.strength * 100) / 100, Math.round(c.phase * 100) / 100, J.jstr(LV.jdnOf(a.date) + c.troughIn), J.jstr(LV.jdnOf(a.date) + c.peakIn)]); }); });
       var s2 = b.sheet('یادداشت بازار', [2, 120], { rightToLeft: true }); s2.title('یادداشت بازار'); note(R, S).split('\n').forEach(function (l, i) { s2.put(1, 4 + i, l, 'wrap'); }); return b.wb; },
-    kpis: function (ctx) { var r = function () { return ctx.R.rows.filter(function (a) { return a.ok; }); }; return [
-      ['Series', function () { return fa(r().length, 0); }, function () { return 'هفتگی، مقیاس لگاریتمی'; }],
-      ['Near channel top', function () { return fa(r().filter(function (a) { return a.pos >= 0.9; }).length, 0); }, function () { return r().filter(function (a) { return a.pos >= 0.9; }).map(function (a) { return a.name; }).join('، ') || '—'; }],
-      ['Bearish divergence', function () { return fa(r().filter(function (a) { return a.dv.bear; }).length, 0); }, function () { return r().filter(function (a) { return a.dv.bear; }).map(function (a) { return a.name; }).join('، ') || '—'; }],
-      ['Near channel bottom', function () { return fa(r().filter(function (a) { return a.pos <= 0.1; }).length, 0); }, function () { return r().filter(function (a) { return a.pos <= 0.1; }).map(function (a) { return a.name; }).join('، ') || '—'; }]]; },
-    tabs: [{ group: 'Outputs', items: [['outlook', 'چشم‌انداز و یادداشت بازار', outlookTab], ['chart', 'نمودار کانال و RSI', chartTab]] }, { group: 'Inputs', items: [['data', 'داده و تنظیمات', dataTab]] }]
+    kpis: function (ctx) { var r = function () { return ctx.R.rows.filter(function (a) { return a.ok; }); }, cnt = function (fn) { var n = []; r().forEach(function (a) { if (['m', 'l'].some(function (k) { return a.h[k].ok && fn(a.h[k]); })) n.push(a.name); }); return n; }; return [
+      ['Series', function () { return fa(r().length, 0); }, function () { return 'سه افق: کوتاه، میان، بلند'; }],
+      ['Near channel top', function () { return fa(cnt(function (x) { return x.pos >= 0.9; }).length, 0); }, function () { return cnt(function (x) { return x.pos >= 0.9; }).join('، ') || 'میان‌مدت یا بلندمدت'; }],
+      ['Bearish divergence', function () { return fa(cnt(function (x) { return x.dv.bear; }).length, 0); }, function () { return cnt(function (x) { return x.dv.bear; }).join('، ') || 'هفتگی'; }],
+      ['Near channel bottom', function () { return fa(cnt(function (x) { return x.pos <= 0.1; }).length, 0); }, function () { return cnt(function (x) { return x.pos <= 0.1; }).join('، ') || 'میان‌مدت یا بلندمدت'; }],
+      ['Next key date', function () { var c = ctx.R.cal.filter(function (x) { return x.rank >= 1; })[0]; return c ? J.jstr(c.from) : '—'; }, function () { var c = ctx.R.cal.filter(function (x) { return x.rank >= 1; })[0]; return c ? fa(Math.max(0, c.in), 0) + ' روز دیگر · اهمیت ' + RANK[c.rank][0] : 'تحلیل زمانی'; }]]; },
+    tabs: [{ group: 'Outputs', items: [['outlook', 'نمای کلی و یادداشت بازار', overviewTab], ['hz', 'کوتاه‌مدت، میان‌مدت، بلندمدت', horizonTab], ['chart', 'نمودار کانال و RSI', chartTab], ['time', 'تحلیل زمانی و تاریخ‌های کلیدی', timeTab], ['guide', 'راهنمای مدل‌ها', guideTab]] },
+      { group: 'Inputs', items: [['data', 'داده و تنظیمات', dataTab], ['t-sig-temporal', 'تحلیل زمانی تفصیلی (یک سری)', TK.embedTab('sig-temporal', 'همان ابزار مستقل تحلیل زمانی برای یک سری دلخواه، با نقاط محوری و تنظیمات دستی.')]] }]
   });
 })(window);
 
@@ -21964,7 +22155,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
 
   /* ---------- trading tools (embedded, existing) ---------- */
-  var TOOLS = [['long-view', 'تحلیل بلندمدت: کانال و واگرایی'], ['market-data', 'مرکز دادهٔ بازار'], ['sig-stocks', 'سیگنال سهام'], ['sig-gold', 'سیگنال طلا و سکه'], ['sig-fx', 'سیگنال ارز و تتر'], ['sig-options', 'سیگنال اختیار معامله'], ['sig-temporal', 'تحلیل زمانی'], ['position', 'اندازهٔ موقعیت و ریسک'], ['rm-trading', 'نقشهٔ راه معامله‌گری']];
+  var TOOLS = [['market-data', 'مرکز دادهٔ بازار'], ['sig-stocks', 'سیگنال سهام'], ['sig-gold', 'سیگنال طلا و سکه'], ['sig-fx', 'سیگنال ارز و تتر'], ['sig-options', 'سیگنال اختیار معامله'], ['position', 'اندازهٔ موقعیت و ریسک'], ['rm-trading', 'نقشهٔ راه معامله‌گری']];
   var NOTE = 'همان ابزار مستقل با دادهٔ ذخیره‌شدهٔ خودش؛ هر تغییری اینجا در موتور سیگنال هم دیده می‌شود.';
 
   function sample() { return { version: 1, tool: 'trading-engine', settings: { lang: 'auto' }, sources: {}, e: TE.defaults(), f: { type: 'act', cls: 'all', n: 30 } }; }
@@ -22030,11 +22221,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611110710) */
+/* PWA: offline cache + app updates (version 202611111046) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611110710';
+  window.HUB_APP_VERSION = '202611111046';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
