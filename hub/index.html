@@ -522,6 +522,7 @@ table.sig-t.ticket thead { display: none; }
 .lv-report .rep-lead { font-weight: 600; line-height: 2; border-inline-start: 4px solid var(--accent); padding: 10px 12px; background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 4px; }
 .lv-report h3 { margin-top: 22px; } .lv-report h4 { margin: 16px 0 6px; } .lv-report h5 { margin: 12px 0 4px; font-size: 0.95rem; }
 @media print { body.printing-report .print-report table { font-size: 10px; } body.printing-report .print-report td, body.printing-report .print-report th { color: #000; border: 1px solid #999; } }
+.rep-gap { color: var(--accent); border-inline-start: 4px solid var(--accent); padding: 8px 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 4px; }
 
 </style>
 
@@ -6958,7 +6959,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var isRE = function (a) { return a.type === 'realestate'; }, isLand = function (a) { return isRE(a) && (a.use === 'land' || (isFinite(a.idle) && a.idle >= 0.5 && a.develop !== 'no')); };
     var free = function (a) { return a.title !== 'issue' && a.transfer !== 'no'; }, pled = function (a) { return a.title !== 'issue' && a.pledge !== 'no'; };
     var V = {
-      list: A, re: sum(isRE), reIncome: sum(function (a) { return isRE(a) && a.inc > 0; }), reIncomeFree: sum(function (a) { return isRE(a) && a.inc > 0 && free(a); }), reIdle: sum(function (a) { return isRE(a) && (!(a.inc > 0) || (isFinite(a.idle) && a.idle >= 0.3)); }),
+      list: A, re: sum(isRE), reIncome: sum(function (a) { return isRE(a) && a.inc > 0; }), reIncomeFree: sum(function (a) { return isRE(a) && a.inc > 0 && free(a); }), reIdle: sum(function (a) { return isRE(a) && ((isFinite(a.inc) && a.inc <= 0) || (isFinite(a.idle) && a.idle >= 0.3)); }),   // a property whose income was not entered is not assumed idle
+      reUnknown: sum(function (a) { return isRE(a) && !isFinite(a.inc) && !(isFinite(a.idle) && a.idle >= 0.3); }),
       land: sum(isLand), mach: sum(function (a) { return a.type === 'machinery'; }), fixedFree: sum(function (a) { return (isRE(a) || a.type === 'machinery') && free(a); }), fixedFreeUnk: A.some(function (a) { return (isRE(a) || a.type === 'machinery') && (a.title === 'unk' || a.transfer === 'unk' || !a.transfer); }),
       pledgeRE: sum(function (a) { return isRE(a) && pled(a); }), fin: sum(function (a) { return a.type === 'financial'; }), finListed: sum(function (a) { return a.type === 'financial' && a.listed === 'yes'; }),
       finNonStrat: sum(function (a) { return a.type === 'financial' && a.strategic !== 'high'; }), subs: A.filter(function (a) { return a.type === 'financial' && (a.stake >= 50 || a.sub === 'yes'); }),
@@ -7225,7 +7227,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var nm = a.name || ATYPE[a.type];
       if (a.type === 'realestate') {
         var y = a.inc > 0 && a.mv > 0 ? a.inc / a.mv : NaN;
-        if (!(a.inc > 0)) add('ملک بدون درآمد: ' + nm, 'ارزش ' + fmt(a.mv) + '، درآمد اجاره ثبت نشده', ['A07', 'A08', 'A02', 'A09'], a.mv);
+        if (!isFinite(a.inc)) { /* income not entered: nothing can be said about this property's yield */ }
+        else if (!(a.inc > 0)) add('ملک بدون درآمد: ' + nm, 'ارزش ' + fmt(a.mv) + '، درآمد اجارهٔ واردشده صفر است', ['A07', 'A08', 'A02', 'A09'], a.mv);
         else if (isFinite(y) && y < 0.05) add('ملک کم‌بازده: ' + nm, 'بازده اجاره ' + pct(y) + ' از ارزش روز', ['A01', 'A08', 'A04'], a.mv);
         if (a.use === 'land' && a.develop !== 'no') add('زمین قابل توسعه: ' + nm, 'کاربری زمین' + (a.develop === 'yes' ? '، امکان توسعه تأیید شده' : '، امکان توسعه نیازمند استعلام'), ['A07', 'A02', 'E07'], a.mv);
         if (isFinite(a.mv) && isFinite(a.bv) && a.mv > 2 * a.bv) add('مازاد تجدید ارزیابی: ' + nm, 'ارزش روز ' + fmt(a.mv) + ' در برابر دفتری ' + fmt(a.bv), ['E10', 'D03'], a.mv - a.bv);
@@ -7293,6 +7296,141 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   Hub.finEngine = { defaults: defaults, run: run, PLAB: PLAB, GNAME: GNAME, ATYPE: ATYPE, SUKUK: SUKUK, merge: merge, irr: irr };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.finEngine;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* js/core/finintake.js */
+/* =====================================================================
+ * FINANCING INTAKE — reads a free-text description of a company and its funding need and
+ * proposes values for the financing engine's form. Nothing is applied until the user ticks it.
+ * Rules (no guessing):
+ *   · a value is proposed only when the text states it; every proposal carries the exact phrase it came from
+ *   · an amount without a currency (ریال / تومان / همت) is shown as "unit not stated" and is not ticked
+ *   · همت = هزار میلیارد تومان = 10,000 میلیارد ریال
+ * check(text, items) validates items that came from an AI model: an item whose quote is not in the text is dropped.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  function norm(s) { return String(s == null ? '' : s).replace(/[۰-۹]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(c); }).replace(/[٠-٩]/g, function (c) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(c); }).replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[ۀ]/g, 'ه').replace(/هٔ/g, 'ه').replace(/‌/g, ' ').replace(/[٬]/g, ',').replace(/[٫]/g, '.'); }
+  var NUM = '(\\d[\\d,]*(?:[./]\\d+)?)\\s*(هزار میلیارد|میلیارد|میلیون|هزار|همت)?\\s*(ریال|تومان|تومن)?';
+  var UNIT = { thousand: 1e3, million: 1e6, billion: 1e9 };
+  // -> rials, or null when the currency is not stated
+  function rials(m) {
+    var v = parseFloat(String(m[1]).replace(/,/g, '').replace('/', '.')); if (!isFinite(v)) return { v: NaN };
+    var sc = m[2], cur = m[3];
+    if (sc === 'همت') return { v: v * 1e13, said: m[0].trim() };
+    var k = sc === 'هزار میلیارد' ? 1e12 : sc === 'میلیارد' ? 1e9 : sc === 'میلیون' ? 1e6 : sc === 'هزار' ? 1e3 : 1;
+    if (!cur) return { v: NaN, raw: v * k, said: m[0].trim(), noCur: true };
+    return { v: v * k * (cur === 'ریال' ? 1 : 10), said: m[0].trim() };
+  }
+  var AMT = [   // most specific first; a stretch of text is used once
+    ['co.need', 'مبلغ موردنیاز', 'نیاز(?:مند)?(?: به)?(?: تامین مالی)?(?: مبلغ)?|مبلغ مورد ?نیاز|تامین مالی(?: به مبلغ| معادل)?|به دنبال(?: تامین| جذب)?'],
+    ['co.projectCost', 'هزینهٔ طرح / پروژه', 'هزینه (?:ی )?(?:طرح|پروژه)|سرمایه گذاری (?:طرح|پروژه)'],
+    ['fin.cogs', 'بهای تمام‌شده', 'بهای تمام شده'],
+    ['fin.ebitda', 'EBITDA', 'EBITDA|ebitda|ایبیتدا|سود قبل از بهره،? مالیات و استهلاک'],
+    ['fin.ebit', 'سود عملیاتی', 'سود عملیاتی'],
+    ['fin.pbt', 'سود قبل از مالیات', 'سود قبل از مالیات'],
+    ['fin.ni', 'سود خالص', 'سود خالص'],
+    ['fin.fc', 'هزینهٔ مالی', 'هزینه (?:های )?مالی'],
+    ['fin.cfo1', 'جریان نقد عملیاتی سال آخر', 'جریان (?:وجوه )?نقدی? (?:حاصل از )?(?:فعالیت های )?عملیاتی?'],
+    ['fin.eq', 'حقوق مالکانه', 'حقوق (?:صاحبان سهام|مالکانه)'],
+    ['fin.cap', 'سرمایهٔ ثبت‌شده', 'سرمایه (?:ی )?ثبت شده|سرمایه (?:ی )?شرکت'],
+    ['fin.cash', 'وجه نقد', 'وجه نقد|موجودی نقد|نقدینگی'],
+    ['fin.debt', 'بدهی بهره‌دار (تسهیلات)', 'تسهیلات(?: مالی| بانکی)?|بدهی (?:های )?(?:مالی|بانکی|بهره دار)'],
+    ['fin.ar', 'مطالبات', 'مطالبات|حساب های دریافتنی'],
+    ['fin.inv', 'موجودی کالا', 'موجودی (?:مواد و )?کالا'],
+    ['fin.ta', 'جمع دارایی‌ها', '(?:جمع |کل |مجموع )?دارایی ?ها'],
+    ['fin.tl', 'جمع بدهی‌ها', '(?:جمع |کل |مجموع )?بدهی ?ها'],
+    ['co.valuation', 'ارزش سهام شرکت', 'ارزش (?:روز )?(?:شرکت|سهام)'],
+    ['fin.rev', 'فروش / درآمد عملیاتی', 'فروش(?: سالانه| خالص)?|درآمد(?: عملیاتی| سالانه)?']
+  ];
+  var CAT = [
+    ['co.purpose', 'هدف تأمین مالی', [['wc', 'سرمایه در گردش', 'سرمایه در گردش'], ['project', 'تأمین مالی پروژه', 'تامین مالی پروژه'], ['expand', 'طرح توسعه', 'طرح توسعه|توسعه (?:ی )?(?:خط|ظرفیت|کارخانه)'], ['fixed', 'سرمایه‌گذاری ثابت', 'خرید (?:ماشین آلات|تجهیزات)|سرمایه گذاری ثابت'], ['refi', 'بازپرداخت بدهی', '(?:بازپرداخت|تسویه) (?:ی )?(?:بدهی|تسهیلات)'], ['restructure', 'اصلاح ساختار مالی', 'اصلاح ساختار (?:مالی|سرمایه)'], ['monet', 'مولدسازی دارایی', 'مولدسازی']]],
+    ['co.listing', 'وضعیت پذیرش', [['none', 'غیربورسی', 'غیر ?بورسی|در بورس (?:پذیرفته )?نیست|پذیرفته نشده'], ['ifb', 'فرابورس', 'فرابورس'], ['tse', 'بورس تهران', 'بورس (?:اوراق بهادار )?تهران|پذیرفته شده در بورس(?! کالا)']]],
+    ['co.form', 'شخصیت حقوقی', [['pjs', 'سهامی عام', 'سهامی عام'], ['prjs', 'سهامی خاص', 'سهامی خاص']]],
+    ['fin.opinion', 'اظهارنظر حسابرس', [['unqualified', 'مقبول', '(?:گزارش|اظهار ?نظر)[^.؛\\n]{0,25}مقبول'], ['qualified', 'مشروط', '(?:گزارش|اظهار ?نظر)[^.؛\\n]{0,25}مشروط'], ['none', 'حسابرسی نشده', 'حسابرسی نشده']]],
+    ['fin.guarantor', 'ضامن در دسترس', [['no', 'خیر', 'ضامن (?:بانکی )?(?:ندارد|نداریم|نیست)|بدون ضامن'], ['yes', 'بله', 'ضامن (?:بانکی |معتبر )?(?:دارد|داریم|در دسترس)']]],
+    ['co.fxRevenue', 'درآمد ارزی', [['no', 'خیر', 'درآمد ارزی (?:ندارد|نداریم)'], ['yes', 'بله', 'درآمد ارزی(?: دارد| داریم)?']]],
+    ['co.ime', 'محصول پذیرفته‌شده در بورس کالا', [['yes', 'بله', '(?:پذیرفته شده|عرضه)[^.؛\\n]{0,20}در بورس کالا|در بورس کالا (?:پذیرفته|عرضه)']]],
+    ['co.canEquity', 'امکان افزایش سرمایه', [['no', 'خیر', '(?:نمی خواه|تمایل(?:ی)? ندار|امکان[^.؛\\n]{0,12}ندار|بدون)[^.؛\\n]{0,30}افزایش سرمایه|افزایش سرمایه[^.؛\\n]{0,25}(?:ممکن نیست|نمی خواه|مد نظر نیست|ندار)'], ['yes', 'بله', 'افزایش سرمایه (?:ممکن است|امکان پذیر است|مد نظر است)']]],
+    ['co.investorOk', 'امکان ورود سرمایه‌گذار', [['no', 'خیر', '(?:نمی خواه|تمایل(?:ی)? ندار|بدون)[^.؛\\n]{0,30}(?:سهامدار جدید|شریک|سرمایه گذار جدید)|(?:سهامدار جدید|شریک|سرمایه گذار جدید)[^.؛\\n]{0,25}(?:نمی خواه|ندار)'], ['yes', 'بله', '(?:آماده|پذیرا|موافق)[^.؛\\n]{0,20}(?:ورود )?(?:سرمایه گذار|شریک)']]],
+    ['co.assetSaleOk', 'امکان فروش دارایی', [['no', 'خیر', '(?:نمی خواه|تمایل(?:ی)? ندار|بدون)[^.؛\\n]{0,30}فروش (?:دارایی|ملک|املاک)|فروش (?:دارایی|ملک|املاک)[^.؛\\n]{0,25}(?:نمی خواه|ندار|ممکن نیست)'], ['yes', 'بله', '(?:آماده|امکان)[^.؛\\n]{0,15}فروش (?:دارایی|ملک|املاک)']]],
+    ['co.controlPriority', 'اولویت حفظ کنترل', [['high', 'زیاد', 'حفظ (?:کنترل|مالکیت)']]]
+  ];
+  var ASSET = [['realestate', 'ملک|زمین|ساختمان|سوله|انبار|املاک'], ['machinery', 'ماشین آلات|تجهیزات|خط تولید']];
+  function show(v, unit) { var x = v / (UNIT[unit] || 1e6); return (Math.round(x * 100) / 100).toLocaleString('en-US'); }
+  function parse(text, unit) {
+    var t = norm(text), out = [], used = [], free = function (a, b) { return !used.some(function (u) { return a < u[1] && b > u[0]; }); };
+    AMT.forEach(function (F) {
+      var re = new RegExp('(' + F[2] + ')[^\\d\\n.؛،]{0,45}?' + NUM, 'g'), m;
+      while ((m = re.exec(t))) { var a = m.index, b = a + m[0].length; if (!free(a, b)) continue; var mm = [m[0].slice(m[1].length), m[2], m[3], m[4]], r = rials(mm); if (!isFinite(r.v) && !r.noCur) continue;
+        used.push([a, b]); if (out.some(function (o) { return o.k === F[0]; })) continue;
+        out.push({ k: F[0], label: F[1], value: r.noCur ? null : Math.round(r.v / (UNIT[unit] || 1e6) * 1000) / 1000, text: r.noCur ? 'واحد پول نوشته نشده (ریال یا تومان؟)' : show(r.v, unit), quote: text.slice(a, b), ok: !r.noCur, kind: 'num' }); break; }
+    });
+    // "به ۳۰۰ میلیارد تومان نیاز داریم": the amount comes before the word
+    if (!out.some(function (o) { return o.k === 'co.need' && o.ok; })) { var rn = new RegExp('(?:به |مبلغ )' + NUM + '[^\\d\\n.؛،]{0,20}?(?:نیاز|لازم|احتیاج)').exec(t);
+      if (rn) { var r0 = rials([rn[0], rn[1], rn[2], rn[3]]); out = out.filter(function (o) { return o.k !== 'co.need'; }); out.unshift({ k: 'co.need', label: 'مبلغ موردنیاز', value: r0.noCur ? null : Math.round(r0.v / (UNIT[unit] || 1e6) * 1000) / 1000, text: r0.noCur ? 'واحد پول نوشته نشده (ریال یا تومان؟)' : show(r0.v, unit), quote: text.slice(rn.index, rn.index + rn[0].length), ok: !r0.noCur, kind: 'num' }); } }
+    var mo = /(?:ظرف|طی|تا|در)\s*(\d{1,3})\s*ماه(?: آینده)?/.exec(t); if (mo) out.push({ k: 'co.needBy', label: 'زمان موردنیاز (ماه)', value: +mo[1], text: mo[1], quote: text.slice(mo.index, mo.index + mo[0].length), ok: true, kind: 'num' });
+    CAT.forEach(function (C) { for (var i = 0; i < C[2].length; i++) { var m = new RegExp(C[2][i][2]).exec(t); if (m) { out.push({ k: C[0], label: C[1], value: C[2][i][0], text: C[2][i][1], quote: text.slice(m.index, m.index + m[0].length), ok: true, kind: 'cat' }); break; } } });
+    ASSET.forEach(function (A) { var re = new RegExp('((?:' + A[1] + ')[^.؛\\n\\d]{0,50}?)(?:به )?ارزش[^\\d\\n.؛]{0,20}?' + NUM, 'g'), m;
+      while ((m = re.exec(t))) { var r = rials([m[0], m[2], m[3], m[4]]); out.push({ k: 'asset', label: 'دارایی (' + (A[0] === 'realestate' ? 'ملک' : 'ماشین‌آلات') + ')', value: r.noCur ? null : { type: A[0], name: text.slice(m.index, m.index + m[1].length).trim(), mv: Math.round(r.v / (UNIT[unit] || 1e6) * 1000) / 1000 }, text: r.noCur ? 'واحد پول نوشته نشده' : m[1].trim() + ' — ' + show(r.v, unit), quote: text.slice(m.index, m.index + m[0].length), ok: !r.noCur, kind: 'asset' }); } });
+    return out;
+  }
+  // items from a language model: keep only known fields whose quote really is in the text
+  function check(text, items) {
+    var t = norm(text), known = {}; AMT.forEach(function (F) { known[F[0]] = F[1]; }); CAT.forEach(function (C) { known[C[0]] = C[1]; }); known['co.needBy'] = 'زمان موردنیاز (ماه)'; known['co.name'] = 'نام شرکت'; known['co.industry'] = 'صنعت';
+    var kept = [], dropped = 0;
+    (items || []).forEach(function (it) { if (!it || !known[it.k] || !it.quote || t.indexOf(norm(it.quote)) < 0) { dropped++; return; }
+      var cat = CAT.filter(function (C) { return C[0] === it.k; })[0];
+      if (cat) { var o = cat[2].filter(function (x) { return x[0] === it.value; })[0]; if (!o) { dropped++; return; } kept.push({ k: it.k, label: known[it.k], value: it.value, text: o[1], quote: it.quote, ok: true, kind: 'cat', ai: true }); return; }
+      if (it.k === 'co.name' || it.k === 'co.industry') { if (t.indexOf(norm(it.value)) < 0) { dropped++; return; } kept.push({ k: it.k, label: known[it.k], value: String(it.value), text: String(it.value), quote: it.quote, ok: true, kind: 'text', ai: true }); return; }
+      var v = Number(it.value); if (!isFinite(v)) { dropped++; return; }
+      // the digits of the number must appear in the quote
+      var dg = String(it.digits == null ? '' : it.digits).replace(/[^\d]/g, ''); if (!dg || norm(it.quote).replace(/[^\d]/g, '').indexOf(dg) < 0) { dropped++; return; }
+      kept.push({ k: it.k, label: known[it.k], value: v, text: String(v), quote: it.quote, ok: true, kind: 'num', ai: true }); });
+    return { items: kept, dropped: dropped };
+  }
+  function apply(E, items) {
+    var n = 0; items.forEach(function (it) { if (!it.ok || it.value == null) return;
+      if (it.kind === 'asset') { E.assets = E.assets || []; if (!E.assets.some(function (a) { return a.name === it.value.name && a.mv === it.value.mv; })) { E.assets.push({ type: it.value.type, name: it.value.name, mv: it.value.mv, bv: null, inc: null, util: null, idle: null, title: 'unk', transfer: 'unk', pledge: 'unk', use: 'other', strategic: 'unk', develop: 'unk', listed: 'unk', stake: null, sub: 'no', profitable: 'unk', longterm: 'unk', counter: 'unk', ime: 'unk' }); n++; } return; }
+      var p = it.k.split('.'), o = E[p[0]]; if (!o) return; o[p[1]] = it.value; n++; });
+    return n;
+  }
+  function fields() { return AMT.map(function (F) { return [F[0], F[1], 'number']; }).concat(CAT.map(function (C) { return [C[0], C[1], C[2].map(function (x) { return x[0]; }).join('|')]; })).concat([['co.needBy', 'زمان موردنیاز (ماه)', 'number'], ['co.name', 'نام شرکت', 'text'], ['co.industry', 'صنعت', 'text']]); }
+  Hub.finIntake = { parse: parse, check: check, apply: apply, fields: fields, norm: norm };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Hub.finIntake;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* js/core/report.js */
+/* =====================================================================
+ * REPORT — one block format for every written report in the hub, in pyramid order
+ * (answer, key reasons, evidence, what is missing). Blocks:
+ *   {t:'h1'|'h2'|'h3'|'h4'|'p'|'lead'|'meta'|'small'|'warn'|'gap', x:text} · {t:'ul'|'ol', x:[text]} · {t:'table', head:[...], rows:[[...]]}
+ * 'gap' = a part that cannot be completed for lack of information (says exactly what is missing).
+ * Outputs: on-screen DOM, a stand-alone HTML / Word document, plain text, print.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  function esc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function html(B) { return B.map(function (b) { var li = function (a) { return a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); };
+    return b.t === 'h1' ? '<h1>' + esc(b.x) + '</h1>' : /^h[234]$/.test(b.t) ? '<' + b.t + '>' + esc(b.x) + '</' + b.t + '>' : b.t === 'ul' ? '<ul>' + li(b.x) + '</ul>' : b.t === 'ol' ? '<ol>' + li(b.x) + '</ol>' : b.t === 'table' ? '<table><thead><tr>' + b.head.map(function (x) { return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + b.rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>' : '<p class="' + b.t + '">' + esc(b.x) + '</p>'; }).join('\n'); }
+  function doc(B) { return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>' + esc(B[0] && B[0].x) + '</title><style>body{font-family:Vazirmatn,Tahoma,Arial,sans-serif;direction:rtl;text-align:right;line-height:1.9;max-width:900px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:22px;border-bottom:2px solid #b8860b;padding-bottom:8px}h2{font-size:17px;margin-top:26px;color:#7a5a00}h3{font-size:15px;margin-top:18px}h4{font-size:14px;margin:14px 0 4px}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}th,td{border:1px solid #bbb;padding:5px 7px;vertical-align:top;text-align:right}th{background:#f1ead8}p.lead{font-size:15px;font-weight:600;background:#faf5e6;padding:10px 12px;border-right:4px solid #b8860b}p.meta,p.small{color:#555;font-size:12.5px}p.warn{color:#a40000;font-weight:600}p.gap{color:#7a3b00;background:#fff4e5;padding:8px 10px;border-right:4px solid #d98a00}li{margin-bottom:5px}@page{size:A4;margin:14mm}@media print{body{margin:0;max-width:none;font-size:11.5px}table{font-size:10px}tr{page-break-inside:avoid}h2,h3,h4{page-break-after:avoid}}</style></head><body>' + html(B) + '</body></html>'; }
+  function text(B) { return B.map(function (b) { return b.t === 'h1' ? b.x + '\n' + '='.repeat(30) : /^h[234]$/.test(b.t) ? '\n' + b.x : b.t === 'ul' || b.t === 'ol' ? b.x.map(function (x, i) { return (b.t === 'ol' ? (i + 1) + '. ' : '• ') + x; }).join('\n') : b.t === 'table' ? [b.head.join(' | ')].concat(b.rows.map(function (r) { return r.join(' | '); })).join('\n') : b.x; }).join('\n'); }
+  function dom(B) { var U = Hub.util, h = U.h, body = h('div', { class: 'report-body lv-report', 'data-notr': '1' });
+    B.forEach(function (b) { var li = function (a) { return a.map(function (x) { return h('li', { text: x }); }); };
+      body.appendChild(b.t === 'h1' ? h('h2', { class: 'rep-title', text: b.x }) : b.t === 'h2' ? h('h3', { text: b.x }) : b.t === 'h3' ? h('h4', { text: b.x }) : b.t === 'h4' ? h('h5', { text: b.x }) : b.t === 'ul' ? h('ul', { class: 'studio-l' }, li(b.x)) : b.t === 'ol' ? h('ol', { class: 'studio-l' }, li(b.x))
+        : b.t === 'table' ? h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, b.head.map(function (t) { return h('th', { class: 'lbl', text: t }); }))]), h('tbody', null, b.rows.map(function (r) { return h('tr', null, r.map(function (c) { return h('td', { class: 'small', style: 'white-space:normal', text: c == null ? '' : String(c) }); })); }))])])
+        : h('p', { class: b.t === 'lead' ? 'rep-lead' : b.t === 'warn' ? 'neg' : b.t === 'gap' ? 'rep-gap' : b.t === 'meta' || b.t === 'small' ? 'small muted' : '', text: b.x })); });
+    return body; }
+  function buttons(getB, name) { var U = Hub.util, h = U.h;
+    return h('div', { class: 'row-ctl' }, [
+      h('button', { class: 'btn primary', type: 'button', text: 'چاپ / ذخیره به PDF', 'data-notr': '1', onclick: function () { try { var fr = document.createElement('iframe'); fr.setAttribute('aria-hidden', 'true'); fr.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px'; fr.srcdoc = doc(getB());
+        fr.onload = function () { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { U.toast('چاپ در این محیط در دسترس نیست؛ «دانلود HTML» را بگیرید و از مرورگر چاپ کنید.', 'warn'); } setTimeout(function () { if (fr.parentNode) fr.parentNode.removeChild(fr); }, 60000); }; document.body.appendChild(fr); } catch (e) { U.toast('چاپ در این محیط در دسترس نیست.', 'warn'); } } }),
+      h('button', { class: 'btn', type: 'button', text: 'دانلود Word', 'data-notr': '1', onclick: function () { U.saveFile(name + '.doc', new Blob(['﻿' + doc(getB())], { type: 'application/msword' })); } }),
+      h('button', { class: 'btn', type: 'button', text: 'دانلود HTML', 'data-notr': '1', onclick: function () { U.saveFile(name + '.html', new Blob([doc(getB())], { type: 'text/html;charset=utf-8' })); } }),
+      h('button', { class: 'btn', type: 'button', text: 'کپی متن', 'data-notr': '1', onclick: function () { var t = text(getB()); if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { U.toast('کپی شد.', 'good'); }, function () { U.toast('کپی نشد.', 'warn'); }); } })]); }
+  Hub.report = { html: html, doc: doc, text: text, dom: dom, buttons: buttons };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/data/stratbank-fw.js */
@@ -17255,9 +17393,109 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       sec('۸. نتیجه‌گیری و توصیهٔ مشاور', [h('p', { text: main ? 'توصیه: ' + recName(main) + (R.alt ? '؛ در صورت عدم احراز شرایط، ' + recName(R.alt) : '') + (R.comp ? '؛ و به‌عنوان مکمل ' + recName(R.comp) + '.' : '.') + (R.condOnly ? ' هیچ راهکاری همهٔ شرایط مقرراتی را احراز نکرد؛ ابتدا موارد «نیازمند بررسی» را تکمیل کنید.' : '') : 'با اطلاعات فعلی پیشنهادی ممکن نیست؛ بخش‌های ۱ تا ۳ فرم را تکمیل کنید.' }),
         h('p', { class: 'f-help', text: 'موارد نیازمند ارزش‌گذاری، استعلام حقوقی و مالیاتی پیش از تصمیم: ارزش کارشناسی دارایی‌ها، آثار مالیاتی انتقال، متن جاری دستورالعمل‌ها (مواردی که «نیازمند استعلام» علامت خورده‌اند)، و نرخ‌ها و کارمزدهای بازار در زمان اجرا.' })])]);
   }
+  /* ---------- 7 · report in pyramid order: answer → key reasons → evidence → what cannot be completed ---------- */
+  var MISS = { ta: 'جمع دارایی‌ها', tl: 'جمع بدهی‌ها', ebit: 'سود عملیاتی', fc: 'هزینهٔ مالی', cfo1: 'جریان نقد عملیاتی سال آخر', cfo2: 'جریان نقد عملیاتی سال قبل', cap: 'سرمایهٔ ثبت‌شده' };
+  var RST = { ok: 'مناسب', warn: 'هشدار', bad: 'نامطلوب', unk: 'نامشخص' }, GR = { pass: 'احراز شد', fail: 'احراز نشد', unk: 'نامشخص', conflict: 'تعارض با محدودیت شما', na: 'نامرتبط' };
+  function finReport(Xr) {
+    var R = Xr.REC, Gd = Xr.G, f = Xr.F.f, E = Xr.E, co = E.co, main = R.main, Bk = [], need = num(co.need), unit = { million: 'میلیون ریال', billion: 'میلیارد ریال', thousand: 'هزار ریال' }[co.unit] || 'میلیون ریال';
+    var purpose = (B().PURPOSE.filter(function (p) { return p[0] === co.purpose; })[0] || ['', ''])[1], cashOf = function (x) { return x ? (x.type === 's' ? x.r.z.amt : x.c.cash) : NaN; }, parts = function (x) { return x ? (x.type === 's' ? [x.r] : x.c.comps) : []; };
+    var gaps = [];   // every item that could not be completed, with what is missing
+    Bk.push({ t: 'h1', x: 'گزارش راه‌حل تأمین مالی — ' + (co.name || 'شرکت (نام وارد نشده)') });
+    Bk.push({ t: 'meta', x: 'تاریخ تهیه: ' + new Date().toLocaleDateString('fa-IR') + ' · واحد مبالغ: ' + unit + ' · منبع اعداد: اطلاعات واردشدهٔ شما' + (Xr.F.fromStatements ? ' و صورت‌های مالی بارگذاری‌شده' : '') + ' · خروجی موتور قاعده‌محور؛ تصمیم نهایی با شماست.' });
+    // ---------- 1 answer ----------
+    Bk.push({ t: 'h2', x: '۱. نتیجهٔ اصلی' });
+    if (!main) {
+      var why0 = Gd.missing.map(function (k) { return MISS[k] || k; }).concat((E.assets || []).length ? [] : ['فهرست دارایی‌ها']).concat(need > 0 ? [] : ['مبلغ موردنیاز']).concat(co.purpose === 'unknown' || !purpose ? ['هدف تأمین مالی'] : []);
+      Bk.push({ t: 'gap', x: 'این بخش به دلیل کمبود اطلاعات قابل تکمیل نیست. برای پیشنهاد راه‌حل دست‌کم این موارد لازم است: ' + (why0.join('، ') || 'اطلاعات مالی و دارایی‌های شرکت') + '.' });
+    } else {
+      var amt = cashOf(main), cov = need > 0 && isFinite(amt) ? amt / need : NaN;
+      Bk.push({ t: 'lead', x: 'راه‌حل پیشنهادی: ' + recName(main) + ' — ' + (main.def ? (parts(main).some(function (r) { return r.unk.length; }) ? 'شرایط مقرراتی و دارایی احراز شده، ولی ' + fa0(parts(main).reduce(function (t, r) { return t + r.unk.length; }, 0)) + ' ترجیح یا محدودیت شما هنوز نامشخص است' : 'پیشنهاد قطعی (همهٔ شرایط احراز شده)') : 'پیشنهاد مشروط (بخشی از شرایط هنوز احراز نشده یا نامشخص است)') + '. ' +
+        (isFinite(amt) ? 'مبلغ قابل تأمین طبق اطلاعات فعلی: ' + N(amt) + (need > 0 ? ' در برابر نیاز ' + N(need) + ' (' + P(cov, 0) + ' نیاز).' : '.') : 'مبلغ قابل تأمین: قابل محاسبه نیست.') +
+        (R.alt ? ' جایگزین در صورت احرازنشدن شرایط: ' + recName(R.alt) + '.' : '') + (R.comp ? ' مکمل: ' + recName(R.comp) + '.' : '') });
+      if (!(need > 0)) gaps.push('پوشش نیاز: مبلغ موردنیاز وارد نشده است.');
+      if (!isFinite(amt)) gaps.push('مبلغ قابل تأمین راه‌حل اصلی: دادهٔ لازم برای فرمول «' + (main.type === 's' ? main.r.z.formula : 'اجزای ساختار') + '» وارد نشده است.');
+    }
+    // ---------- 2 reasons (need vs capacity · feasibility · cost, time and control) ----------
+    if (main) {
+      var ps = parts(main), gAll = [].concat.apply([], ps.map(function (r) { return r.gates.map(function (g) { return { n: g.n, r: g.r, s: r.s.fa }; }); })), gp = gAll.filter(function (g) { return g.r === 'pass'; }).length, gu = gAll.filter(function (g) { return g.r === 'unk'; }), gf = gAll.filter(function (g) { return g.r === 'fail' || g.r === 'conflict'; });
+      var m0 = ps[0], tm = [Math.max.apply(null, ps.map(function (r) { return r.s.tm[0]; })), Math.max.apply(null, ps.map(function (r) { return r.s.tm[1]; }))];
+      var ranked = Xr.R.filter(function (r) { return r.label !== 'na' && r.label !== 'excluded' && r.s.k !== 'enabler'; }).sort(function (a, b) { return b.sc.total - a.sc.total; });
+      Bk.push({ t: 'h2', x: '۲. سه دلیل کلیدی' });
+      Bk.push({ t: 'ol', x: [
+        'نیاز در برابر ظرفیت: ' + (need > 0 ? 'نیاز ' + N(need) + (purpose ? ' برای ' + purpose : '') : 'مبلغ نیاز وارد نشده') + '؛ ظرفیت بدهی جدید شرکت ' + (isFinite(Gd.debtCap) ? N(Gd.debtCap) : 'قابل محاسبه نیست') + '؛ مبلغ قابل تأمین از این راه‌حل ' + (isFinite(cashOf(main)) ? N(cashOf(main)) : 'قابل محاسبه نیست') + '.',
+        'قابلیت اجرا: از ' + fa0(gAll.length) + ' شرط این راه‌حل، ' + fa0(gp) + ' شرط احراز شده، ' + fa0(gf.length) + ' شرط احراز نشده و ' + fa0(gu.length) + ' شرط نامشخص است' + (gf.length ? ' (احرازنشده: ' + gf.map(function (g) { return g.n; }).join('، ') + ')' : '') + '. وضعیت: ' + ps.map(function (r) { return LABEL[r.label][0]; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(' / ') + '.',
+        'هزینه، زمان و کنترل: ' + (m0.eco && isFinite(m0.eco.rate) ? 'نرخ تمام‌شده ' + P(m0.eco.rate) + (isFinite(m0.eco.up) ? ' و هزینهٔ یک‌باره ' + P(m0.eco.up) : '') : 'نرخ تمام‌شده قابل محاسبه نیست') + '؛ زمان اجرا ' + fa0(tm[0]) + ' تا ' + fa0(tm[1]) + ' ماه؛ امتیاز کل ' + main.score + (ranked[1] && main.type === 's' ? ' در برابر ' + ranked.filter(function (r) { return r.id !== m0.id; })[0].sc.total.toFixed(1) + ' برای گزینهٔ بعدی (' + ranked.filter(function (r) { return r.id !== m0.id; })[0].s.fa + ')' : '') + '.'] });
+      if (gu.length) gaps.push('شرایط نامشخص راه‌حل اصلی (تا روشن نشوند پیشنهاد مشروط می‌ماند): ' + gu.map(function (g) { return g.n; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join('، ') + '.');
+      if (!(m0.eco && isFinite(m0.eco.rate))) gaps.push('نرخ تمام‌شدهٔ راه‌حل اصلی: نرخ یا مبلغ لازم وارد نشده است.');
+    }
+    // ---------- 3 evidence ----------
+    Bk.push({ t: 'h2', x: '۳. شواهد' });
+    Bk.push({ t: 'h3', x: 'الف) وضعیت مالی شرکت' });
+    var rr = Gd.ratios.filter(function (r) { return r.kind === 'text' ? r.note : isFinite(r.v); });
+    if (rr.length) Bk.push({ t: 'table', head: ['شاخص', 'مقدار', 'وضعیت', 'فرمول'], rows: rr.map(function (r) { return [r.fa, r.kind === 'text' ? r.note : r.kind === 'pct' ? P(r.v) : r.kind === 'x' ? X(r.v) : N(r.v), r.kind === 'text' ? '—' : (RST[r.status] || r.status), r.formula + (r.note && r.kind !== 'text' ? ' — ' + r.note : '')]; }) });
+    else Bk.push({ t: 'gap', x: 'این بخش به دلیل کمبود اطلاعات قابل تکمیل نیست: هیچ‌یک از اعداد صورت‌های مالی وارد نشده است.' });
+    var unkR = Gd.ratios.filter(function (r) { return r.kind !== 'text' && !isFinite(r.v); }); if (unkR.length) gaps.push('شاخص‌های مالی محاسبه‌نشده: ' + unkR.map(function (r) { return r.fa; }).join('، ') + '.');
+    Bk.push({ t: 'ul', x: ['مسئلهٔ اصلی تشخیص‌داده‌شده: ' + (Xr.mainProblem || '—'), 'مسائل مالی: ' + (Gd.problems.length ? Gd.problems.map(function (p) { return p.fa; }).join('؛ ') : 'با اعداد واردشده مسئله‌ای تشخیص داده نشد'), 'ظرفیت بدهی: کمترینِ سقف اهرم ' + N(Gd.capLev) + '، سقف پوشش بهره ' + N(Gd.capCov) + ' و سقف بازپرداخت از سود ' + N(Gd.capRep) + '.'] });
+    if ((E.assets || []).length) Bk.push({ t: 'table', head: ['دارایی', 'نوع', 'ارزش روز', 'ارزش دفتری'], rows: E.assets.map(function (a) { return [a.name || '—', ENG().ATYPE[a.type] || a.type, isFinite(num(a.mv)) ? N(num(a.mv)) : 'وارد نشده', isFinite(num(a.bv)) ? N(num(a.bv)) : 'وارد نشده']; }) });
+    else gaps.push('راهکارهای مولدسازی دارایی: هیچ دارایی‌ای وارد نشده است.');
+    (E.assets || []).forEach(function (a) { if (a.type === 'realestate' && !isFinite(num(a.inc))) gaps.push('درآمد سالانهٔ «' + (a.name || 'ملک') + '» وارد نشده است؛ درآمدزا یا راکد بودن آن قابل تشخیص نیست.'); });
+    if (Xr.O.length) Bk.push({ t: 'ul', x: Xr.O.map(function (o) { return 'فرصت: ' + o.t + ' — ' + o.ev; }) });
+    Bk.push({ t: 'h3', x: 'ب) مقایسهٔ راه‌حل‌ها' });
+    var rk = Xr.R.filter(function (r) { return r.label !== 'na' && r.s.k !== 'enabler'; }).sort(function (a, b) { return b.sc.total - a.sc.total; }).slice(0, 10);
+    if (rk.length) Bk.push({ t: 'table', head: ['رتبه', 'راه‌حل', 'وضعیت', 'قطعی', 'مبلغ بالقوه', 'نرخ تمام‌شده', 'زمان (ماه)', 'امتیاز', 'شرایط احرازنشده یا نامشخص'], rows: rk.map(function (r, i) { return [fa0(i + 1), r.s.fa, LABEL[r.label][0], r.definitive ? 'بله' : 'خیر', isFinite(r.z.amt) ? N(r.z.amt) : 'نامشخص', r.eco && isFinite(r.eco.rate) ? P(r.eco.rate) : 'نامشخص', r.s.tm[0] + '–' + r.s.tm[1], r.sc.total.toFixed(1), r.gates.filter(function (g) { return g.r !== 'pass'; }).map(function (g) { return g.n + ' (' + GR[g.r] + ')'; }).join('؛ ') || '—']; }) });
+    Bk.push({ t: 'small', x: 'امتیاز = میانگین وزنی پنج معیار با وزن‌های شما: اجرایی ' + E.W.reg + '، تناسب ' + E.W.fit + '، هزینه ' + E.W.cost + '، سرعت ' + E.W.speed + '، مالکیت ' + E.W.own + '.' });
+    if (main) {
+      Bk.push({ t: 'h3', x: 'ج) جزئیات راه‌حل پیشنهادی' });
+      parts(main).forEach(function (r) { Bk.push({ t: 'h4', x: r.s.fa });
+        Bk.push({ t: 'ul', x: ['شرح: ' + r.s.d, 'ساختار معامله: ' + r.s.str, 'مبلغ: ' + (isFinite(r.z.amt) ? N(r.z.amt) : 'نامشخص') + ' — فرمول: ' + r.z.formula, 'شرایط: ' + r.gates.map(function (g) { return g.n + ' (' + GR[g.r] + ')'; }).join('؛ '), 'هزینه‌ها: ' + r.s.cost, 'ریسک‌ها: ' + r.s.rk.join('؛ '),
+          'مستندات قانونی: ' + r.s.law.map(function (l) { return l[0] + ' [' + (l[1] === 'v' ? 'تطبیق‌شده با منبع رسمی، آبان ۱۴۰۵' : l[1] === 'p' ? 'رویهٔ بازار، نه حکم قانونی' : 'نیازمند استعلام متن و آخرین اصلاحیه') + ']'; }).join('؛ ')] });
+        if (r.s.law.some(function (l) { return l[1] === 'n'; })) gaps.push('مستندات قانونی «' + r.s.fa + '»: بخشی از مواد با منبع رسمی تطبیق نشده و نیازمند استعلام است.'); });
+      if (R.roadmap.length) { Bk.push({ t: 'h3', x: 'د) برنامهٔ اجرا' }); Bk.push({ t: 'table', head: ['مرحله', 'از ماه', 'تا ماه', 'مسئول', 'اسناد', 'نهادها', 'مجوزها'], rows: R.roadmap.map(function (s) { return [s.step, s.from, s.to, s.owner, (s.docs || []).join('؛ ') || '—', (s.inst || []).join('، ') || '—', (s.lic || []).join('؛ ') || '—']; }) }); }
+    }
+    Bk.push({ t: 'h3', x: 'ه) فرض‌های محاسبه (ورودی شما، نه نرخ بازار)' });
+    Bk.push({ t: 'table', head: ['فرض', 'مقدار'], rows: Object.keys(ENG().PLAB).map(function (k) { return [ENG().PLAB[k], E.P[k] == null || E.P[k] === '' ? 'وارد نشده' : String(E.P[k])]; }) });
+    if (E.P.hurdle == null || E.P.hurdle === '') gaps.push('هزینهٔ فرصت و NPV: نرخ تنزیل وارد نشده است.');
+    Gd.missing.forEach(function (k) { gaps.push((MISS[k] || k) + ' وارد نشده است.'); });
+    ['listing', 'form'].forEach(function (k) { if (co[k] === 'unk') gaps.push((k === 'listing' ? 'وضعیت پذیرش در بازار سرمایه' : 'شخصیت حقوقی') + ' نامشخص است.'); });
+    ['opinion', 'rating', 'guarantor'].forEach(function (k) { if (E.fin[k] === 'unk') gaps.push({ opinion: 'اظهارنظر حسابرس', rating: 'رتبهٔ اعتباری', guarantor: 'وجود ضامن' }[k] + ' نامشخص است.'); });
+    // ---------- 4 gaps ----------
+    Bk.push({ t: 'h2', x: '۴. آنچه با اطلاعات فعلی قابل تکمیل نیست' });
+    gaps = gaps.filter(function (v, i, a) { return a.indexOf(v) === i; });
+    if (gaps.length) Bk.push({ t: 'ul', x: gaps }); else Bk.push({ t: 'p', x: 'همهٔ بخش‌های گزارش با اطلاعات واردشده تکمیل شده است.' });
+    Bk.push({ t: 'small', x: 'نرخ‌ها، سقف‌ها و کارمزدها ورودی شما هستند و باید با متن جاری مقررات (سازمان بورس، فرابورس، بورس تهران، بورس کالا) و شرایط روز بازار تطبیق داده شوند. این گزارش غربالگری است و جای مشاور حقوقی و مالیاتی انتشار را نمی‌گیرد.' });
+    return Bk;
+  }
+  function fa0(v) { return String(v).replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }); }
   function reportTab(ctx) {
-    var Xr = ctx.R.X, pr = h('button', { class: 'btn primary', type: 'button', text: 'چاپ / ذخیره به PDF', onclick: function () { document.body.classList.add('printing-report'); setTimeout(function () { root.print(); document.body.classList.remove('printing-report'); }, 50); } });
-    return ctx.group([ctx.panel('گزارش نهایی و نقشهٔ اجرا', [h('div', { class: 'row-ctl' }, [pr, h('span', { class: 'muted', text: 'خروجی اکسل از دکمهٔ «خروجی اکسل» بالای صفحه.' })]), reportBody(Xr)])]);
+    var Xr = ctx.R.X, Bk = finReport(Xr), R = Xr.REC, main = R.main, extra = [];
+    if (main && main.type === 'c') extra.push(comboView(main.c)); else if (main && main.type === 's' && main.r.eco) extra.push(ecoView(main.r.eco, main.r));
+    return ctx.group([ctx.panel('گزارش راه‌حل و نقشهٔ اجرا', [h('p', { class: 'f-help', 'data-notr': '1', text: 'ساختار گزارش: اول نتیجه، بعد سه دلیل، بعد شواهد، و در پایان هر چیزی که با اطلاعات فعلی قابل تکمیل نیست. هیچ عددی جز اعداد واردشدهٔ شما و محاسبه از روی آن‌ها در گزارش نیست.' }), Hub.report.buttons(function () { return finReport(ctx.R.X); }, 'Financing_Solution_' + (Xr.E.co.name || 'report').replace(/\s+/g, '_')), Hub.report.dom(Bk)]),
+      extra.length ? ctx.panel('نمودار و تحلیل اقتصادی راه‌حل پیشنهادی', extra) : null, ctx.panel('گزارش تفصیلی (نسخهٔ قبلی)', [h('details', null, [h('summary', { 'data-notr': '1', text: 'نمایش' }), reportBody(Xr)])])]);
+  }
+  /* ---------- 0 · intake: write the situation, confirm what was read, get the solution ---------- */
+  function intakeTab(ctx) {
+    var S = ctx.S, E = ensure(S), Xr = ctx.R.X, I = Hub.finIntake, st = h('div', { class: 'studio-status', 'aria-live': 'polite' }), box = h('div'), items = S._intake || [];
+    var ta = h('textarea', { class: 'f-area', rows: 9, dir: 'rtl', 'aria-label': 'شرح وضعیت و نیاز', placeholder: 'مثال: شرکت تولیدی سهامی خاص و غیربورسی هستیم. فروش سالانه ۱۲٬۰۰۰ میلیارد ریال، سود عملیاتی ۲٬۴۰۰ میلیارد ریال، هزینهٔ مالی ۶۰۰ میلیارد ریال، جمع دارایی‌ها ۲۰٬۰۰۰ میلیارد ریال، جمع بدهی‌ها ۹٬۰۰۰ میلیارد ریال، تسهیلات بانکی ۴٬۰۰۰ میلیارد ریال. برای سرمایه در گردش به ۳٬۰۰۰ میلیارد ریال نیاز داریم، ظرف ۶ ماه. یک ملک اداری به ارزش ۵٬۰۰۰ میلیارد ریال داریم. ضامن بانکی داریم و تمایلی به افزایش سرمایه نداریم.' }); ta.value = E.note || ''; ta.addEventListener('change', function () { E.note = ta.value; });
+    function paint() {
+      U.clear(box); if (!items.length) return;
+      var tb = h('tbody', null, items.map(function (it) { var cb = h('input', { type: 'checkbox', 'aria-label': 'تأیید ' + it.label, disabled: it.value == null }); cb.checked = !!it.ok && it.value != null; cb.addEventListener('change', function () { it.ok = cb.checked; });
+        return h('tr', null, [h('td', null, [cb]), h('td', { 'data-notr': '1', text: it.label + (it.ai ? ' (هوش مصنوعی)' : '') }), h('td', { 'data-notr': '1', class: it.value == null ? 'warn-t' : '', text: it.text }), h('td', { class: 'small', 'data-notr': '1', style: 'white-space:normal', text: '«' + it.quote + '»' })]); }));
+      box.appendChild(h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, ['تأیید', 'فیلد', 'مقدار خوانده‌شده (' + ({ million: 'میلیون ریال', billion: 'میلیارد ریال', thousand: 'هزار ریال' }[E.co.unit] || 'میلیون ریال') + ')', 'عبارت متن شما'].map(function (x) { return h('th', { class: 'lbl', 'data-notr': '1', text: x }); }))]), tb])]));
+      box.appendChild(h('div', { class: 'row-ctl' }, [h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'اعمال موارد تأییدشده و ساخت راه‌حل', onclick: function () { var n = I.apply(E, items); S._intake = []; U.toast(fa0(n) + ' مورد در فرم ثبت شد.', 'good'); ctx.rerender(); } })]));
+      box.appendChild(h('p', { class: 'small muted', 'data-notr': '1', text: 'فقط چیزی خوانده می‌شود که در متن نوشته‌اید؛ کنار هر مقدار عبارت خود شما آمده است. مبلغی که واحد پولش نوشته نشده اعمال نمی‌شود. هر چیزی که در متن نبود «نامشخص» می‌ماند و در گزارش به‌عنوان کمبود اطلاعات می‌آید.' }));
+    }
+    var read = h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'خواندن اطلاعات از متن', onclick: function () { E.note = ta.value; items = S._intake = I.parse(ta.value, E.co.unit); st.textContent = items.length ? fa0(items.length) + ' مورد خوانده شد؛ بررسی و تأیید کنید.' : 'چیزی که با فیلدهای فرم جور باشد در متن پیدا نشد. اعداد را با واحد بنویسید (مثلاً «فروش ۱۲٬۰۰۰ میلیارد ریال»).'; paint(); } });
+    var ai = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'خواندن با هوش مصنوعی (در صورت اتصال)', onclick: function () { E.note = ta.value; var sp = Hub.ai ? Hub.ai.sampler() : Promise.resolve(null);
+      sp.then(function (s) { if (!s) { st.textContent = 'هوش مصنوعی وصل نیست؛ از «خواندن اطلاعات از متن» استفاده کنید.'; return; } st.textContent = 'در حال خواندن…';
+        var prompt = 'Extract ONLY facts that are explicitly written in the Persian text below. Do not infer, estimate or add anything. Return JSON {"items":[{"k":field,"value":value,"digits":"the digits of the number exactly as they appear in the text (numbers only)","quote":"the exact phrase copied from the text"}]}. Numeric values must be in ' + ({ million: 'million rials', billion: 'billion rials', thousand: 'thousand rials' }[E.co.unit] || 'million rials') + ' (1 toman = 10 rials; 1 همت = 10,000 billion rials). Skip any amount whose currency is not stated. Fields: ' + I.fields().map(function (f) { return f[0] + ' (' + f[1] + ': ' + f[2] + ')'; }).join('; ') + '.\n\nTEXT:\n' + ta.value;
+        return s.json(prompt, { modelTier: 'complex' }).then(function (j) { var c = I.check(ta.value, j && j.items), have = {}; items = I.parse(ta.value, E.co.unit); items.forEach(function (x) { have[x.k] = 1; }); c.items.forEach(function (x) { if (!have[x.k]) items.push(x); }); S._intake = items;
+          st.textContent = fa0(items.length) + ' مورد خوانده شد' + (c.dropped ? '؛ ' + fa0(c.dropped) + ' مورد از پاسخ هوش مصنوعی کنار گذاشته شد چون عبارتش در متن شما نبود.' : '.'); paint(); }); }).catch(function (e) { st.textContent = 'ناموفق: ' + (e && e.message || e); }); } });
+    paint();
+    var Bk = finReport(Xr), cut = 0; for (var i = 0; i < Bk.length; i++) if (Bk[i].t === 'h2' && /^۳\./.test(Bk[i].x)) { cut = i; break; }
+    var gapI = -1; for (var j = 0; j < Bk.length; j++) if (Bk[j].t === 'h2' && /^۴\./.test(Bk[j].x)) gapI = j;
+    var brief = Bk.slice(1, cut || Bk.length).concat(gapI >= 0 ? Bk.slice(gapI) : []);
+    return ctx.group([ctx.panel('۱. وضعیت شرکت و نیازتان را بنویسید', [h('p', { class: 'f-help', 'data-notr': '1', text: 'به زبان خودتان بنویسید: شرکت چیست، اعداد اصلی مالی، چقدر و برای چه نیاز دارید، چه دارایی‌هایی دارید و چه محدودیت‌هایی. برنامه اعداد و شرایط را می‌خواند، برای تأیید نشان می‌دهد و بعد راه‌حل می‌سازد. فرم کامل در زبانهٔ «تشخیص و ارزیابی شرکت» است و هر دو یک داده را پر می‌کنند.' }), ta, h('div', { class: 'row-ctl' }, [read, ai]), st, box]),
+      ctx.panel('۲. راه‌حل با اطلاعات فعلی', [Hub.report.dom(brief), h('div', { class: 'row-ctl' }, [h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'گزارش کامل', onclick: function () { var b = document.querySelectorAll('[data-tab="report"]'); if (b.length) b[0].click(); } }), h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'تکمیل فرم', onclick: function () { var b = document.querySelectorAll('[data-tab="diag"]'); if (b.length) b[0].click(); } })])])]);
   }
 
   /* ---------- Excel ---------- */
@@ -17285,7 +17523,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     Object.keys(ENG().PLAB).forEach(function (k, i) { put(S6, 4 + i, [ENG().PLAB[k], Xr.E.P[k] == null ? 'وارد نشده' : Xr.E.P[k]]); });
   }
 
-  Hub.finUI = { ensure: ensure, compute: compute, diagTab: diagTab, engineTab: engineTab, structTab: structTab, rankTab: rankTab, reportTab: reportTab, excel: excel, reportBody: reportBody };
+  Hub.finUI = { intakeTab: intakeTab, finReport: finReport, ensure: ensure, compute: compute, diagTab: diagTab, engineTab: engineTab, structTab: structTab, rankTab: rankTab, reportTab: reportTab, excel: excel, reportBody: reportBody };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/models/financing.js */
@@ -17583,7 +17821,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['Definitive routes', function () { return X() ? String(X().count.definitive) : '–'; }, function () { return X() ? 'از ' + X().count.applicable + ' راهکار مرتبط' : ''; }],
       ['Structures', function () { return X() ? String(X().count.combos) : '–'; }, function () { return 'ساختار ترکیبی فعال'; }],
       ['Opportunities', function () { return X() ? String(X().O.length) : '–'; }, function () { return 'فرصت شناسایی‌شده'; }]]; },
-    tabs: [{ group: 'Solution engine', items: [['diag', 'تشخیص و ارزیابی شرکت', function (ctx) { return Hub.finUI.diagTab(ctx); }], ['debt', 'تأمین مالی بدهی', function (ctx) { return Hub.finUI.engineTab('D')(ctx); }],
+    tabs: [{ group: 'Solution engine', items: [['intake', 'بنویسید و راه‌حل بگیرید', function (ctx) { return Hub.finUI.intakeTab(ctx); }], ['diag', 'تشخیص و ارزیابی شرکت', function (ctx) { return Hub.finUI.diagTab(ctx); }], ['debt', 'تأمین مالی بدهی', function (ctx) { return Hub.finUI.engineTab('D')(ctx); }],
       ['equity', 'سرمایه‌ای و ترکیبی', function (ctx) { return Hub.finUI.engineTab('E')(ctx); }], ['asset', 'مولدسازی دارایی‌ها', function (ctx) { return Hub.finUI.engineTab('A')(ctx); }], ['struct', 'ساختارهای ترکیبی', function (ctx) { return Hub.finUI.structTab(ctx); }],
       ['rank', 'مقایسه و رتبه‌بندی', function (ctx) { return Hub.finUI.rankTab(ctx); }], ['report', 'گزارش نهایی و نقشهٔ اجرا', function (ctx) { return Hub.finUI.reportTab(ctx); }]] },
       { group: 'Statements screening', items: [['screen', 'Screening', function (ctx) {
@@ -22597,11 +22835,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111253) */
+/* PWA: offline cache + app updates (version 202611111312) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111253';
+  window.HUB_APP_VERSION = '202611111312';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
