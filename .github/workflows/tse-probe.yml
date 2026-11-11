@@ -1,0 +1,31 @@
+name: tse-probe
+on:
+  push:
+    paths: ['.github/workflows/tse-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe data hosts from GitHub's runners
+        run: |
+          mkdir -p hub/data
+          probe() { r=$(curl -s -m 25 -A "Mozilla/5.0" -o /tmp/b -w "%{http_code} %{size_download} %{time_total}" "$1"); echo "{\"url\":\"$1\",\"result\":\"$r\",\"head\":$(head -c 160 /tmp/b | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}"; }
+          {
+            echo '['
+            probe "https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/46348559193224090/5"; echo ','
+            probe "https://cdn.tsetmc.com/api/ClientType/GetClientTypeHistory/46348559193224090"; echo ','
+            probe "https://cdn.tsetmc.com/api/Instrument/GetInstrumentOptionMarketWatch/0"; echo ','
+            probe "https://old.tsetmc.com/tsev2/data/instinfofast.aspx?i=46348559193224090&c=27"; echo ','
+            probe "https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl"
+            echo ']'
+          } > hub/data/probe.json
+          curl -s -m 10 https://ipinfo.io/json > hub/data/probe-ip.json || true
+          cat hub/data/probe.json
+      - name: Commit result
+        run: |
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add hub/data && git commit -m "probe: data host reachability from GitHub Actions" && git push || echo nothing
