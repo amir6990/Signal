@@ -14,15 +14,30 @@ const pc = v => (typeof v === 'number' && isFinite(v)) ? FA((v >= 0 ? '+' : '') 
 const gdate = d => d ? FA(String(d).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1/$2/$3')) : '—';
 function ago(iso) { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); if (!isFinite(m)) return '—'; if (m < 60) return FA(m) + ' دقیقه پیش'; if (m < 1440) return FA(Math.round(m / 60)) + ' ساعت پیش'; return FA(Math.round(m / 1440)) + ' روز پیش'; }
 
+// Sources, newest wins: (1) data sent from the hub on this phone with «ارسال به ویجت» (scriptable:///run/HubWidget?data=…),
+// (2) data/widget.json on the hub's site (published from the PC), (3) the last copy saved here.
+function cached() { try { return fm.fileExists(CACHE) ? JSON.parse(fm.readString(CACHE)) : null; } catch (e) { return null; } }
+function save(j) { fm.writeString(CACHE, JSON.stringify(j)); }
 async function load() {
-  try { const r = new Request(SITE + 'data/widget.json?t=' + Date.now()); r.timeoutInterval = 15; const j = await r.loadJSON(); if (!j || !j.v) throw new Error('bad file'); fm.writeString(CACHE, JSON.stringify(j)); return { j, live: true }; }
-  catch (e) { if (fm.fileExists(CACHE)) return { j: JSON.parse(fm.readString(CACHE)), live: false, err: String(e) }; return { j: null, live: false, err: String(e) }; }
+  const qp = (typeof args !== 'undefined' && args.queryParameters) || {};
+  if (qp.data) { try { const j = JSON.parse(qp.data); if (j && j.v) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; } } catch (e) { return { j: cached(), live: false, err: 'دادهٔ ارسالی خوانا نبود' }; } }
+  const old = cached();
+  try {
+    const r = new Request(SITE + 'data/widget.json?t=' + Date.now()); r.timeoutInterval = 15; const txt = await r.loadString(); const code = r.response && r.response.statusCode;
+    if (code === 404) throw new Error('nofile');
+    if (code && code !== 200) throw new Error('HTTP ' + code);
+    const j = JSON.parse(txt); if (!j || !j.v) throw new Error('bad');
+    j.src = 'site'; if (old && old.at && new Date(old.at) > new Date(j.at)) return { j: old, live: true }; save(j); return { j, live: true };
+  } catch (e) {
+    const msg = String(e.message || e) === 'nofile' ? 'فایل ویجت روی سایت منتشر نشده است.' : 'سایت در دسترس نبود (' + String(e.message || e) + ').';
+    return old ? { j: old, live: false, err: msg, cache: true } : { j: null, live: false, err: msg };
+  }
 }
 function line(w, text, font, color, max) { const t = w.addText(text); t.font = font; t.textColor = color || C.fg; t.rightAlignText(); if (max) t.lineLimit = max; t.minimumScaleFactor = 0.7; return t; }
 function build(D, fam) {
   const w = new ListWidget(); w.backgroundColor = C.bg; w.setPadding(12, 12, 12, 12); w.url = SITE + '#dash'; w.refreshAfterDate = new Date(Date.now() + 30 * 60000);
   const big = fam === 'large', small = fam === 'small';
-  if (!D.j) { line(w, 'هاب مالی', Font.boldSystemFont(14), C.acc); line(w, 'داده‌ای دریافت نشد', Font.systemFont(12), C.bad); line(w, D.err || '', Font.systemFont(9), C.mute, 3); return w; }
+  if (!D.j) { line(w, 'هاب مالی', Font.boldSystemFont(14), C.acc); line(w, D.err || 'داده‌ای نیست', Font.systemFont(11), C.bad, 2); line(w, 'در هاب روی همین گوشی: داشبورد ← «ارسال به ویجت». یا از کامپیوتر «انتشار فایل ویجت» را روشن و منتشر کنید.', Font.systemFont(10), C.mute, 4); return w; }
   const j = D.j, title = { priorities: 'اولویت‌های امروز', signals: 'سیگنال‌های فعال', pulse: 'نبض بازار' }[MODE] || 'اولویت‌های امروز';
   line(w, title, Font.boldSystemFont(small ? 12 : 14), C.acc); w.addSpacer(4);
   const n = small ? 2 : big ? 6 : 3;
@@ -40,7 +55,7 @@ function build(D, fam) {
   }
   w.addSpacer();
   const old = (Date.now() - new Date(j.at).getTime()) > 36 * 3600e3;
-  line(w, (D.live ? '' : 'آفلاین — آخرین دادهٔ معتبر · ') + ago(j.at) + (j.asOfFa ? ' · داده تا ' + FA(j.asOfFa) : j.asOf ? ' · داده تا ' + gdate(j.asOf) : ''), Font.systemFont(9), !D.live || old ? C.warn : C.mute, 2);
+  line(w, (D.live ? '' : 'آخرین دادهٔ معتبر · ') + (j.src === 'phone' ? 'از گوشی · ' : '') + ago(j.at) + (j.asOfFa ? ' · داده تا ' + FA(j.asOfFa) : j.asOf ? ' · داده تا ' + gdate(j.asOf) : ''), Font.systemFont(9), !D.live || old ? C.warn : C.mute, 2);
   if (j.val && j.val !== 'ok') line(w, 'اعتبارسنجی معتبر نیست', Font.systemFont(9), C.bad, 1);
   return w;
 }
@@ -56,5 +71,6 @@ async function notifyNew(D) {
 const D = await load();
 await notifyNew(D);
 const W = build(D, config.widgetFamily || 'medium');
+if (D.sent && !config.runsInWidget) { const a = new Alert(); a.title = 'ویجت به‌روز شد'; a.message = 'داده از هاب دریافت و ذخیره شد. ویجت صفحهٔ اصلی در تازه‌سازی بعدی آن را نشان می‌دهد.'; a.addAction('باشه'); try { await a.present(); } catch (e) { /* ignore */ } }
 if (config.runsInWidget) Script.setWidget(W); else await W.presentMedium();
 Script.complete();
