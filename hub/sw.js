@@ -1,7 +1,7 @@
-/* service worker — version 202611120523
+/* service worker — version 202611120659
  * app shell: network first (so a new version is picked up as soon as you are online), cache when offline
  * market data (/proxy, other hosts' APIs): network only — the app keeps its last good data itself */
-const V = 'hub-202611120523', SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const V = 'hub-202611120659', SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(V).then(c => c.addAll(SHELL))));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });

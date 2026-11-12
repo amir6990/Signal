@@ -524,6 +524,12 @@ table.sig-t.ticket thead { display: none; }
 @media print { body.printing-report .print-report table { font-size: 10px; } body.printing-report .print-report td, body.printing-report .print-report th { color: #000; border: 1px solid #999; } }
 .rep-gap { color: var(--accent); border-inline-start: 4px solid var(--accent); padding: 8px 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 4px; }
 
+/* AI bridge dialog: copy request → Claude chat → paste answer */
+.ai-bridge { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); font-family: "Vazirmatn", var(--font-body); }
+.ai-bridge-box { background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px; padding: 16px; width: min(640px, 100%); max-height: 100%; overflow: auto; display: grid; gap: 10px; text-align: right; }
+.ai-bridge-steps { margin: 0; padding-inline-start: 20px; line-height: 1.9; }
+.ai-bridge .f-area { width: 100%; }
+
 </style>
 
 <script>try { if (!localStorage.getItem('hub.lang')) localStorage.setItem('hub.lang', JSON.stringify('fa')); } catch (e) {}</script>
@@ -3678,7 +3684,7 @@ else if (typeof exports === 'object')
 "Model for complex tasks (auditor, PDF, solutions)": "مدل برای کارهای پیچیده (حسابرس، PDF، راه‌حل‌ها)",
 "Max output tokens": "حداکثر توکن خروجی",
 "Which connection": "کدام اتصال",
-"Automatic: claude.ai artifact if available, else my API key": "خودکار: آرتیفکت claude.ai اگر در دسترس بود، وگرنه کلید API من",
+"Automatic: claude.ai artifact if available, else my API key": "خودکار: آرتیفکت claude.ai، وگرنه کلید API، وگرنه کپی در گفت‌وگوی Claude",
 "Always my API key": "همیشه کلید API من",
 "Test connection": "آزمون اتصال",
 "Remove key": "حذف کلید",
@@ -4025,6 +4031,9 @@ else if (typeof exports === 'object')
 "Model lean": "تمایل مدل",
 "Most frequent scenario": "پرتکرارترین سناریو",
 "Logged forecasts": "پیش‌بینی‌های ثبت‌شده",
+"Claude chat, copy and paste (no key)": "گفت‌وگوی Claude با کپی و چسباندن (بدون کلید)",
+"Off: local rule-based engine only": "خاموش: فقط موتور قاعده‌محور داخلی",
+"Now using: Claude chat bridge (copy the request into Claude, paste the answer back; no key).": "در حال استفاده: پل گفت‌وگوی Claude (درخواست را در Claude بچسبانید و پاسخ را برگردانید؛ بدون کلید).",
 };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -4950,6 +4959,55 @@ else if (typeof exports === 'object')
     sample.limits = function () { return Promise.resolve({ images: { maxCount: s.vision === false ? 0 : 8 } }); };
     return sample;
   }
+  /* Bridge: no key, no network. The page shows the full prompt; the person copies it into a Claude chat
+   * (app or claude.ai, on their own subscription), then pastes the answer back. Text only: images are not carried. */
+  function bridgeClient() {
+    function ask(prompt, opts, wantJSON) {
+      opts = opts || {};
+      return new Promise(function (resolve, reject) {
+        var d = root.document; if (!d || !d.body) { var e0 = new Error('No AI connection.'); e0.code = 'no_key'; return reject(e0); }
+        var full = String(prompt) + (wantJSON ? '\n\nReply with the JSON only, no prose and no code fences.' : '');
+        var ov = d.createElement('div'); ov.className = 'ai-bridge'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('data-notr', '1'); ov.dir = 'rtl';
+        ov.innerHTML = '<div class="ai-bridge-box"><h3>پاسخ از Claude (بدون کلید)</h3>' +
+          '<ol class="ai-bridge-steps"><li>«کپی درخواست» را بزنید.</li><li>«باز کردن Claude» را بزنید، در یک گفت‌وگوی تازه بچسبانید و بفرستید.</li><li>کل پاسخ Claude را کپی کنید، این‌جا بچسبانید و «ثبت پاسخ» را بزنید.</li></ol>' +
+          '<div class="row-ctl"><button type="button" class="btn primary" data-a="copy">۱. کپی درخواست</button><a class="btn" data-a="open" href="https://claude.ai/new" target="_blank" rel="noopener">۲. باز کردن Claude</a>' +
+          '<span class="muted ai-bridge-n"></span></div>' +
+          '<details><summary class="muted">دیدن متن درخواست</summary><textarea class="f-area" rows="5" readonly dir="auto"></textarea></details>' +
+          '<label class="f-lbl">۳. پاسخ Claude را این‌جا بچسبانید</label><textarea class="f-area ai-bridge-ans" rows="7" dir="auto" placeholder="پاسخ Claude…"></textarea>' +
+          '<p class="ai-bridge-msg muted" aria-live="polite"></p>' +
+          '<div class="row-ctl"><button type="button" class="btn primary" data-a="ok">ثبت پاسخ</button><button type="button" class="btn ghost" data-a="paste">چسباندن از کلیپ‌بورد</button><button type="button" class="btn ghost" data-a="cancel">لغو</button></div></div>';
+        var q = function (sel) { return ov.querySelector(sel); }, pt = q('details textarea'), ans = q('.ai-bridge-ans'), msg = q('.ai-bridge-msg');
+        pt.value = full; q('.ai-bridge-n').textContent = full.length.toLocaleString('fa-IR') + ' نویسه' + (opts.images && opts.images.length ? ' · تصویرها منتقل نمی‌شوند' : '');
+        function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); d.removeEventListener('keydown', key); }
+        function fail(code, m) { close(); var e = new Error(m); e.code = code; reject(e); }
+        function key(e) { if (e.key === 'Escape') fail('aborted', 'لغو شد.'); }
+        d.addEventListener('keydown', key);
+        if (opts.signal) { if (opts.signal.aborted) return fail('aborted', 'Stopped.'); opts.signal.addEventListener('abort', function () { fail('aborted', 'Stopped.'); }); }
+        function copyText() {
+          var done = function () { msg.textContent = 'کپی شد. حالا Claude را باز کنید و بچسبانید.'; };
+          if (root.navigator && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(full).then(done, function () { q('details').open = true; pt.focus(); pt.select(); msg.textContent = 'کلیپ‌بورد اجازه نداد؛ متن را از کادر بالا انتخاب و کپی کنید.'; });
+          else { q('details').open = true; pt.focus(); pt.select(); try { d.execCommand('copy'); done(); } catch (e) { msg.textContent = 'متن را از کادر بالا کپی کنید.'; } }
+        }
+        ov.addEventListener('click', function (e) {
+          var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (!a) return;
+          if (a === 'copy') copyText();
+          else if (a === 'paste') { if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(function (t) { ans.value = t; }, function () { msg.textContent = 'مرورگر اجازهٔ خواندن کلیپ‌بورد نداد؛ با نگه‌داشتن انگشت در کادر «Paste» را بزنید.'; }); }
+          else if (a === 'cancel') fail('aborted', 'لغو شد.');
+          else if (a === 'ok') {
+            var t = ans.value.trim(); if (!t) { msg.textContent = 'کادر پاسخ خالی است.'; return; }
+            if (wantJSON) { try { var j = parseJSON(t); close(); resolve(j); } catch (er) { msg.textContent = 'پاسخ ساختار JSON کامل ندارد (احتمالاً ناقص کپی شده). کل پاسخ را از ابتدا تا انتها کپی کنید، یا در Claude بنویسید «فقط JSON کامل را دوباره بده».'; } }
+            else { close(); resolve({ text: t, truncated: false, model: 'claude (chat)' }); }
+          }
+        });
+        d.body.appendChild(ov); setTimeout(function () { q('[data-a=copy]').focus(); }, 0);
+      });
+    }
+    var sample = function (input, opts) { return ask(typeof input === 'string' ? input : JSON.stringify(input), opts, false); };
+    sample.json = function (prompt, opts) { return ask(prompt, opts, true); };
+    sample.limits = function () { return Promise.resolve({ images: { maxCount: 0 } }); };
+    sample.manual = true;
+    return sample;
+  }
   var P = null, via = 'none';
   // the claude.ai runtime can attach window.claude after this script runs: wait briefly for it
   function waitClaude(ms) {
@@ -4962,10 +5020,11 @@ else if (typeof exports === 'object')
   function sampler() {
     if (P) return P;
     var s = settings();
+    if (s.mode === 'bridge' && root.document) { via = 'bridge'; return (P = Promise.resolve(bridgeClient())); }
     var artifact = s.mode === 'api' ? Promise.resolve(null) : waitClaude(root.location && /^file:/.test(root.location.protocol) ? 0 : 3000)
       .then(function (c) { return c ? c.use('sample').catch(function () { return null; }) : null; });
     // the artifact's namespace is frozen: never write to it; remember the route separately
-    var p = artifact.then(function (a) { if (a) { via = 'artifact'; return a; } if (s.provider === 'openai' && s.baseUrl && !/api\.anthropic\.com/.test(s.baseUrl)) { via = 'openai'; return openaiClient(s); } if (s.apiKey) { via = 'api'; return apiClient(s); } via = 'none'; return null; });
+    var p = artifact.then(function (a) { if (a) { via = 'artifact'; return a; } if (s.provider === 'openai' && s.baseUrl && !/api\.anthropic\.com/.test(s.baseUrl)) { via = 'openai'; return openaiClient(s); } if (s.apiKey) { via = 'api'; return apiClient(s); } if (s.mode !== 'api' && s.mode !== 'off' && root.document) { via = 'bridge'; return bridgeClient(); } via = 'none'; return null; });
     P = p; p.then(function (x) { if (!x && P === p) P = null; });
     return p;
   }
@@ -4983,7 +5042,7 @@ else if (typeof exports === 'object')
     return fetch(String(s.baseUrl || '').replace(/\/+$/, '') + '/models', { headers: hd }).then(function (r) { return r.ok ? r.json() : {}; })
       .then(function (j) { return ((j && j.data) || []).map(function (m) { return m && m.id; }).filter(Boolean); }).catch(function () { return []; });
   }
-  function test() { P = null; return sampler().then(function (x) { if (!x) { var e = new Error('No AI connection: add an API key (or a local model address).'); e.code = precheck() || 'no_key'; throw e; } return x.json('Return {"ok":true,"model":"<your model name>"}', { modelTier: 'default' }); }); }
+  function test() { P = null; return sampler().then(function (x) { if (x && x.manual) return { ok: true, mode: 'bridge' }; if (!x) { var e = new Error('No AI connection: add an API key (or a local model address).'); e.code = precheck() || 'no_key'; throw e; } return x.json('Return {"ok":true,"model":"<your model name>"}', { modelTier: 'default' }); }); }
   /* Live web search: the Anthropic Messages API with its server-side web search tool (web_search_20250305), called with the user's own key.
    * The search runs on Anthropic's servers, so the browser's cross-site limits do not apply. Returns the answer text together with every page the
    * search actually returned ({url, title, page_age}) and every citation ({url, title, cited_text}); callers must show only links that are in those lists.
@@ -6063,7 +6122,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       return statementPages(doc).then(function (sp) {
         last.statementPages = sp.hits;
         return sampler().then(function (sample) {
-          if (!sample) return local(doc, file.name, say);
+          if (!sample || sample.manual) return local(doc, file.name, say);
           return sample.limits().catch(function () { return {}; }).then(function (lim) {
             var maxImg = lim && lim.images ? lim.images.maxCount || 5 : 0;
             var pages = sp.hits.length ? sp.hits : []; for (var i = 1; pages.length < Math.min(6, doc.numPages) && i <= doc.numPages; i++) if (pages.indexOf(i) < 0) pages.push(i);
@@ -9731,7 +9790,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var aiModel = h('input', { id: 'ai-model', class: 'f-text', type: 'text', value: A.model || '', autocomplete: 'off' });
     var aiModel2 = h('input', { id: 'ai-model2', class: 'f-text', type: 'text', value: A.complexModel || '', autocomplete: 'off' });
     var aiTok = h('input', { id: 'ai-tok', class: 'f-text', type: 'text', inputmode: 'numeric', value: String(A.maxTokens || 16000), autocomplete: 'off' });
-    var aiMode = h('select', { id: 'ai-mode', class: 'f-sel' }, [h('option', { value: 'auto', text: 'Automatic: claude.ai artifact if available, else my API key' }), h('option', { value: 'api', text: 'Always my API key' })]); aiMode.value = A.mode || 'auto';
+    var aiMode = h('select', { id: 'ai-mode', class: 'f-sel' }, [h('option', { value: 'auto', text: 'Automatic: claude.ai artifact if available, else my API key' }), h('option', { value: 'api', text: 'Always my API key' }), h('option', { value: 'bridge', text: 'Claude chat, copy and paste (no key)' }), h('option', { value: 'off', text: 'Off: local rule-based engine only' })]); aiMode.value = A.mode || 'auto';
     var aiSt = h('p', { class: 'muted', 'aria-live': 'polite' });
     function aiSave() { var op = aiProv.value === 'openai'; Hub.ai.save({ provider: aiProv.value, vision: aiVis.value !== 'no', apiKey: aiKey.value.trim(), baseUrl: aiBase.value.trim() || (op ? 'http://localhost:11434/v1' : 'https://api.anthropic.com'), model: aiModel.value.trim() || (op ? 'llama3.1' : 'claude-sonnet-5-5'), complexModel: aiModel2.value.trim() || aiModel.value.trim() || (op ? 'llama3.1' : 'claude-opus-5-5'), maxTokens: Number(aiTok.value) || 16000, mode: aiMode.value }); U.toast('Claude settings saved in this browser', 'good'); }
     function aiSay(t, bad) { aiSt.setAttribute('data-notr', '1'); aiSt.className = bad ? 'rep-gap' : 'muted'; aiSt.textContent = t; }
@@ -9750,7 +9809,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     function aiTest() {
       aiSave(); aiSay('در حال آزمون…');
       var pc = Hub.ai.precheck(); if (pc === 'mixed') return aiSay(aiWhy({ code: 'mixed' }), true);
-      Hub.ai.test().then(function (j) { return Hub.ai.status().then(function (v) { aiSay('وصل شد (' + (v === 'artifact' ? 'از راه آرتیفکت claude.ai' : v === 'api' ? 'با کلید Anthropic' : 'با ' + aiBase.value) + '). پاسخ مدل: ' + JSON.stringify(j)); }); })
+      Hub.ai.test().then(function (j) { return Hub.ai.status().then(function (v) { aiSay(v === 'bridge' ? 'کلیدی لازم نیست: حالت «پل گفت‌وگوی Claude» فعال است. هر دکمهٔ هوش مصنوعی درخواست را آماده می‌کند؛ آن را در برنامهٔ Claude بچسبانید و پاسخ را برگردانید.' : 'وصل شد (' + (v === 'artifact' ? 'از راه آرتیفکت claude.ai' : v === 'api' ? 'با کلید Anthropic' : 'با ' + aiBase.value) + '). پاسخ مدل: ' + JSON.stringify(j)); }); })
         .catch(function (e) {
           aiSay(aiWhy(e), true);
           if (aiProv.value === 'openai' && e && (e.status === 404 || e.status === 400)) Hub.ai.models().then(function (m) { if (m.length) aiSay(aiWhy(e) + ' مدل‌هایی که این سرویس اعلام کرد: ' + m.slice(0, 12).join('، ') + (m.length > 12 ? ' و ' + (m.length - 12) + ' مورد دیگر' : ''), true); });
@@ -9762,7 +9821,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       h('button', { class: 'btn ghost', type: 'button', text: 'OpenRouter', onclick: function () { aiPreset('openai', 'https://openrouter.ai/api/v1', 1); } }),
       h('button', { class: 'btn ghost', type: 'button', text: 'مدل محلی: Ollama', onclick: function () { aiPreset('openai', 'http://localhost:11434/v1', 0); } }),
       h('button', { class: 'btn ghost', type: 'button', text: 'مدل محلی: LM Studio', onclick: function () { aiPreset('openai', 'http://localhost:1234/v1', 0); } })]);
-    if (Hub.ai) Hub.ai.status().then(function (v) { aiSt.textContent = v === 'artifact' ? 'Now using: claude.ai artifact.' : v === 'api' ? 'Now using: your Anthropic API key.' : v === 'openai' ? 'Now using: your OpenAI-compatible API.' : 'No AI connected: Strategy Studio, Strict Auditor and Financing Solutions use the local rule-based engine; PDFs are read on this device.'; });
+    if (Hub.ai) Hub.ai.status().then(function (v) { aiSt.textContent = v === 'artifact' ? 'Now using: claude.ai artifact.' : v === 'api' ? 'Now using: your Anthropic API key.' : v === 'openai' ? 'Now using: your OpenAI-compatible API.' : v === 'bridge' ? 'Now using: Claude chat bridge (copy the request into Claude, paste the answer back; no key).' : 'No AI connected: Strategy Studio, Strict Auditor and Financing Solutions use the local rule-based engine; PDFs are read on this device.'; });
     el.appendChild(h('section', { class: 'panel' }, [
       h('h2', { text: 'AI connection (optional)' }),
       h('p', { class: 'f-help', text: 'Everything works without AI: PDFs are read on this device (text layer + built-in OCR), and Strategy Studio, Strict Auditor and Financing Solutions run a local rule-based engine. An AI service only deepens those three analyses. Options: inside the claude.ai artifact nothing is needed; elsewhere use an Anthropic API key, or any OpenAI-compatible API — OpenRouter, a regional gateway reachable from your network, or a model on your own computer (Ollama: base URL http://localhost:11434/v1, start it with OLLAMA_ORIGINS=* so the page may call it). The key stays in this browser and is sent only to the base URL.' }),
@@ -16501,7 +16560,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         function runAll(onlyConclusion) {
           if (busy) return; busy = true; goBtn.disabled = conBtn.disabled = true; stop.hidden = false; ctl = new AbortController();
           sampler().then(function (sample) {
-            if (!sample || forceLocal) { wasLocal = true; return runLocal(); } wasLocal = false;
+            if (!sample || sample.manual || forceLocal) { wasLocal = true; return runLocal(); } wasLocal = false;
             var L = lang(S), keys = onlyConclusion ? [] : Object.keys(FW).filter(function (k) { return S.run[k]; }), i = 0;
             function next() {
               if (i >= keys.length) { say('Writing the conclusion across frameworks…'); return sample.json(conclPrompt(S, L), { modelTier: 'complex', signal: ctl.signal }).then(function (j) { S.conclusion = { json: j, at: new Date().toLocaleString() }; }); }
@@ -23219,11 +23278,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611120523) */
+/* PWA: offline cache + app updates (version 202611120659) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611120523';
+  window.HUB_APP_VERSION = '202611120659';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
