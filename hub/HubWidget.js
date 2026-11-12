@@ -1,9 +1,10 @@
 // Finance Hub — home-screen widget for iOS (runs in the free "Scriptable" app).
 // Data: data/widget.json on the hub's own site, written by the hub on the PC when it publishes (same engine, same numbers).
-// Widget parameter (long-press the widget → Edit Widget → Parameter): pulse | priorities | signals   (default: pulse)
+// Widget parameter (optional): auto (default: best action / opportunities / market view by widget size) | pulse | priorities | signals
 // Tap the widget → opens the hub's dashboard. No account data, positions or keys are read or stored.
 const SITE = 'https://amir6990.github.io/Signal/hub/';
-const MODE = ((typeof args !== 'undefined' && args.widgetParameter) || 'pulse').trim().toLowerCase();
+const MODE = ((typeof args !== 'undefined' && args.widgetParameter) || 'auto').trim().toLowerCase();
+const RAW = 'https://raw.githubusercontent.com/amir6990/Signal/claude/iran-stock-signals-excel-guqwon/hub/data/widget.json';
 const fm = FileManager.local();
 const CACHE = fm.joinPath(fm.documentsDirectory(), 'hub-widget.json');
 const SEEN = fm.joinPath(fm.documentsDirectory(), 'hub-widget-seen.json');
@@ -32,11 +33,14 @@ async function load() {
   }
   const old = cached();
   try {
-    const r = new Request(SITE + 'data/widget.json?t=' + Date.now()); r.timeoutInterval = 15; const txt = await r.loadString(); const code = r.response && r.response.statusCode;
-    if (code === 404) throw new Error('nofile');
-    if (code && code !== 200) throw new Error('HTTP ' + code);
-    const j = JSON.parse(txt); if (!j || !j.v) throw new Error('bad');
-    j.src = 'site'; if (old && old.at && new Date(old.at) > new Date(j.at)) return { j: old, live: true }; save(j); return { j, live: true };
+    let j = null, lastErr = null;
+    for (const u of [RAW + '?t=' + Date.now(), SITE + 'data/widget.json?t=' + Date.now()]) {
+      try { const r = new Request(u); r.timeoutInterval = 12; const txt = await r.loadString(); const code = r.response && r.response.statusCode;
+        if (code === 404) { lastErr = new Error('nofile'); continue; } if (code && code !== 200) { lastErr = new Error('HTTP ' + code); continue; }
+        const k = JSON.parse(txt); if (k && k.v && (!j || new Date(k.at) > new Date(j.at))) j = k; } catch (e) { lastErr = e; }
+    }
+    if (!j) throw lastErr || new Error('nofile');
+    j.src = 'site'; if (old && old.at && new Date(old.at) > new Date(j.at)) return { j: old, live: true, newerLocal: true }; save(j); return { j, live: true };
   } catch (e) {
     const msg = String(e.message || e) === 'nofile' ? 'فایل ویجت روی سایت منتشر نشده است.' : 'سایت در دسترس نبود (' + String(e.message || e) + ').';
     return old ? { j: old, live: false, err: msg, cache: true } : { j: null, live: false, err: msg };
@@ -47,10 +51,26 @@ function build(D, fam) {
   const w = new ListWidget(); w.backgroundColor = C.bg; w.setPadding(12, 12, 12, 12); w.url = SITE + '#dash'; w.refreshAfterDate = new Date(Date.now() + 30 * 60000);
   const big = fam === 'large', small = fam === 'small';
   if (!D.j) { line(w, 'هاب مالی', Font.boldSystemFont(14), C.acc); line(w, D.err || 'داده‌ای نیست', Font.systemFont(11), C.bad, 2); line(w, 'در هاب روی همین گوشی: داشبورد ← «ارسال به ویجت». یا از کامپیوتر «انتشار فایل ویجت» را روشن و منتشر کنید.', Font.systemFont(10), C.mute, 4); return w; }
-  const j = D.j, title = { priorities: 'اولویت‌های امروز', signals: 'سیگنال‌های فعال', pulse: 'نبض بازار' }[MODE] || 'اولویت‌های امروز';
+  const j = D.j, title = { priorities: 'اولویت‌های امروز', signals: 'سیگنال‌های فعال', pulse: 'نبض بازار' }[MODE] || (j.decision ? 'بهترین اقدام' : 'اولویت‌های امروز');
   line(w, title, Font.boldSystemFont(small ? 12 : 14), C.acc); w.addSpacer(4);
   const n = small ? 2 : big ? 6 : 3;
-  if (MODE === 'signals') {
+  const dirTxt = { up: '↑', down: '↓', flat: '↔', none: '–' }, dirCol = d => d === 'up' ? C.good : d === 'down' ? C.bad : C.mute;
+  if ((MODE === 'auto' || MODE === 'best') && j.decision) {
+    const d = j.decision, b = d.best || {};
+    line(w, b.text || '—', Font.boldSystemFont(small ? 13 : 15), b.kind === 'buy' ? C.good : b.kind === 'urgent' ? C.bad : b.kind === 'cash' ? C.fg : C.warn, small ? 2 : 1);
+    if (!small) line(w, (b.why || '').split(/[.؛]/)[0], Font.systemFont(9), C.mute, 2);
+    if (small) { line(w, (b.grade ? 'درجه ' + b.grade + ' · ' : '') + FA(d.screened || 0) + ' دارایی بررسی شد', Font.systemFont(9), C.mute, 2); }
+    else {
+      w.addSpacer(3); const opp = (d.opps || []).slice(0, big ? 5 : 3);
+      if (!opp.length) line(w, 'فرصتی با دید صعودی و شواهد مثبت نیست', Font.systemFont(10), C.mute, 1);
+      opp.forEach((o, i) => { line(w, FA(i + 1) + '. ' + o.asset + ' (' + o.market + ') ' + dirTxt[o.dir] + ' · ' + (o.label.indexOf('تأییدشده') === 0 ? 'درجه ' + o.grade : 'مشروط ' + o.grade), Font.semiboldSystemFont(11), o.label.indexOf('تأییدشده') === 0 ? C.good : C.warn, 1);
+        line(w, big ? o.act : ('آخرین ' + cn(o.last) + (o.r20 ? ' · ۲۰ روز: ' + cn(o.last * (1 + o.r20[0])) + ' تا ' + cn(o.last * (1 + o.r20[2])) : '')), Font.systemFont(9), C.mute, 1); });
+      if (big) { w.addSpacer(3); line(w, 'پیش‌بینی بازارها', Font.semiboldSystemFont(11), C.acc, 1);
+        const st = w.addStack(); st.layoutHorizontally(); st.spacing = 6; st.addSpacer();
+        (d.markets || []).slice(0, 6).reverse().forEach(m => { const t = st.addText(m.name.replace('بازارهای جهانی و کالا', 'جهانی') .replace('اوراق و نرخ بهره', 'اوراق') + ' ' + dirTxt[m.dir]); t.font = Font.systemFont(10); t.textColor = dirCol(m.dir); });
+        if ((j.alerts || []).length) line(w, '⚠︎ ' + j.alerts.slice(0, 2).join(' · '), Font.systemFont(9), C.warn, 1); }
+    }
+  } else if (MODE === 'signals') {
     const s = j.signals || []; if (!s.length) line(w, 'سیگنال تأییدشده‌ای نیست', Font.systemFont(12), C.mute);
     s.slice(0, n).forEach(x => { line(w, x.asset + ' · ' + x.action + ' · درجه ' + x.grade, Font.semiboldSystemFont(12), C.good, 1);
       if (!small) line(w, 'ورود ' + (x.entry ? num(x.entry[0]) + '–' + num(x.entry[1]) : '—') + ' · ضرر ' + num(x.stop) + ' · هدف ' + (x.tp ? num(x.tp[x.tp.length > 1 ? 1 : 0]) : '—'), Font.systemFont(10), C.mute, 1); });
@@ -72,9 +92,11 @@ function build(D, fam) {
     if (big && j.forecast && j.forecast.length) { w.addSpacer(4); j.forecast.forEach(f => line(w, 'شاخص تا ' + FA(f.h) + ' جلسه: ' + FA(Math.round(f.p * 100)) + '٪ احتمال مثبت' + (f.skill ? '' : ' (نرخ پایه)'), Font.systemFont(10), C.mute, 1)); }
   }
   w.addSpacer();
-  const old = (Date.now() - new Date(j.at).getTime()) > 36 * 3600e3;
-  line(w, (D.live ? '' : 'آخرین دادهٔ معتبر · ') + (j.src === 'phone' ? 'از گوشی · ' : '') + ago(j.at) + (j.asOfFa ? ' · داده تا ' + FA(j.asOfFa) : j.asOf ? ' · داده تا ' + gdate(j.asOf) : ''), Font.systemFont(9), !D.live || old ? C.warn : C.mute, 2);
-  if (j.val && j.val !== 'ok') line(w, 'اعتبارسنجی معتبر نیست', Font.systemFont(9), C.bad, 1);
+  const ageH = (Date.now() - new Date(j.at).getTime()) / 3600e3, oldD = ageH > 24, hm = new Date(j.at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+  const status = !D.live ? (D.cache ? 'دریافت تازه ناموفق — ' : '') + 'دادهٔ ذخیره‌شده' : (j.src === 'phone' ? 'از گوشی' : 'از سایت');
+  line(w, 'تحلیل ' + hm + ' (' + ago(j.at) + ') · بازار تا ' + (j.asOfFa ? FA(j.asOfFa) : gdate(j.asOf)) + ' · ' + status + (j.valVer ? ' · نسخه ' + FA(j.valVer) : ''), Font.systemFont(8), oldD || !D.live ? C.warn : C.mute, 2);
+  if (oldD) line(w, 'قدیمی: بیش از یک روز از تحلیل گذشته است', Font.systemFont(8), C.bad, 1);
+  if (j.val && j.val !== 'ok') line(w, 'اعتبارسنجی معتبر نیست', Font.systemFont(8), C.bad, 1);
   return w;
 }
 // local notification only for what is new since the last refresh: a new confirmed signal, a changed grade, a new stop warning
