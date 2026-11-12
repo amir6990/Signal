@@ -21,9 +21,15 @@ function cached() { try { return fm.fileExists(CACHE) ? JSON.parse(fm.readString
 function save(j) { fm.writeString(CACHE, JSON.stringify(j)); }
 async function load() {
   const qp = (typeof args !== 'undefined' && args.queryParameters) || {};
-  if (qp.data) { try { const j = JSON.parse(qp.data); if (j && j.v) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; } } catch (e) { return { j: cached(), live: false, err: 'دادهٔ ارسالی خوانا نبود' }; } }
-  // run by hand inside Scriptable: take the data the hub copied to the clipboard («ارسال به ویجت» copies it too)
-  if (typeof config !== 'undefined' && !config.runsInWidget) { try { const t = Pasteboard.pasteString(); const j = t && t.trim()[0] === '{' ? JSON.parse(t) : null; if (j && j.v && j.priorities) { const o = cached(); if (!o || !o.at || new Date(j.at) >= new Date(o.at)) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; } } } catch (e) { /* not hub data */ } }
+  let sendErr = '';
+  if (qp.data) { try { const j = JSON.parse(qp.data); if (j && j.v) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; } } catch (e) { sendErr = 'دادهٔ داخل لینک کامل نرسید؛ از کلیپ‌بورد خوانده می‌شود.'; } }
+  // opened by the hub («ارسال به ویجت» copies the data and opens scriptable:///run/HubWidget?clip=1) or run by hand: read the clipboard
+  if (typeof config !== 'undefined' && !config.runsInWidget) {
+    try { const t = Pasteboard.pasteString(); const j = t && t.trim()[0] === '{' ? JSON.parse(t) : null;
+      if (j && j.v && j.pulse) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; }
+      if (qp.clip || qp.data) return { j: cached(), live: false, err: 'در کلیپ‌بورد دادهٔ هاب نبود. در هاب دوباره «ارسال به ویجت» را بزنید.', sendFail: true };
+    } catch (e) { if (qp.clip || qp.data) return { j: cached(), live: false, err: 'دادهٔ کلیپ‌بورد خوانا نبود: ' + String(e.message || e), sendFail: true }; }
+  }
   const old = cached();
   try {
     const r = new Request(SITE + 'data/widget.json?t=' + Date.now()); r.timeoutInterval = 15; const txt = await r.loadString(); const code = r.response && r.response.statusCode;
@@ -83,6 +89,7 @@ async function notifyNew(D) {
 const D = await load();
 await notifyNew(D);
 const W = build(D, config.widgetFamily || 'medium');
+if (D.sendFail && !config.runsInWidget) { const a = new Alert(); a.title = 'ویجت به‌روز نشد'; a.message = D.err || ''; a.addAction('باشه'); try { await a.present(); } catch (e) { /* ignore */ } }
 if (D.sent && !config.runsInWidget) { const a = new Alert(); a.title = 'ویجت به‌روز شد'; a.message = 'داده از هاب دریافت و ذخیره شد. ویجت صفحهٔ اصلی در تازه‌سازی بعدی آن را نشان می‌دهد.'; a.addAction('باشه'); try { await a.present(); } catch (e) { /* ignore */ } }
 if (config.runsInWidget) Script.setWidget(W); else await W.presentMedium();
 Script.complete();
