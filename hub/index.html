@@ -20800,6 +20800,77 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.longView;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+/* js/core/macroeval.js */
+/* =====================================================================
+ * MACRO ENGINE — forecast evaluation for economic variables (not tradable).
+ * A macro variable is judged by out-of-sample forecast error against simple benchmarks, never by
+ * trading back-test metrics. Walk-forward (expanding window, origin t sees data to t only),
+ * h-step forecasts, models: naive (last value), drift, AR(1) on changes, seasonal naive.
+ * A model "beats the benchmark" only when relative MAE < 0.95 AND a Diebold–Mariano test on absolute
+ * errors (HAC variance for overlapping horizons) has t >= 2 AND there are >= 30 forecasts.
+ * Otherwise the stated verdict is "no evidence of improvement over the naive forecast".
+ * Forecast intervals are the 10%/90% quantiles of the model's own past out-of-sample errors.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var isF = function (x) { return typeof x === 'number' && isFinite(x); };
+  var mean = function (a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : NaN; };
+  var sd = function (a) { var m = mean(a), s = 0; for (var i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m); return a.length > 1 ? Math.sqrt(s / (a.length - 1)) : NaN; };
+  function quant(a, q) { var b = a.slice().sort(function (x, y) { return x - y; }); if (!b.length) return NaN; var p = (b.length - 1) * q, i = Math.floor(p); return b[i] + (b[Math.min(i + 1, b.length - 1)] - b[i]) * (p - i); }
+
+  // "date value" per line (or just values); Persian digits, thousands separators and a decimal slash/comma are read
+  function parse(text) {
+    var P = { '۰': 0, '۱': 1, '۲': 2, '۳': 3, '۴': 4, '۵': 5, '۶': 6, '۷': 7, '۸': 8, '۹': 9, '٠': 0, '١': 1, '٢': 2, '٣': 3, '٤': 4, '٥': 5, '٦': 6, '٧': 7, '٨': 8, '٩': 9 };
+    var out = [], bad = [];
+    String(text || '').split(/\r?\n/).forEach(function (ln, i) {
+      ln = ln.replace(/[۰-۹٠-٩]/g, function (c) { return P[c]; }).replace(/٬/g, ',').replace(/٫/g, '.').trim(); if (!ln) return;
+      var m = /^(.*?)[\s,;\t]+(-?\d[\d,]*\.?\d*)\s*$/.exec(ln) || /^(-?\d[\d,]*\.?\d*)$/.exec(ln), v;
+      if (!m) { bad.push(i + 1); return; }
+      var tk = m[2] != null ? m[2] : m[1]; v = Number(/^-?\d+,\d{1,2}$/.test(tk) ? tk.replace(',', '.') : tk.replace(/,/g, '')); if (!isF(v)) { bad.push(i + 1); return; }
+      out.push({ label: m[2] != null ? m[1].trim() : String(out.length + 1), v: v });
+    });
+    return { rows: out, bad: bad };
+  }
+  function ar1d(train) {   // Δy_{t+1} = c + φ Δy_t, OLS on the training changes
+    var d = []; for (var i = 1; i < train.length; i++) d.push(train[i] - train[i - 1]);
+    if (d.length < 8) return null; var x = d.slice(0, -1), y = d.slice(1), mx = mean(x), my = mean(y), sxx = 0, sxy = 0;
+    for (var k = 0; k < x.length; k++) { sxx += (x[k] - mx) * (x[k] - mx); sxy += (x[k] - mx) * (y[k] - my); }
+    var phi = sxx > 0 ? sxy / sxx : 0; phi = Math.max(-0.95, Math.min(0.95, phi)); return { phi: phi, c: my - phi * mx, last: d[d.length - 1] };
+  }
+  var MODELS = {
+    naive: { fa: 'ساده (آخرین مقدار)', f: function (tr, h) { return tr[tr.length - 1]; } },
+    drift: { fa: 'روند خطی (میانگین تغییر)', f: function (tr, h) { return tr[tr.length - 1] + h * (tr[tr.length - 1] - tr[0]) / (tr.length - 1); } },
+    ar1d: { fa: 'خودرگرسیون روی تغییرها', f: function (tr, h) { var m = ar1d(tr); if (!m) return NaN; var y = tr[tr.length - 1], d = m.last; for (var i = 0; i < h; i++) { d = m.c + m.phi * d; y += d; } return y; } },
+    snaive: { fa: 'فصلی ساده (همان دورهٔ سال قبل)', f: function (tr, h, per) { if (!(per > 1)) return NaN; var k = Math.ceil(h / per), i = tr.length - 1 + h - k * per; return i >= 0 && i < tr.length ? tr[i] : NaN; } }
+  };
+  function dm(dl, h) {   // Diebold–Mariano on loss differences with Newey–West variance (lag h−1)
+    var n = dl.length; if (n < 10) return NaN; var m = mean(dl), g0 = 0; dl.forEach(function (x) { g0 += (x - m) * (x - m); }); g0 /= n; var v = g0;
+    for (var k = 1; k < h && k < n; k++) { var g = 0; for (var i = k; i < n; i++) g += (dl[i] - m) * (dl[i - k] - m); v += 2 * (1 - k / h) * g / n; }
+    return v > 0 ? m / Math.sqrt(v / n) : NaN;
+  }
+  function evaluate(vals, o) {
+    o = o || {}; var h = Math.max(1, o.h || 1), per = o.period || 0, n = vals.length, minTrain = o.minTrain || Math.max(20, per * 3), res = { n: n, h: h, per: per, models: {}, ok: false, note: '' };
+    if (n < minTrain + h + 10) { res.note = 'سری کوتاه است: برای ارزیابی خارج از نمونه دست‌کم ' + (minTrain + h + 10) + ' مشاهده لازم است (دارید ' + n + ').'; return res; }
+    var ids = Object.keys(MODELS).filter(function (m) { return m !== 'snaive' || per > 1; }), E = {}, A = {};
+    ids.forEach(function (m) { E[m] = []; A[m] = []; });
+    var last = []; for (var t = minTrain - 1; t + h < n; t++) { var tr = vals.slice(0, t + 1), y = vals[t + h]; last.push(t);
+      ids.forEach(function (m) { var f = MODELS[m].f(tr, h, per); if (isF(f)) { E[m].push({ t: t, e: y - f, up: Math.sign(f - vals[t]), act: Math.sign(y - vals[t]) }); } }); }
+    var nv = E.naive; res.nF = nv.length; var sc = 0, sk = 0; for (var i = 1; i < minTrain; i++) { sc += Math.abs(vals[i] - vals[i - 1]); sk++; } sc = sk ? sc / sk : NaN;
+    ids.forEach(function (m) {
+      var es = E[m], mae = mean(es.map(function (x) { return Math.abs(x.e); })), rmse = Math.sqrt(mean(es.map(function (x) { return x.e * x.e; }))), dirs = es.filter(function (x) { return x.act !== 0; });
+      var o2 = { fa: MODELS[m].fa, n: es.length, mae: mae, rmse: rmse, mase: isF(sc) && sc > 0 ? mae / sc : NaN, bias: mean(es.map(function (x) { return x.e; })), dir: dirs.length ? dirs.filter(function (x) { return x.up === x.act; }).length / dirs.length : NaN, q10: quant(es.map(function (x) { return x.e; }), 0.1), q90: quant(es.map(function (x) { return x.e; }), 0.9) };
+      if (m !== 'naive' && es.length === nv.length) { var nvm = mean(nv.map(function (x) { return Math.abs(x.e); })); o2.rel = nvm > 0 ? mae / nvm : NaN; o2.dm = dm(nv.map(function (x, k) { return Math.abs(x.e) - Math.abs(es[k].e); }), h); o2.beats = es.length >= 30 && o2.rel < 0.95 && o2.dm >= 2; o2.worse = o2.rel > 1.05 && o2.dm <= -2; }
+      res.models[m] = o2; });
+    var win = ids.filter(function (m) { return res.models[m].beats; }).sort(function (a, b) { return res.models[a].rel - res.models[b].rel; })[0];
+    res.best = win || 'naive'; res.verdict = win ? 'پیش‌بینی «' + MODELS[win].fa + '» روی داده‌های خارج از نمونه از پیش‌بینی ساده دقیق‌تر بود (خطای نسبی ' + res.models[win].rel.toFixed(2) + '، آمارهٔ DM ' + res.models[win].dm.toFixed(2) + ').' : 'شواهدی نیست که هیچ‌یک از مدل‌ها از «آخرین مقدار» دقیق‌تر باشند؛ پیش‌بینی ساده مبنا می‌ماند.';
+    var bm = res.models[res.best], tr2 = vals; res.fc = { model: res.best, point: MODELS[res.best].f(tr2, h, per) }; res.fc.lo = res.fc.point + bm.q10; res.fc.hi = res.fc.point + bm.q90; res.ok = true;
+    return res;
+  }
+  Hub.macroEval = { parse: parse, evaluate: evaluate, MODELS: MODELS, dm: dm };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Hub.macroEval;
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* js/core/tradeengine.js */
 /* =====================================================================
  * TRADING ENGINE — regime, 23 voting models, one ensemble, a standard
@@ -21491,6 +21562,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     add('all', tr); var cls = {}, rgs = {}; tr.forEach(function (x) { (cls[x.cls] = cls[x.cls] || []).push(x); (rgs[x.rg] = rgs[x.rg] || []).push(x); });
     Object.keys(cls).forEach(function (c) { add('c:' + c, cls[c]); var rg = {}; cls[c].forEach(function (x) { (rg[x.rg] = rg[x.rg] || []).push(x); }); Object.keys(rg).forEach(function (r) { add('c:' + c + '|' + r, rg[r]); }); });
     Object.keys(rgs).forEach(function (r) { add('r:' + r, rgs[r]); });
+    var hzs = {}; tr.forEach(function (x) { var k = x.days <= 10 ? 's' : x.days <= 40 ? 'm' : 'l'; (hzs[k] = hzs[k] || []).push(x); (hzs[x.cls + '#' + k] = hzs[x.cls + '#' + k] || []).push(x); });
+    Object.keys(hzs).forEach(function (k) { add(k.indexOf('#') > -1 ? 'c:' + k : 'h:' + k, hzs[k]); });   // by actual holding period: s ≤ 10 sessions, m ≤ 40, l longer
     var ba = {}, ga = {}; tr.forEach(function (x) { (ga[x.asset] = ga[x.asset] || []).push(x); }); Object.keys(ga).forEach(function (k) { var s = stats(ga[k]); ba[k] = [s.n, Math.round(s.hit * 100) / 100, Math.round(s.avgR * 100) / 100]; });
     var rules = {}; bt.rules.forEach(function (r) { rules[r.m] = { is: r.is, oos: r.oos, ok: r.ok, v: r.v ? { t: r.v.t, tc: r.v.tc, nFolds: r.v.nFolds, posFolds: r.v.posFolds, c2: r.v.c2 } : null }; });
     var asOf = 0, from = 1e9; list.forEach(function (z) { asOf = Math.max(asOf, z.R.X.d[z.R.X.n - 1]); from = Math.min(from, z.R.X.d[0]); });
@@ -21576,6 +21649,32 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function validate(E0, U0, J) {
     var r = run(E0, U0, { backtest: true }), db = r.valDb; if (!db) return r;
     var V = E0.val = E0.val || {}; V.db = db; registry(V, db, J, r.E); return r;
+  }
+
+  /* ---------------- multi-market layer: registry of what is covered, and the central ranking of markets ---------------- */
+  var MARKETS = [
+    { id: 'stock', fa: 'سهام و صندوق‌های بورس و فرابورس ایران', cls: ['stock', 'fund'], data: 'TSETMC: تاریخچهٔ روزانه، جریان پول حقیقی/حقوقی، دامنهٔ نوسان', bt: 'بک‌تست معاملاتی (موتور بازار)' },
+    { id: 'gold', fa: 'طلا و سکه (داخلی) و اونس جهانی', cls: ['gold'], data: 'TGJU: سری‌های روزانه', bt: 'بک‌تست معاملاتی؛ نرخ بهرهٔ واقعی، DXY و انتظارات تورمی در موتور نیست' },
+    { id: 'fx', fa: 'ارز بازار آزاد ایران و تتر', cls: ['fx'], data: 'TGJU: سری‌های روزانه', bt: 'بک‌تست معاملاتی؛ اختلاف نرخ بهره و سیاست بانک مرکزی در موتور نیست' },
+    { id: 'option', fa: 'اختیار معامله (بورس ایران)', cls: ['option'], data: 'عکس لحظه‌ای تابلوی TSETMC؛ تاریخچهٔ قراردادها ذخیره نمی‌شود', bt: 'ممکن نیست (بدون تاریخچه) ← همیشه تأییدنشده' },
+    { id: 'intl', fa: 'سهام و ETF بین‌المللی، شاخص‌های جهانی', cls: [], data: 'FMP / Alpha Vantage برای مدل‌های ارزش‌گذاری وصل است؛ به موتور سیگنال وصل نیست', bt: 'انجام نشده' },
+    { id: 'forex', fa: 'فارکس، جفت‌ارزهای جهانی و DXY', cls: [], data: 'در موتور نیست', bt: 'انجام نشده' },
+    { id: 'crypto', fa: 'رمزارزها', cls: [], data: 'بیت‌کوین فقط به‌عنوان یک سری در «تحلیل اقتصاد ایران» (کلید TGJU آن تأییدنشده)؛ Funding Rate، Open Interest، تسویه و آن‌چین در موتور نیست', bt: 'انجام نشده' },
+    { id: 'commodity', fa: 'نفت، گاز، فلزات و کالاهای کشاورزی', cls: [], data: 'نفت برنت فقط به‌عنوان یک سری در «تحلیل اقتصاد ایران» (کلید TGJU تأییدنشده)؛ موجودی انبار، هزینهٔ تولید و آب‌وهوا نیست', bt: 'انجام نشده' },
+    { id: 'debt', fa: 'اوراق بدهی و نرخ بهره', cls: [], data: 'ابزار قیمت‌گذاری و ytm هست؛ تاریخچهٔ قیمت اوراق و منحنی بازده در موتور سیگنال نیست', bt: 'انجام نشده' },
+    { id: 'futures', fa: 'قراردادهای آتی', cls: [], data: 'در موتور نیست', bt: 'انجام نشده' }];
+  // central engine: which market has the better confirmed opportunity now (only markets the engine covers)
+  function rankMarkets(cards, db, list, E) {
+    var th = Object.assign({}, VTH, E.val && E.val.th), M = {};
+    var get = function (c) { return M[c] = M[c] || { cls: c, assets: 0, A: 0, B: 0, gated: 0, best: null }; };
+    list.forEach(function (z) { get(z.a.cls).assets++; });
+    cards.forEach(function (c) { var m = get(c.cls); if (c.cls === 'option') m.assets++;
+      if (c.candidate) m.gated++;
+      if ((c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B')) { m[c.val.grade]++; var sc = (c.val.grade === 'A' ? 1000 : 0) + c.conf; if (!m.best || sc > m.best.sc) m.best = { c: c, sc: sc }; } });
+    var rows = Object.keys(M).map(function (k) { var m = M[k], p = db && db.pools && db.pools['c:' + k]; m.score = 2 * m.A + m.B; m.pool = p && p.n ? { n: p.n, oosN: p.oos && p.oos.n, oosAvgR: p.oos && p.oos.avgR } : null; return m; })
+      .sort(function (a, b) { return b.score - a.score || ((b.pool && b.pool.oosAvgR) || -9) - ((a.pool && a.pool.oosAvgR) || -9); });
+    var top = cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B'); }).sort(function (a, b) { return a.val.grade.localeCompare(b.val.grade) || b.conf - a.conf || b.rr2 - a.rr2; }).slice(0, 8);
+    return { rows: rows, top: top, none: !top.length, th: th };
   }
 
   /* ---------------- continuous learning: journal → outcomes → patterns → bounded, reviewable changes ----------------
@@ -21728,7 +21827,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var bt = btF;
     var counts = { long: cards.filter(function (c) { return c.type === 'long'; }).length, strong: cards.filter(function (c) { return c.type === 'long' && c.strength === 'قوی'; }).length, close: cards.filter(function (c) { return c.type === 'close'; }).length, hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
     var sample = (U.assets || []).some(function (a) { return a.sample; });
-    return { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
+    return { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, markets: rankMarkets(cards, db, list, E), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
   }
 
   /* ---------------- six test scenarios (synthetic series, known answers) ---------------- */
@@ -21770,7 +21869,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, MARKETS: MARKETS, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -23259,6 +23358,66 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       h('div', { class: 'row-ctl' }, [dl])]);
   }
 
+
+  /* ---------- 13 · multi-market layer: central ranking, coverage, macro engine ---------- */
+  var HZFA = { s: 'کوتاه‌مدت (تا ۱۰ جلسه)', m: 'میان‌مدت (۱۰ تا ۴۰ جلسه)', l: 'بلندمدت (بیش از ۴۰ جلسه)' };
+  function macState(S) { if (!S.mac || typeof S.mac !== 'object') S.mac = { series: [], log: [] }; if (!Array.isArray(S.mac.series)) S.mac.series = []; if (!Array.isArray(S.mac.log)) S.mac.log = []; return S.mac; }
+  function saveS(S) { try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ } }
+  function macroPanel(ctx) {
+    var S = ctx.S, M = macState(S), ME = Hub.macroEval, out = h('div');
+    var nm = h('input', { class: 'f-in', type: 'text', 'aria-label': 'نام متغیر', placeholder: 'نام متغیر (مثلاً تورم ماهانه، نقدینگی، PMI)' });
+    var per = h('select', { class: 'f-sel', 'aria-label': 'دورهٔ فصلی' }, [['0', 'بدون الگوی فصلی'], ['4', 'فصلی (۴)'], ['12', 'ماهانه با الگوی سالانه (۱۲)']].map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
+    var hh = h('input', { class: 'cell-in', type: 'text', inputmode: 'numeric', style: 'width:60px', value: '1', 'aria-label': 'افق پیش‌بینی (دوره)' });
+    var ta = h('textarea', { class: 'f-area', rows: 5, 'aria-label': 'سری', placeholder: 'هر خط یک مشاهده، قدیم به جدید: «برچسب دوره، فاصله، مقدار» مثل  1403/05 41.2  . عددها فارسی هم پذیرفته می‌شوند. مقدارها را از منبع رسمی بردارید و منبع را در نام بنویسید.' });
+    var add = h('button', { class: 'btn', type: 'button', text: 'افزودن سری', onclick: function () {
+      var p = ME.parse(ta.value); if (p.bad.length) { U.toast('خط‌های نامعتبر: ' + p.bad.slice(0, 8).join('، '), 'warn'); return; } if (p.rows.length < 12) { U.toast('دست‌کم ۱۲ مشاهده لازم است.', 'warn'); return; }
+      M.series.push({ id: 'm' + Date.now(), name: (nm.value || 'متغیر بدون نام').trim(), period: Number(per.value) || 0, h: Math.max(1, Math.floor(Number(hh.value)) || 1), labels: p.rows.map(function (r) { return r.label; }), vals: p.rows.map(function (r) { return r.v; }) }); saveS(S); ctx.rerender(); } });
+    var items = M.series.map(function (sr) {
+      var R = ME.evaluate(sr.vals, { h: sr.h, period: sr.period }), body = [];
+      body.push(h('h4', { text: sr.name + ' — ' + sr.vals.length + ' مشاهده، افق ' + sr.h + ' دوره' }));
+      if (!R.ok) body.push(h('p', { class: 'neg', text: R.note })); else {
+        body.push(table(['مدل', 'تعداد پیش‌بینی', 'MAE', 'خطای نسبی به مدل ساده', 'آمارهٔ DM', 'درستی جهت', 'اریبی'], Object.keys(R.models).map(function (k) { var m = R.models[k]; return [m.fa + (m.beats ? ' ✔' : ''), fa(m.n, 0), fa(m.mae, 3), m.rel != null ? fa(m.rel, 2) : '۱٫۰۰ (مبنا)', m.dm != null && isFinite(m.dm) ? fa(m.dm, 2) : '—', isFinite(m.dir) ? pct(m.dir, 0) : '—', fa(m.bias, 3)]; })));
+        body.push(h('p', { class: 'f-help', text: R.verdict + ' ✔ یعنی خطای نسبی کمتر از ۰٫۹۵ و DM ≥ ۲ با دست‌کم ۳۰ پیش‌بینی. ارزیابی با پنجرهٔ گسترشی است و هر پیش‌بینی فقط داده تا همان نقطه را دیده است.' }));
+        var f = R.fc, last = sr.labels[sr.labels.length - 1];
+        body.push(h('p', { text: 'پیش‌بینی ' + sr.h + ' دورهٔ بعد از «' + last + '» با ' + ME.MODELS[f.model].fa + ': ' + fa(f.point, 3) + ' (بازهٔ ۱۰٪ تا ۹۰٪ از خطاهای خارج از نمونهٔ گذشتهٔ همین مدل: ' + fa(f.lo, 3) + ' تا ' + fa(f.hi, 3) + '). بازه تضمین نیست.' }));
+        body.push(h('div', { class: 'row-ctl' }, [h('button', { class: 'btn', type: 'button', text: 'ثبت این پیش‌بینی برای سنجش بعدی', onclick: function () { M.log.push({ id: 'l' + Date.now(), sid: sr.id, name: sr.name, h: sr.h, from: last, model: f.model, point: f.point, lo: f.lo, hi: f.hi, at: new Date().toISOString().slice(0, 10), actual: null }); saveS(S); ctx.rerender(); } }),
+          h('button', { class: 'btn ghost', type: 'button', text: 'حذف سری', onclick: function () { M.series = M.series.filter(function (x) { return x.id !== sr.id; }); S.mac.series = M.series; saveS(S); ctx.rerender(); } })])); }
+      return h('div', null, body); });
+    var lg = M.log.map(function (l) {
+      var i = h('input', { class: 'cell-in', type: 'text', inputmode: 'decimal', style: 'width:90px', 'aria-label': 'مقدار تحقق‌یافته', value: l.actual == null ? '' : String(l.actual) });
+      i.addEventListener('change', function () { var v = Number(String(i.value).replace(/,/g, '')); l.actual = i.value.trim() === '' || !isFinite(v) ? null : v; saveS(S); ctx.rerender(); });
+      var done = l.actual != null, e = done ? l.actual - l.point : NaN;
+      return [l.name, l.at, 'از «' + l.from + '» + ' + fa(l.h, 0) + ' دوره', fa(l.point, 3), fa(l.lo, 3) + ' تا ' + fa(l.hi, 3), i, done ? fa(e, 3) : '—', done ? (l.actual >= l.lo && l.actual <= l.hi ? 'درون بازه' : 'بیرون بازه') : 'در انتظار']; });
+    var gr = M.log.filter(function (l) { return l.actual != null; });
+    return ctx.panel('موتور کلان: ارزیابی پیش‌بینی متغیرهای اقتصادی (بدون معیار بک‌تست معاملاتی)', [
+      h('p', { class: 'f-help', text: 'متغیر کلان (تورم، نقدینگی، رشد، نرخ بهره، PMI، شکاف نرخ ارز…) ابزار معاملاتی نیست؛ پس با سود و زیان سنجیده نمی‌شود، با خطای پیش‌بینی خارج از نمونه در برابر پیش‌بینی ساده سنجیده می‌شود. داده‌ها را شما از منبع رسمی وارد می‌کنید (ابزار هنوز دریافت خودکار آمار کلان ندارد). مدل‌ها ساده‌اند (آخرین مقدار، روند، خودرگرسیون روی تغییرها، فصلی)؛ تأخیر زمانی، علیت و روابط چندمتغیره بررسی نمی‌شوند.' }),
+      h('div', { class: 'row-ctl' }, [nm, per, h('label', { class: 'f-help' }, ['افق: ', hh]), add]), ta].concat(items.length ? items : [h('p', { class: 'muted', text: 'هنوز سری‌ای اضافه نشده است.' })]).concat([
+      h('h4', { text: 'ثبت پیش‌بینی‌ها و سنجش با مقدار تحقق‌یافته' + (gr.length ? ' — ' + fa(gr.length, 0) + ' مورد سنجیده شد: میانگین قدر مطلق خطا ' + fa(gr.reduce(function (a, l) { return a + Math.abs(l.actual - l.point); }, 0) / gr.length, 3) + '، درون بازه ' + fa(gr.filter(function (l) { return l.actual >= l.lo && l.actual <= l.hi; }).length, 0) + ' از ' + fa(gr.length, 0) : '') }),
+      lg.length ? table(['متغیر', 'ثبت', 'مبنا', 'پیش‌بینی', 'بازه', 'مقدار تحقق‌یافته', 'خطا', 'وضعیت'], lg) : h('p', { class: 'muted', text: 'پیش‌بینی ثبت‌شده‌ای نیست.' })]));
+  }
+  function mkTab(ctx) {
+    var S = ctx.S, E = ensure(S), X = ctx.R.X, db = E.val.db, MK = X.markets, ps = [];
+    var rk = MK.rows.map(function (m) { var b = m.best && m.best.c; return [CLS[m.cls] || m.cls, fa(m.assets, 0), fa(m.A, 0), fa(m.B, 0), fa(m.gated, 0), m.pool ? fa(m.pool.n, 0) + ' · ' + (m.pool.oosN ? fa(m.pool.oosAvgR, 2) + 'R' : '—') : 'بدون اعتبارسنجی', b ? b.sym + ' (درجه ' + b.val.grade + '، اطمینان ' + fa(b.conf, 0) + '٪)' : '—']; });
+    ps.push(ctx.panel('موتور مرکزی: امروز کدام بازار فرصت تأییدشده دارد؟', [
+      MK.none ? h('p', { class: 'neg', text: 'عدم صدور سیگنال: در هیچ‌یک از بازارهای تحت پوشش موتور فرصت با درجهٔ A یا B نیست' + (X.valState === 'ok' ? '.' : ' (اعتبارسنجی معتبر و به‌روز نیست؛ ابتدا در زبانهٔ «سیگنال‌ها» اجرا کنید).') }) :
+        table(['#', 'نماد', 'بازار', 'سیگنال', 'درجه', 'اطمینان', 'R:R تا هدف ۲', 'ورود', 'حد ضرر'], MK.top.map(function (c, i) { return [fa(i + 1, 0), c.sym, CLS[c.cls] || c.cls, c.typeFa, c.val.grade, fa(c.conf, 0) + '٪', '۱:' + fa(c.rr2, 1), px(c.lo, c) + '–' + px(c.hi, c), px(c.stop, c)]; })),
+      h('h4', { text: 'رتبهٔ بازارها (امتیاز = ۲×سیگنال A + ۱×سیگنال B؛ تساوی با امید ریاضی خارج از نمونهٔ بازار)' }),
+      table(['بازار', 'دارایی', 'سیگنال A', 'سیگنال B', 'مسدود (C/D)', 'شواهد بازار: معامله · امید ریاضی خارج از نمونه', 'بهترین'], rk),
+      h('p', { class: 'f-help', text: 'رتبه‌بندی فقط میان بازارهایی است که موتور پوشش می‌دهد (جدول پایین). نبودن فرصت در بازارهای بدون پوشش (رمزارز، کالا، اوراق…) به معنای نبودن فرصت در آن‌ها نیست؛ یعنی بررسی نشده‌اند.' })]));
+    var arch = [['موتور بازار: سهام و صندوق', 'فعال', 'رأی ۲۳ مدل، رژیم، بک‌تست، درجه‌بندی'], ['موتور بازار: طلا / ارز', 'فعال (سری روزانهٔ TGJU)', 'همان هستهٔ تکنیکال؛ متغیرهای بنیادی مخصوص طلا/ارز نیست'], ['موتور بازار: اختیار معامله', 'فعال بدون اعتبارسنجی', 'قیمت‌گذاری و نقدشوندگی؛ تاریخچه ندارد'],
+      ['موتورهای بازار: رمزارز، کالا، اوراق، آتی، فارکس، سهام جهانی', 'ساخته نشده', 'نیاز به داده‌ی تاریخی معتبر و منطق اختصاصی هر بازار'], ['موتور کلان', 'فعال (ورود دستی سری)', 'ارزیابی پیش‌بینی با خطای خارج از نمونه؛ پایین همین صفحه'],
+      ['موتور مرکزی', 'جزئی', 'رتبه‌بندی بازارها بر پایهٔ سیگنال‌های تأییدشده؛ جفت‌ها و نسبت‌ها در امتیاز «مقطعی» هستند. واگرایی بین‌بازاری آزموده‌شده (مثلاً اونس در برابر طلای داخلی) هنوز آزمون مستقل ندارد']];
+    ps.push(ctx.panel('معماری چندموتوره', [table(['موتور', 'وضعیت', 'توضیح'], arch)]));
+    var cov = TE.MARKETS.map(function (m) { var n = 0; X.list.forEach(function (z) { if (m.cls.indexOf(z.a.cls) > -1) n++; }); if (m.id === 'option') n = X.cards.filter(function (c) { return c.cls === 'option'; }).length;
+      var v = m.cls.some(function (c) { return db && db.pools && db.pools['c:' + c] && db.pools['c:' + c].n >= 15; }); return [m.fa, m.cls.length ? fa(n, 0) : '۰', m.data, m.bt, m.cls.length ? (v ? 'اعتبارسنجی‌شده' : 'تأییدنشده — اعتبارسنجی اجرا نشده یا نمونه کم') : 'تأییدنشده — پوشش ندارد']; });
+    ps.push(ctx.panel('پوشش بازارها و وضعیت اعتبارسنجی', [h('p', { class: 'f-help', text: 'هر بازاری که داده یا اعتبارسنجی مستقل ندارد «تأییدنشده» می‌ماند و در رتبه‌بندی نمی‌آید. گسترش پوشش باید تدریجی و بر پایهٔ داده‌ی واقعی باشد؛ داده‌ی این بازارها را باید به ابزار وصل کرد (نیازمند منبع معتبر و کلید).' }), table(['بازار', 'دارایی در موتور', 'داده', 'روش اعتبارسنجی', 'وضعیت'], cov)]));
+    if (db) { var keys = Object.keys(db.pools).filter(function (k) { return k.indexOf('h:') === 0 || /^c:[a-z]+#/.test(k); }).sort();
+      ps.push(ctx.panel('بانک اعتبارسنجی به تفکیک بازار، افق و رژیم', [h('p', { class: 'f-help', text: 'افق بر پایهٔ مدت نگه‌داری واقعی معامله‌های شبیه‌سازی‌شده است. تفکیک بازار × رژیم در زبانهٔ «بک‌تست» آمده است.' }),
+        table(['بازار · افق', 'معامله', 'نرخ برد', 'ضریب سود', 'امید ریاضی', 'خارج از نمونه'], keys.map(function (k) { var p = db.pools[k], o = p.oos || {}, a = k.replace(/^c:/, '').split('#'), hz = a[a.length - 1].replace(/^h:/, ''); return [(a.length > 1 ? (CLS[a[0]] || a[0]) + ' · ' : 'همه · ') + (HZFA[hz] || hz), fa(p.n, 0), pct(p.hit, 0), isFinite(p.pf) ? fa(p.pf, 2) : '—', fa(p.avgR, 2) + 'R', o.n ? fa(o.n, 0) + ' · ' + fa(o.avgR, 2) + 'R' : '—']; }))])); }
+    ps.push(macroPanel(ctx));
+    return ctx.group(ps);
+  }
+
   function filtered(S, X) {
     var f = S.f; return X.cards.filter(function (c) { if (f.cls !== 'all' && (f.cls === 'stock' ? c.cls !== 'stock' && c.cls !== 'fund' : c.cls !== f.cls)) return false;
       if (f.type === 'act') return c.type !== 'hold'; if (f.type === 'long') return c.type === 'long'; if (f.type === 'strong') return c.type === 'long' && c.strength === 'قوی'; return true; });
@@ -23628,7 +23787,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['Index regime', function () { return X().market ? TE.REG[X().market.rg] : '—'; }, function () { return 'شاخص کل بورس'; }],
       ['Portfolio', function () { return fa(X().pf.pick.length, 0) + ' خرید · ' + fa(X().pf.watch.length, 0) + ' انتظار'; }, function () { return 'ریسک کل ' + pct(X().pf.heat, 2) + ' · نقد ' + pct(X().pf.cash, 0); }],
       ['Account risk', function () { return X().risk.state.split(/[:(]/)[0].trim(); }, function () { return isFinite(X().risk.dd) ? 'افت ' + pct(X().risk.dd, 1) : 'سرمایه را وارد کنید'; }]]; },
-    tabs: [{ group: 'Intelligent trading', items: [['run', 'اجرا، تنظیمات و داده', runTab], ['plan', 'خروجی حالت انتخابی', planTab], ['sig', 'سیگنال‌ها', sigTab], ['pf', 'ساخت سبد', pfTab], ['pos', 'پایش موقعیت‌ها', posTab], ['risk', 'مدیریت ریسک', riskTab], ['models', 'بانک مدل‌ها', modelsTab], ['bt', 'بک‌تست', btTab], ['learn', 'یادگیری و بازبینی', learnTab], ['scen', 'سناریوهای آزمون', scenTab], ['report', 'گزارش', reportTab]] },
+    tabs: [{ group: 'Intelligent trading', items: [['run', 'اجرا، تنظیمات و داده', runTab], ['plan', 'خروجی حالت انتخابی', planTab], ['sig', 'سیگنال‌ها', sigTab], ['mk', 'بازارها و موتور مرکزی', mkTab], ['pf', 'ساخت سبد', pfTab], ['pos', 'پایش موقعیت‌ها', posTab], ['risk', 'مدیریت ریسک', riskTab], ['models', 'بانک مدل‌ها', modelsTab], ['bt', 'بک‌تست', btTab], ['learn', 'یادگیری و بازبینی', learnTab], ['scen', 'سناریوهای آزمون', scenTab], ['report', 'گزارش', reportTab]] },
       { group: 'Trading tools', items: TOOLS.map(function (t) { return ['t-' + t[0], t[1], TK.embedTab(t[0], NOTE)]; }) }]
   });
   Hub.tradeUI = { sigText: sigText, excel: excel, aiPrompt: aiPrompt };
@@ -23664,11 +23823,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611121638) */
+/* PWA: offline cache + app updates (version 202611121655) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611121638';
+  window.HUB_APP_VERSION = '202611121655';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
