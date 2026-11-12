@@ -21631,8 +21631,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function registry(V, db, J, E) {
     V.reg = V.reg || {}; V.hist = V.hist || [];
     var live = null; try { var L = learnStats(J || [], null, 0); live = L && L.live && L.live.n ? { n: L.live.n, avgR: L.live.avgR, hit: L.live.hit } : null; } catch (e) { live = null; }
+    var xg0 = null; try { xg0 = xgStrategy(E); } catch (e) { xg0 = null; }
     var items = [{ id: 'ensemble', is: db.pools.all && db.pools.all.is, oos: db.pools.all && db.pools.all.oos, v: db.pools.all }];
     Object.keys(db.rules).forEach(function (m) { var r = db.rules[m]; items.push({ id: m, is: r.is, oos: r.oos, v: r.v, ok: r.ok }); });
+    if (xg0 && !xg0.sample) xg0.inst.forEach(function (o) { if (o.ev && o.ev.n) items.push({ id: 'xgold:' + o.key, is: o.ev.is, oos: o.ev.oos, v: o.ev, ok: o.grade === 'A' || o.grade === 'B' }); });
     items.forEach(function (it) {
       var r = V.reg[it.id] = V.reg[it.id] || { id: it.id, ver: 1, hist: [], first: db.at }; if (r.sig && r.sig !== db.sig) r.ver++; r.sig = db.sig; r.last = db.at; r.asOf = db.asOf;
       var o = it.oos || { n: 0 }; r.is = it.is && it.is.n ? { n: it.is.n, avgR: it.is.avgR } : { n: 0 }; r.oos = o.n ? { n: o.n, avgR: o.avgR, pf: o.pf, hit: o.hit } : { n: 0 };
@@ -21651,6 +21653,84 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var V = E0.val = E0.val || {}; V.db = db; registry(V, db, J, r.E); return r;
   }
 
+  /* ---------------- cross-market strategy XG1: domestic gold premium over world gold (independent test) ----------------
+   * Premium b_t = ln(domestic price / intrinsic), intrinsic = ounce (USD) / 31.1035 × grams × purity × free-market dollar
+   * (ounce and dollar carried forward to the domestic date; same formula as the gold signal tool).
+   * z_t = (b_t − mean) / sd over the trailing L days (data to t only). Long the domestic instrument when z ≤ −zIn; exit when
+   * z ≥ zOut, on the stop (entry − k × mean absolute daily change of 20 days) or after T sessions. Decision at close t,
+   * execution at close t+1 (no intraday assumption). No short (physical gold). Each instrument is tested on its own.
+   * Extra tests specific to this strategy: (1) lift over the drift — Iranian gold rises with inflation, so the trades must beat
+   * holding for the same number of days from any day; (2) a 3 × 3 parameter grid (L × zIn) — the result must not depend on one setting;
+   * (3) the "expensive" reading (z ≥ zIn): forward 20-day return after it vs any day, non-overlapping. */
+  var XGD = { on: true, L: 120, zIn: 1.5, zOut: 0, T: 40, k: 3, cost: null, primary: 'geram18' };
+  function xgSeries(S, ins) {
+    var g = Number(ins.grams), pu = Number(ins.purity), D = S.data || {}, rows = D[ins.key], ons = D.ons, usd = D.price_dollar_rl;
+    if (!(g > 0 && pu > 0) || !rows || !ons || !usd || rows.length < 60) return null;
+    var srt = function (a) { return a.filter(function (r) { return isF(r.close) && r.close > 0; }).slice().sort(function (p, q) { return p.date - q.date; }); };
+    var R = srt(rows), O = srt(ons), Ud = srt(usd), io = -1, iu = -1, out = { d: [], p: [], b: [], imp: [] };
+    R.forEach(function (r) { while (io + 1 < O.length && O[io + 1].date <= r.date) io++; while (iu + 1 < Ud.length && Ud[iu + 1].date <= r.date) iu++; if (io < 0 || iu < 0) return;
+      var I = O[io].close / 31.1035 * g * pu * Ud[iu].close; out.d.push(r.date); out.p.push(r.close); out.imp.push(I); out.b.push(Math.log(r.close / I)); });
+    return out.d.length >= 60 ? out : null;
+  }
+  function xgZ(b, L) { var z = new Array(b.length).fill(NaN); for (var t = L - 1; t < b.length; t++) { var w = b.slice(t - L + 1, t + 1), m = mean(w), s = sd(w); z[t] = s > 0 ? (b[t] - m) / s : NaN; } return z; }
+  function xgSim(X, P, cost, sym) {
+    var z = xgZ(X.b, P.L), p = X.p, n = p.length, tr = [], pos = null, ad = new Array(n).fill(NaN);
+    for (var i = 20; i < n; i++) { var s = 0; for (var j = i - 19; j <= i; j++) s += Math.abs(p[j] - p[j - 1]); ad[i] = s / 20; }
+    for (var t = P.L; t < n - 1; t++) {
+      if (pos) { pos.days++; var why = z[t] >= P.zOut ? 'tp' : p[t] <= pos.stop ? 'stop' : pos.days >= P.T ? 'time' : null;
+        if (why) { var ex = p[t + 1]; pos.r = (ex - pos.e) / pos.R - pos.cr; pos.ret = ex / pos.e - 1 - cost; pos.exit = why; pos.xd = X.d[t + 1]; tr.push(pos); pos = null; t++; }
+        continue; }
+      if (isF(z[t]) && z[t] <= -P.zIn && isF(ad[t]) && ad[t] > 0) { var e = p[t + 1], R = P.k * ad[t]; pos = { e: e, R: R, stop: e - R, cr: cost * e / R, d: X.d[t + 1], days: 0, conf: 0, rg: 'xg', asset: sym, cls: 'xgold', z: z[t] }; }
+    }
+    return { tr: tr, z: z, ad: ad };
+  }
+  function xgStrategy(E) {
+    var SG = Hub.signals, cfg = Object.assign({}, XGD, E.xg || {}), out = { cfg: cfg, inst: [], note: '' };
+    if (!SG || !SG.gold || cfg.on === false) { out.note = 'ابزار طلا در دسترس نیست یا راهبرد خاموش است.'; return out; }
+    var S = getStore('hub.sig-gold.v1', SG.gold.sample), smp = isSampleSrc(S.meta && S.meta.source), cost = isF(cfg.cost) ? cfg.cost : Number(E.acct.costPct) || 0, th = Object.assign({}, VTH, E.val && E.val.th);
+    out.sample = smp; out.asOf = S.meta && S.meta.asOf; out.cost = cost;
+    (S.ins || []).filter(function (x) { return x.active !== false && Number(x.grams) > 0 && Number(x.purity) > 0; }).forEach(function (ins) {
+      var X = xgSeries(S, ins); if (!X) { out.inst.push({ key: ins.key, name: ins.series, none: 'سری داخلی، اونس یا دلار کمتر از ۶۰ روز است یا نیست.' }); return; }
+      var sim = xgSim(X, cfg, cost, ins.series), tr = sim.tr, n = X.p.length, dset = X.d.slice(cfg.L), split = dset[Math.floor(dset.length * 0.6)] || X.d[n - 1];
+      var ev = vstats(tr, split, Number(E.acct.riskPct) || 0.01);
+      // drift baseline: hold the same number of sessions from any day
+      var Hb = Math.max(1, Math.round(ev.n ? ev.days : cfg.T / 2)), base = [];
+      for (var t = cfg.L; t + 1 + Hb < n; t++) base.push(X.p[t + 1 + Hb] / X.p[t + 1] - 1 - cost);
+      var tret = tr.map(function (x) { return x.ret; }), lift = mean(tret) - mean(base), se = Math.sqrt((tret.length > 1 ? Math.pow(sd(tret), 2) / tret.length : NaN) + (base.length > 1 ? Math.pow(sd(base), 2) / base.length : 0)), liftT = se > 0 ? lift / se : NaN;
+      // parameter grid
+      var grid = []; [60, 120, 250].forEach(function (L) { [1, 1.5, 2].forEach(function (zi) { var g2 = xgSim(X, Object.assign({}, cfg, { L: L, zIn: zi }), cost, ins.series).tr, s2 = stats(g2); grid.push({ L: L, zIn: zi, n: s2.n || 0, avgR: s2.n ? s2.avgR : NaN }); }); });
+      var gridPos = grid.filter(function (g) { return g.n >= 3 && g.avgR > 0; }).length, gridN = grid.filter(function (g) { return g.n >= 3; }).length;
+      // expensive reading: forward 20-day return after z ≥ zIn vs any day (non-overlapping)
+      var hiR = [], anyR = []; for (t = cfg.L; t + 21 < n; t += 1) { var f = X.p[t + 21] / X.p[t + 1] - 1; if ((t - cfg.L) % 20 === 0) anyR.push(f); }
+      for (t = cfg.L; t + 21 < n; t++) if (sim.z[t] >= cfg.zIn) { hiR.push(X.p[t + 21] / X.p[t + 1] - 1); t += 20; }
+      // look-ahead audit: z from a series cut at t equals z from the full series
+      var chk = 0, diff = 0; [0.5, 0.7, 0.9].forEach(function (q) { var tt = Math.floor(n * q); if (tt < cfg.L) return; var zc = xgZ(X.b.slice(0, tt + 1), cfg.L)[tt]; chk++; if (!(Math.abs(zc - sim.z[tt]) < 1e-9 || (!isF(zc) && !isF(sim.z[tt])))) diff++; });
+      // grade
+      var oos = ev.oos || { n: 0 }, tt2 = isF(ev.tc) ? ev.tc : ev.t, fs = ev.nFolds ? ev.posFolds / ev.nFolds : NaN, A = [], B = [], ck = function (a, b2, why) { A.push([a, why]); B.push([b2, why]); };
+      if (ev.n) {
+        ck(ev.n >= th.nA, ev.n >= th.nB, 'معاملات ' + fa(ev.n, 0) + ' (حداقل A ' + fa(th.nA, 0) + '، B ' + fa(th.nB, 0) + ')');
+        ck(oos.n >= th.oosA, oos.n >= th.oosB, 'خارج از نمونه ' + fa(oos.n || 0, 0) + ' معامله');
+        ck(oos.n > 0 && oos.avgR > th.expA, oos.n > 0 && oos.avgR > 0, 'امید ریاضی خارج از نمونه ' + (oos.n ? fa(oos.avgR, 2) + 'R' : '—'));
+        ck(oos.n > 0 && oos.pf >= th.pfA, oos.n > 0 && oos.pf >= th.pfB, 'ضریب سود خارج از نمونه ' + (oos.n && isF(oos.pf) ? fa(oos.pf, 2) : '—'));
+        ck(isF(tt2) && tt2 >= th.tA, isF(tt2) && tt2 >= th.tB, 'معناداری t ' + (isF(tt2) ? fa(tt2, 2) : 'قابل محاسبه نیست'));
+        ck(ev.nFolds >= 3 && fs >= th.foldA, ev.nFolds >= 3 && fs >= th.foldB, 'پایداری ' + fa(ev.posFolds || 0, 0) + ' از ' + fa(ev.nFolds || 0, 0) + ' بلوک');
+        ck(isF(ev.c2) && ev.c2 > 0, isF(ev.c2) && ev.c2 > 0, 'با هزینهٔ دو برابر ' + (isF(ev.c2) ? fa(ev.c2, 2) + 'R' : '—'));
+        ck(isF(liftT) && liftT >= 2, isF(liftT) && lift > 0 && liftT >= 1, 'برتری بر نگه‌داری ساده (رشد تورمی طلا) ' + (isF(lift) ? pct(lift, 2) : '—') + ' با t ' + (isF(liftT) ? fa(liftT, 2) : '—'));
+        ck(gridN >= 6 && gridPos >= 6, gridN >= 6 && gridPos >= 5, 'حساسیت پارامتر: ' + fa(gridPos, 0) + ' از ' + fa(gridN, 0) + ' ترکیب L × آستانه سودده');
+        ck(chk >= 3 && !diff, true, 'حسابرسی نگاه به آینده: ' + (diff ? 'اختلاف' : 'بدون اختلاف در ' + fa(chk, 0) + ' مقایسه'));
+      }
+      var okA = ev.n && A.every(function (x) { return x[0]; }), okB = ev.n && B.every(function (x) { return x[0]; }), gr = smp ? 'D' : okA ? 'A' : okB ? 'B' : ev.n >= th.nC && ev.avgR > 0 && !(oos.n && oos.avgR <= 0) ? 'C' : 'D';
+      var reasons = smp ? ['دادهٔ طلا نمونه (ساختگی) است.'] : !ev.n ? ['در این دوره هیچ معامله‌ای رخ نداد.'] : (gr === 'A' ? [] : gr === 'B' ? A : B).filter(function (x) { return !x[0]; }).map(function (x) { return x[1]; });
+      var zl = sim.z[n - 1], m = mean(X.b.slice(-cfg.L)), last = X.p[n - 1], tgt = X.imp[n - 1] * Math.exp(m), stop = last - cfg.k * sim.ad[n - 1];
+      var state = !isF(zl) ? 'نامشخص' : zl <= -cfg.zIn ? 'ارزان نسبت به جهانی' : zl >= cfg.zIn ? 'گران نسبت به جهانی' : 'در محدودهٔ عادی';
+      out.inst.push({ key: ins.key, name: ins.series, n: n, from: X.d[0], to: X.d[n - 1], split: split, ev: ev, grade: gr, fa: GRD[gr], reasons: reasons, ok: A.filter(function (x) { return x[0]; }).map(function (x) { return x[1]; }),
+        lift: lift, liftT: liftT, Hb: Hb, grid: grid, gridPos: gridPos, gridN: gridN, hi: { n: hiR.length, m: mean(hiR), any: mean(anyR), nAny: anyR.length }, audit: { chk: chk, diff: diff },
+        now: { z: zl, prem: Math.exp(X.b[n - 1]) - 1, premMean: Math.exp(m) - 1, state: state, last: last, target: tgt, stop: stop, rr: last > stop ? (tgt - last) / (last - stop) : NaN, date: X.d[n - 1] },
+        signal: isF(zl) && zl <= -cfg.zIn ? (gr === 'A' || gr === 'B' ? 'buy' : 'unconfirmed') : 'none', trades: tr.slice(-12) });
+    });
+    return out;
+  }
+
   /* ---------------- multi-market layer: registry of what is covered, and the central ranking of markets ---------------- */
   var MARKETS = [
     { id: 'stock', fa: 'سهام و صندوق‌های بورس و فرابورس ایران', cls: ['stock', 'fund'], data: 'TSETMC: تاریخچهٔ روزانه، جریان پول حقیقی/حقوقی، دامنهٔ نوسان', bt: 'بک‌تست معاملاتی (موتور بازار)' },
@@ -21664,7 +21744,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     { id: 'debt', fa: 'اوراق بدهی و نرخ بهره', cls: [], data: 'ابزار قیمت‌گذاری و ytm هست؛ تاریخچهٔ قیمت اوراق و منحنی بازده در موتور سیگنال نیست', bt: 'انجام نشده' },
     { id: 'futures', fa: 'قراردادهای آتی', cls: [], data: 'در موتور نیست', bt: 'انجام نشده' }];
   // central engine: which market has the better confirmed opportunity now (only markets the engine covers)
-  function rankMarkets(cards, db, list, E) {
+  function rankMarkets(cards, db, list, E, xg) {
     var th = Object.assign({}, VTH, E.val && E.val.th), M = {};
     var get = function (c) { return M[c] = M[c] || { cls: c, assets: 0, A: 0, B: 0, gated: 0, best: null }; };
     list.forEach(function (z) { get(z.a.cls).assets++; });
@@ -21673,8 +21753,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       if ((c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B')) { m[c.val.grade]++; var sc = (c.val.grade === 'A' ? 1000 : 0) + c.conf; if (!m.best || sc > m.best.sc) m.best = { c: c, sc: sc }; } });
     var rows = Object.keys(M).map(function (k) { var m = M[k], p = db && db.pools && db.pools['c:' + k]; m.score = 2 * m.A + m.B; m.pool = p && p.n ? { n: p.n, oosN: p.oos && p.oos.n, oosAvgR: p.oos && p.oos.avgR } : null; return m; })
       .sort(function (a, b) { return b.score - a.score || ((b.pool && b.pool.oosAvgR) || -9) - ((a.pool && a.pool.oosAvgR) || -9); });
+    var xgr = null; if (xg && xg.inst) { xgr = { cls: 'xgold', assets: xg.inst.length, A: 0, B: 0, gated: 0, best: null, pool: null, score: 0, x: true };
+      xg.inst.forEach(function (o) { if (o.signal === 'buy') { xgr[o.grade]++; if (!xgr.best || o.grade < xgr.best.g) xgr.best = { g: o.grade, o: o }; } else if (o.signal === 'unconfirmed') xgr.gated++; });
+      xgr.score = 2 * xgr.A + xgr.B; rows.push(xgr); rows.sort(function (a, b) { return b.score - a.score; }); }
+    var xtop = xg && xg.inst ? xg.inst.filter(function (o) { return o.signal === 'buy'; }) : [];
     var top = cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B'); }).sort(function (a, b) { return a.val.grade.localeCompare(b.val.grade) || b.conf - a.conf || b.rr2 - a.rr2; }).slice(0, 8);
-    return { rows: rows, top: top, none: !top.length, th: th };
+    return { rows: rows, top: top, xtop: xtop, none: !top.length && !xtop.length, th: th };
   }
 
   /* ---------------- continuous learning: journal → outcomes → patterns → bounded, reviewable changes ----------------
@@ -21824,10 +21908,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var pf = portfolio(cards, zmap, E, mon), rk = risk(E, zmap, mon, pf, U), plan2 = actionPlan(E, cards, pf, mon, rk);
     // market regime from the total index
     var mk = null; if (U.idx && U.idx.length > 80) { var ix = { key: 'idx', rows: U.idx.map(function (r) { return { date: r.date, open: r.close, high: r.high || r.close, low: r.low || r.close, close: r.close, vol: 0, val: 0 }; }) }, Ri = analyse(ix); mk = { rg: Ri.RG[Ri.X.n - 1], close: Ri.X.c[Ri.X.n - 1] }; }
-    var bt = btF;
+    var bt = btF, xgS = null; try { xgS = xgStrategy(E); } catch (e) { xgS = { inst: [], note: 'خطا: ' + e.message }; }
     var counts = { long: cards.filter(function (c) { return c.type === 'long'; }).length, strong: cards.filter(function (c) { return c.type === 'long' && c.strength === 'قوی'; }).length, close: cards.filter(function (c) { return c.type === 'close'; }).length, hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
     var sample = (U.assets || []).some(function (a) { return a.sample; });
-    return { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, markets: rankMarkets(cards, db, list, E), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
+    return { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, xg: xgS, markets: rankMarkets(cards, db, list, E, xgS), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
   }
 
   /* ---------------- six test scenarios (synthetic series, known answers) ---------------- */
@@ -21869,7 +21953,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, MARKETS: MARKETS, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -23346,7 +23430,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function dbPanel(ctx) {
     var S = ctx.S, E = ensure(S), V = E.val, rs = Object.keys(V.reg || {}).map(function (k) { return V.reg[k]; });
     if (!rs.length) return ctx.panel('بانک استراتژی و سیگنال (Strategy & Signal Database)', [h('p', { class: 'muted', text: 'پس از نخستین اعتبارسنجی، هر استراتژی با نسخه، نتایج بک‌تست، عملکرد واقعی و تاریخ آخرین اعتبارسنجی اینجا ثبت می‌شود.' })]);
-    var nm = function (id) { if (id === 'ensemble') return TE.RULEFA.ensemble; var m = TB().get(id); return m ? m.fa : id; };
+    var nm = function (id) { if (id === 'ensemble') return TE.RULEFA.ensemble; if (/^xgold:/.test(id)) return 'بین‌بازاری طلا XG1 — ' + id.slice(6); var m = TB().get(id); return m ? m.fa : id; };
     var ens = V.reg.ensemble, dl = h('button', { class: 'btn', type: 'button', text: 'دریافت بانک (JSON)', onclick: function () { var blob = new Blob([JSON.stringify({ engine: TE.ENG_VER, db: V.db, registry: V.reg, history: V.hist }, null, 1)], { type: 'application/json' }), a = h('a', { href: URL.createObjectURL(blob), download: 'strategy-signal-db.json' }); document.body.appendChild(a); a.click(); a.remove(); } });
     return ctx.panel('بانک استراتژی و سیگنال (Strategy & Signal Database)', [
       h('p', { class: 'f-help', text: 'هر ردیف یک استراتژی است. «نسخه» با هر تغییر وزن/آستانه/هزینه بالا می‌رود؛ هر نسخه باید دوباره بک‌تست شود. استراتژی‌ای که در دو اعتبارسنجی پیاپی خارج از نمونه لبه نداشته باشد «معلق» می‌شود و نباید دوباره به آن تکیه کرد. قاعدهٔ هر مدل: رأی ≥ ۰٫۵ ← خرید، افق ۲۰ روز.' }),
@@ -23395,18 +23479,51 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       h('h4', { text: 'ثبت پیش‌بینی‌ها و سنجش با مقدار تحقق‌یافته' + (gr.length ? ' — ' + fa(gr.length, 0) + ' مورد سنجیده شد: میانگین قدر مطلق خطا ' + fa(gr.reduce(function (a, l) { return a + Math.abs(l.actual - l.point); }, 0) / gr.length, 3) + '، درون بازه ' + fa(gr.filter(function (l) { return l.actual >= l.lo && l.actual <= l.hi; }).length, 0) + ' از ' + fa(gr.length, 0) : '') }),
       lg.length ? table(['متغیر', 'ثبت', 'مبنا', 'پیش‌بینی', 'بازه', 'مقدار تحقق‌یافته', 'خطا', 'وضعیت'], lg) : h('p', { class: 'muted', text: 'پیش‌بینی ثبت‌شده‌ای نیست.' })]));
   }
+
+  function xgPanel(ctx) {
+    var S = ctx.S, E = ensure(S), X = ctx.R.X, G2 = X.xg, cfg = Object.assign({}, TE.XGD, E.xg || {}), body = [];
+    var inp = function (k, lab, w) { var i = h('input', { class: 'cell-in', type: 'text', inputmode: 'decimal', style: 'width:' + (w || 60) + 'px', 'aria-label': lab, value: cfg[k] == null ? '' : String(cfg[k]) });
+      i.addEventListener('change', function () { var v = i.value.trim() === '' ? null : Number(i.value); if (v != null && !isFinite(v)) { U.toast('عدد معتبر وارد کنید.', 'warn'); return; } E.xg = E.xg || {}; E.xg[k] = v; saveS(S); ctx.rerender(); });
+      return h('label', { class: 'f-help', style: 'display:inline-block;margin:4px 12px 4px 0' }, [lab + ': ', i]); };
+    body.push(h('p', { class: 'f-help', text: 'راهبرد XG1 (آزمون مستقل): «حباب» هر طلای داخلی نسبت به ارزش ذاتی از اونس جهانی و دلار آزاد (همان فرمول ابزار طلا). اگر حباب نسبت به میانگین L روز اخیرش دست‌کم zIn انحراف معیار پایین‌تر باشد، طلای داخلی نسبت به جهانی ارزان است ← خرید؛ خروج با بازگشت حباب به میانگین، حد ضرر یا پایان مهلت. تصمیم با قیمت پایانی روز و اجرا با قیمت روز بعد. هر طلا جدا آزموده می‌شود (سری‌ها به هم بسیار وابسته‌اند و جمع کردنشان نمونه را بادکرده نشان می‌دهد).' }));
+    body.push(h('div', null, [inp('L', 'پنجرهٔ میانگین L (روز)'), inp('zIn', 'آستانهٔ ورود zIn'), inp('zOut', 'آستانهٔ خروج zOut'), inp('T', 'مهلت (جلسه)'), inp('k', 'ضریب حد ضرر k'), inp('cost', 'هزینهٔ رفت‌وبرگشت (خالی = هزینهٔ حساب)', 70)]));
+    body.push(h('p', { class: 'small muted', text: 'هزینهٔ فعلی ' + pct(G2 && G2.cost, 2) + '. برای طلای فیزیکی و سکه فاصلهٔ قیمت خرید و فروش و اجرت ساخت معمولاً از کارمزد بورس بیشتر است؛ عدد واقعی بازار خودتان را وارد کنید (این ابزار آن را نمی‌داند).' }));
+    if (!G2 || !G2.inst || !G2.inst.length) { body.push(h('p', { class: 'neg', text: (G2 && G2.note) || 'سری طلای داخلی با وزن و عیار تعریف‌شده پیدا نشد.' })); return ctx.panel('تحلیل بین‌بازاری: طلای داخلی در برابر طلای جهانی', body); }
+    if (G2.sample) body.push(h('p', { class: 'neg', text: 'دادهٔ طلا نمونه (ساختگی) است؛ همهٔ نتیجه‌ها درجه D و بی‌اعتبارند. از «مرکز دادهٔ بازار» طلا را به‌روز کنید.' }));
+    body.push(table(['طلا', 'دوره', 'حباب امروز', 'میانگین حباب', 'z', 'وضعیت', 'معامله', 'امید ریاضی', 'خارج از نمونه', 'برتری بر نگه‌داری', 'حساسیت پارامتر', 'درجه', 'سیگنال'], G2.inst.map(function (o) {
+      if (o.none) return [o.name, '—', '—', '—', '—', o.none, '—', '—', '—', '—', '—', '—', '—'];
+      var e = o.ev, oo = e.oos || {}, w = o.now;
+      return [o.name, TE.shamsi(o.from) + ' تا ' + TE.shamsi(o.to), pct(w.prem, 1), pct(w.premMean, 1), isFinite(w.z) ? fa(w.z, 2) : '—', w.state, fa(e.n || 0, 0), e.n ? fa(e.avgR, 2) + 'R' : '—', oo.n ? fa(oo.n, 0) + ' · ' + fa(oo.avgR, 2) + 'R' : '—', isFinite(o.lift) ? pct(o.lift, 2) + ' (t ' + fa(o.liftT, 1) + ')' : '—', fa(o.gridPos, 0) + '/' + fa(o.gridN, 0), chip(o.grade, GCHIP[o.grade]),
+        o.signal === 'buy' ? chip('خرید تأییدشده', 'fit-rec') : o.signal === 'unconfirmed' ? chip('عدم صدور سیگنال — شواهد کافی نیست', 'fit-no') : '—']; })));
+    G2.inst.filter(function (o) { return !o.none; }).forEach(function (o) {
+      var w = o.now, d = [h('summary', { text: o.name + ' — درجه ' + o.grade + ' (' + o.fa + ')' })];
+      d.push(table(['فیلد', 'مقدار'], [['آخرین قیمت (' + TE.shamsi(w.date) + ')', fa(w.last, 0)], ['قیمت هدف (بازگشت حباب به میانگین، با اونس و دلار امروز)', fa(w.target, 0)], ['حد ضرر', fa(w.stop, 0)], ['R:R', isFinite(w.rr) ? '۱:' + fa(w.rr, 2) : '—'], ['مهلت', fa(cfg.T, 0) + ' جلسه'],
+        ['شرط ابطال', 'بسته‌شدن زیر حد ضرر؛ یا افت بیشتر حباب در حالی که اونس و دلار ثابت‌اند (یعنی عامل داخلی مثل سیاست بانک مرکزی یا عرضهٔ سکه، نه قیمت جهانی، حباب را می‌راند)'],
+        ['ریسک‌ها', 'هدف با اونس و دلار امروز محاسبه شده و با تغییر آن‌ها جابه‌جا می‌شود؛ قیمت TGJU قیمت معامله‌شدهٔ شما نیست؛ حباب ممکن است به‌خاطر تغییر ساختاری (مالیات، پیش‌فروش، حراج، محدودیت واردات) میانگین تازه پیدا کند.'],
+        ['خوانش «گران نسبت به جهانی»', o.hi.n ? 'بازده ۲۰ روز بعد از آن: ' + pct(o.hi.m, 2) + ' در ' + fa(o.hi.n, 0) + ' مورد، در برابر ' + pct(o.hi.any, 2) + ' برای هر روز (' + fa(o.hi.nAny, 0) + ' نمونهٔ بدون هم‌پوشانی). نمونهٔ کوچک فقط توصیف است، نه سیگنال فروش.' : 'در این دوره رخ نداد.'],
+        ['برتری بر نگه‌داری ساده', isFinite(o.lift) ? 'میانگین بازدهٔ معامله‌ها منهای میانگین بازدهٔ نگه‌داری ' + fa(o.Hb, 0) + ' جلسه‌ای از هر روز = ' + pct(o.lift, 2) + ' (t ' + fa(o.liftT, 2) + '). بدون این آزمون، رشد تورمی طلا هر خریدی را سودده نشان می‌دهد.' : '—'],
+        ['حسابرسی نگاه به آینده', o.audit.diff ? 'اختلاف یافت شد' : 'بدون اختلاف در ' + fa(o.audit.chk, 0) + ' مقایسه']], 'sig-t'));
+      d.push(h('p', { class: 'small muted', text: o.grade === 'A' ? 'شرایط برقرار:' : 'چرا درجهٔ بالاتر نیست:' })); d.push(list(o.grade === 'A' ? o.ok : o.reasons));
+      d.push(table(['L', 'zIn', 'معامله', 'امید ریاضی'], o.grid.map(function (g) { return [fa(g.L, 0), fa(g.zIn, 1), fa(g.n, 0), g.n ? fa(g.avgR, 2) + 'R' : '—']; })));
+      if (o.trades.length) d.push(table(['ورود', 'خروج', 'z ورود', 'نتیجه', 'بازده', 'دلیل خروج'], o.trades.slice().reverse().map(function (t) { return [TE.shamsi(t.d), TE.shamsi(t.xd), fa(t.z, 2), fa(t.r, 2) + 'R', pct(t.ret, 2), { tp: 'بازگشت به میانگین', stop: 'حد ضرر', time: 'مهلت' }[t.exit] || t.exit]; })));
+      body.push(h('details', null, d)); });
+    body.push(h('p', { class: 'f-help', text: 'محدودیت‌ها: تاریخچه همان مقدار دریافتی از TGJU است (پیش‌فرض ابزار طلا ۴۰۰ روز؛ پارامتر HistoryDays) و با ۱۲۰ روز گرم‌شدن، معامله‌ها کم می‌مانند؛ نمونهٔ کم یعنی درجهٔ پایین، نه رد راهبرد. اونس در روزهای تعطیل جهانی از آخرین روز قبل برداشته می‌شود. دلار آزاد TGJU مبنای ذاتی است، نه نرخ رسمی یا نیمایی.' }));
+    return ctx.panel('تحلیل بین‌بازاری: طلای داخلی در برابر طلای جهانی (راهبرد XG1)', body);
+  }
   function mkTab(ctx) {
     var S = ctx.S, E = ensure(S), X = ctx.R.X, db = E.val.db, MK = X.markets, ps = [];
-    var rk = MK.rows.map(function (m) { var b = m.best && m.best.c; return [CLS[m.cls] || m.cls, fa(m.assets, 0), fa(m.A, 0), fa(m.B, 0), fa(m.gated, 0), m.pool ? fa(m.pool.n, 0) + ' · ' + (m.pool.oosN ? fa(m.pool.oosAvgR, 2) + 'R' : '—') : 'بدون اعتبارسنجی', b ? b.sym + ' (درجه ' + b.val.grade + '، اطمینان ' + fa(b.conf, 0) + '٪)' : '—']; });
+    var rk = MK.rows.map(function (m) { if (m.x) { var bo = m.best && m.best.o; return ['بین‌بازاری طلا (XG1)', fa(m.assets, 0), fa(m.A, 0), fa(m.B, 0), fa(m.gated, 0), 'آزمون جدا برای هر طلا', bo ? bo.name + ' (درجه ' + bo.grade + ')' : '—']; } var b = m.best && m.best.c; return [CLS[m.cls] || m.cls, fa(m.assets, 0), fa(m.A, 0), fa(m.B, 0), fa(m.gated, 0), m.pool ? fa(m.pool.n, 0) + ' · ' + (m.pool.oosN ? fa(m.pool.oosAvgR, 2) + 'R' : '—') : 'بدون اعتبارسنجی', b ? b.sym + ' (درجه ' + b.val.grade + '، اطمینان ' + fa(b.conf, 0) + '٪)' : '—']; });
     ps.push(ctx.panel('موتور مرکزی: امروز کدام بازار فرصت تأییدشده دارد؟', [
-      MK.none ? h('p', { class: 'neg', text: 'عدم صدور سیگنال: در هیچ‌یک از بازارهای تحت پوشش موتور فرصت با درجهٔ A یا B نیست' + (X.valState === 'ok' ? '.' : ' (اعتبارسنجی معتبر و به‌روز نیست؛ ابتدا در زبانهٔ «سیگنال‌ها» اجرا کنید).') }) :
+      MK.xtop && MK.xtop.length ? h('p', { class: 'f-help', text: 'بین‌بازاری طلا (XG1): ' + MK.xtop.map(function (o) { return 'خرید ' + o.name + ' — درجه ' + o.grade + '، آخرین ' + fa(o.now.last, 0) + '، هدف ' + fa(o.now.target, 0) + '، حد ضرر ' + fa(o.now.stop, 0); }).join(' · ') }) : null,
+      MK.none || !MK.top.length ? (MK.none ? h('p', { class: 'neg', text: 'عدم صدور سیگنال: در هیچ‌یک از بازارهای تحت پوشش موتور فرصت با درجهٔ A یا B نیست' + (X.valState === 'ok' ? '.' : ' (اعتبارسنجی معتبر و به‌روز نیست؛ ابتدا در زبانهٔ «سیگنال‌ها» اجرا کنید).') }) : null) :
         table(['#', 'نماد', 'بازار', 'سیگنال', 'درجه', 'اطمینان', 'R:R تا هدف ۲', 'ورود', 'حد ضرر'], MK.top.map(function (c, i) { return [fa(i + 1, 0), c.sym, CLS[c.cls] || c.cls, c.typeFa, c.val.grade, fa(c.conf, 0) + '٪', '۱:' + fa(c.rr2, 1), px(c.lo, c) + '–' + px(c.hi, c), px(c.stop, c)]; })),
       h('h4', { text: 'رتبهٔ بازارها (امتیاز = ۲×سیگنال A + ۱×سیگنال B؛ تساوی با امید ریاضی خارج از نمونهٔ بازار)' }),
       table(['بازار', 'دارایی', 'سیگنال A', 'سیگنال B', 'مسدود (C/D)', 'شواهد بازار: معامله · امید ریاضی خارج از نمونه', 'بهترین'], rk),
       h('p', { class: 'f-help', text: 'رتبه‌بندی فقط میان بازارهایی است که موتور پوشش می‌دهد (جدول پایین). نبودن فرصت در بازارهای بدون پوشش (رمزارز، کالا، اوراق…) به معنای نبودن فرصت در آن‌ها نیست؛ یعنی بررسی نشده‌اند.' })]));
     var arch = [['موتور بازار: سهام و صندوق', 'فعال', 'رأی ۲۳ مدل، رژیم، بک‌تست، درجه‌بندی'], ['موتور بازار: طلا / ارز', 'فعال (سری روزانهٔ TGJU)', 'همان هستهٔ تکنیکال؛ متغیرهای بنیادی مخصوص طلا/ارز نیست'], ['موتور بازار: اختیار معامله', 'فعال بدون اعتبارسنجی', 'قیمت‌گذاری و نقدشوندگی؛ تاریخچه ندارد'],
       ['موتورهای بازار: رمزارز، کالا، اوراق، آتی، فارکس، سهام جهانی', 'ساخته نشده', 'نیاز به داده‌ی تاریخی معتبر و منطق اختصاصی هر بازار'], ['موتور کلان', 'فعال (ورود دستی سری)', 'ارزیابی پیش‌بینی با خطای خارج از نمونه؛ پایین همین صفحه'],
-      ['موتور مرکزی', 'جزئی', 'رتبه‌بندی بازارها بر پایهٔ سیگنال‌های تأییدشده؛ جفت‌ها و نسبت‌ها در امتیاز «مقطعی» هستند. واگرایی بین‌بازاری آزموده‌شده (مثلاً اونس در برابر طلای داخلی) هنوز آزمون مستقل ندارد']];
+      ['موتور مرکزی', 'جزئی', 'رتبه‌بندی بازارها بر پایهٔ سیگنال‌های تأییدشده؛ جفت‌ها و نسبت‌ها در امتیاز «مقطعی» هستند. نخستین راهبرد بین‌بازاری با آزمون مستقل: طلای داخلی در برابر جهانی (XG1)؛ بقیهٔ واگرایی‌ها (نفت و سهام انرژی، شکست همبستگی) هنوز نه']];
+    ps.push(xgPanel(ctx));
     ps.push(ctx.panel('معماری چندموتوره', [table(['موتور', 'وضعیت', 'توضیح'], arch)]));
     var cov = TE.MARKETS.map(function (m) { var n = 0; X.list.forEach(function (z) { if (m.cls.indexOf(z.a.cls) > -1) n++; }); if (m.id === 'option') n = X.cards.filter(function (c) { return c.cls === 'option'; }).length;
       var v = m.cls.some(function (c) { return db && db.pools && db.pools['c:' + c] && db.pools['c:' + c].n >= 15; }); return [m.fa, m.cls.length ? fa(n, 0) : '۰', m.data, m.bt, m.cls.length ? (v ? 'اعتبارسنجی‌شده' : 'تأییدنشده — اعتبارسنجی اجرا نشده یا نمونه کم') : 'تأییدنشده — پوشش ندارد']; });
@@ -23823,11 +23940,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611121655) */
+/* PWA: offline cache + app updates (version 202611121705) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611121655';
+  window.HUB_APP_VERSION = '202611121705';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
