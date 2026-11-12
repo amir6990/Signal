@@ -21,6 +21,8 @@ function save(j) { fm.writeString(CACHE, JSON.stringify(j)); }
 async function load() {
   const qp = (typeof args !== 'undefined' && args.queryParameters) || {};
   if (qp.data) { try { const j = JSON.parse(qp.data); if (j && j.v) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; } } catch (e) { return { j: cached(), live: false, err: 'دادهٔ ارسالی خوانا نبود' }; } }
+  // run by hand inside Scriptable: take the data the hub copied to the clipboard («ارسال به ویجت» copies it too)
+  if (typeof config !== 'undefined' && !config.runsInWidget) { try { const t = Pasteboard.pasteString(); const j = t && t.trim()[0] === '{' ? JSON.parse(t) : null; if (j && j.v && j.priorities) { const o = cached(); if (!o || !o.at || new Date(j.at) >= new Date(o.at)) { j.src = 'phone'; save(j); return { j, live: true, sent: true }; } } } catch (e) { /* not hub data */ } }
   const old = cached();
   try {
     const r = new Request(SITE + 'data/widget.json?t=' + Date.now()); r.timeoutInterval = 15; const txt = await r.loadString(); const code = r.response && r.response.statusCode;
