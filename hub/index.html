@@ -4908,7 +4908,7 @@ else if (typeof exports === 'object')
         body: JSON.stringify({ model: model, max_tokens: Number(s.maxTokens) || 16000, messages: [{ role: 'user', content: content }] })
       }).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok) { var e = new Error('Anthropic API ' + r.status + ': ' + ((j.error && j.error.message) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; throw e; }
+          if (!r.ok) { var e = new Error('Anthropic API ' + r.status + ': ' + ((j.error && j.error.message) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; e.status = r.status; throw e; }
           return { text: (j.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join(''), truncated: j.stop_reason === 'max_tokens', model: j.model };
         });
       }, function (e) { if (e && e.name === 'AbortError') throw e; var x = new Error('Could not reach the Anthropic API (' + (e && e.message || e) + '). Check the network, or set a gateway base URL.'); x.code = 'network'; throw x; });
@@ -4936,7 +4936,7 @@ else if (typeof exports === 'object')
       return fetch(String(s.baseUrl || '').replace(/\/+$/, '') + '/chat/completions', { method: 'POST', signal: opts.signal, headers: hd,
         body: JSON.stringify({ model: model, max_tokens: Number(s.maxTokens) || 16000, messages: [{ role: 'user', content: content }] }) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok) { var e = new Error('AI API ' + r.status + ': ' + ((j.error && (j.error.message || j.error)) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; throw e; }
+          if (!r.ok) { var e = new Error('AI API ' + r.status + ': ' + ((j.error && (j.error.message || j.error)) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; e.status = r.status; throw e; }
           var c = j.choices && j.choices[0] || {}; return { text: (c.message && c.message.content) || '', truncated: c.finish_reason === 'length', model: j.model };
         }); }, function (e) { if (e && e.name === 'AbortError') throw e; var x = new Error('Could not reach ' + s.baseUrl + ' (' + (e && e.message || e) + '). Check the address, the network, or CORS on that server.'); x.code = 'network'; throw x; });
     }
@@ -4970,7 +4970,20 @@ else if (typeof exports === 'object')
     return p;
   }
   function status() { return sampler().then(function () { return via; }); }
-  function test() { P = null; return sampler().then(function (x) { if (!x) throw new Error('No AI connection: add an API key (or a local model address).'); return x.json('Return {"ok":true,"model":"<your model name>"}', { modelTier: 'default' }); }); }
+  // why a connection cannot even be attempted, before any request is sent
+  function precheck() {
+    var s = settings(), op = s.provider === 'openai' && s.baseUrl && !/api\.anthropic\.com/.test(s.baseUrl);
+    var https = root.location && root.location.protocol === 'https:';
+    if (op && https && /^http:\/\//i.test(s.baseUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)([:\/]|$)/i.test(s.baseUrl)) return 'mixed';
+    if (!op && !s.apiKey) return 'no_key';
+    return '';
+  }
+  function models() {
+    var s = settings(), hd = {}; if (s.apiKey) hd.authorization = 'Bearer ' + s.apiKey;
+    return fetch(String(s.baseUrl || '').replace(/\/+$/, '') + '/models', { headers: hd }).then(function (r) { return r.ok ? r.json() : {}; })
+      .then(function (j) { return ((j && j.data) || []).map(function (m) { return m && m.id; }).filter(Boolean); }).catch(function () { return []; });
+  }
+  function test() { P = null; return sampler().then(function (x) { if (!x) { var e = new Error('No AI connection: add an API key (or a local model address).'); e.code = precheck() || 'no_key'; throw e; } return x.json('Return {"ok":true,"model":"<your model name>"}', { modelTier: 'default' }); }); }
   /* Live web search: the Anthropic Messages API with its server-side web search tool (web_search_20250305), called with the user's own key.
    * The search runs on Anthropic's servers, so the browser's cross-site limits do not apply. Returns the answer text together with every page the
    * search actually returned ({url, title, page_age}) and every citation ({url, title, cited_text}); callers must show only links that are in those lists.
@@ -4985,7 +4998,7 @@ else if (typeof exports === 'object')
       return fetch(url, { method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json', 'x-api-key': s.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
         body: JSON.stringify({ model: opts.modelTier === 'complex' ? s.complexModel || s.model : s.model, max_tokens: Number(s.maxTokens) || 16000, messages: msgs, tools: [tool] }) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok) { var e = new Error('Anthropic API ' + r.status + ': ' + ((j.error && j.error.message) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; throw e; }
+          if (!r.ok) { var e = new Error('Anthropic API ' + r.status + ': ' + ((j.error && j.error.message) || r.statusText)); e.code = r.status === 401 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'api_error'; e.status = r.status; throw e; }
           (j.content || []).forEach(function (c) {
             if (c.type === 'text') { out.text += c.text; (c.citations || []).forEach(function (q) { if (q.url) out.cites.push({ url: q.url, title: q.title || '', cited_text: q.cited_text || '' }); }); }
             else if (c.type === 'web_search_tool_result') { if (Array.isArray(c.content)) c.content.forEach(function (q) { if (q.type === 'web_search_result' && q.url) out.results.push({ url: q.url, title: q.title || '', page_age: q.page_age || '' }); }); else if (c.content && c.content.error_code) out.errors.push(c.content.error_code); } });
@@ -4996,7 +5009,7 @@ else if (typeof exports === 'object')
     };
     return step(0);
   }
-  Hub.ai = { settings: settings, save: save, sampler: sampler, status: status, test: test, parseJSON: parseJSON, search: search };
+  Hub.ai = { settings: settings, save: save, sampler: sampler, status: status, test: test, precheck: precheck, models: models, parseJSON: parseJSON, search: search };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/localai.js */
@@ -9721,11 +9734,39 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var aiMode = h('select', { id: 'ai-mode', class: 'f-sel' }, [h('option', { value: 'auto', text: 'Automatic: claude.ai artifact if available, else my API key' }), h('option', { value: 'api', text: 'Always my API key' })]); aiMode.value = A.mode || 'auto';
     var aiSt = h('p', { class: 'muted', 'aria-live': 'polite' });
     function aiSave() { var op = aiProv.value === 'openai'; Hub.ai.save({ provider: aiProv.value, vision: aiVis.value !== 'no', apiKey: aiKey.value.trim(), baseUrl: aiBase.value.trim() || (op ? 'http://localhost:11434/v1' : 'https://api.anthropic.com'), model: aiModel.value.trim() || (op ? 'llama3.1' : 'claude-sonnet-5-5'), complexModel: aiModel2.value.trim() || aiModel.value.trim() || (op ? 'llama3.1' : 'claude-opus-5-5'), maxTokens: Number(aiTok.value) || 16000, mode: aiMode.value }); U.toast('Claude settings saved in this browser', 'good'); }
-    function aiTest() { aiSave(); aiSt.textContent = 'Testing…'; Hub.ai.test().then(function (j) { aiSt.textContent = 'Connected: ' + JSON.stringify(j); }).catch(function (e) { aiSt.textContent = e.message || String(e); }); }
+    function aiSay(t, bad) { aiSt.setAttribute('data-notr', '1'); aiSt.className = bad ? 'rep-gap' : 'muted'; aiSt.textContent = t; }
+    function aiWhy(e) {
+      var c = e && e.code, st = e && e.status, op = aiProv.value === 'openai', raw = ' [' + (e && e.message || e) + ']';
+      if (c === 'no_key') return 'اتصالی وجود ندارد چون کلید API وارد نشده است. این صفحه خودش هوش مصنوعی ندارد و باید به یک سرویس وصل شود. سه راه: ۱) همین هاب را در برنامهٔ Claude (آرتیفکت) باز کنید؛ آن‌جا بدون کلید کار می‌کند. ۲) کلید یک سرویس را در خانهٔ «کلید API» بنویسید و «ذخیره» بزنید. ۳) با دکمه‌های بالا «مدل محلی» را انتخاب کنید (فقط روی همان کامپیوتری که مدل رویش اجراست).';
+      if (c === 'mixed') return 'این صفحه با https باز شده و مرورگر اجازهٔ تماس با نشانی http (' + aiBase.value + ') را نمی‌دهد. مدل محلی فقط از فایل Finance-Models-Hub.html روی همان کامپیوتر، یا از نشانی https در دسترس است؛ از گوشی به مدلِ روی کامپیوتر با http نمی‌شود وصل شد.';
+      if (c === 'network') return 'درخواست به ' + (aiBase.value || 'سرویس') + ' نرسید. علت‌های ممکن: اینترنت قطع است، این نشانی از شبکهٔ شما در دسترس نیست، یا سرور اجازهٔ تماس از مرورگر (CORS) نمی‌دهد' + (op ? '؛ برای Ollama باید با OLLAMA_ORIGINS=* اجرا شود' : '') + '. برنامه نمی‌تواند تشخیص دهد کدام‌یک است.' + raw;
+      if (st === 401) return 'سرویس پاسخ داد ولی کلید را نپذیرفت (۴۰۱). کلید را دوباره و کامل کپی کنید.' + raw;
+      if (st === 403) return 'سرویس پاسخ داد ولی اجازهٔ دسترسی نداد (۴۰۳): کلید مجوز این مدل را ندارد یا سرویس درخواست از این شبکه را نمی‌پذیرد.' + raw;
+      if (st === 404) return 'سرویس پاسخ داد ولی مدل یا نشانی پیدا نشد (۴۰۴). نام مدل و «نشانی پایه» را بررسی کنید.' + raw;
+      if (st === 429) return 'سرویس پاسخ داد ولی سقف مصرف یا اعتبار حساب پر شده است (۴۲۹).' + raw;
+      if (st === 400 || st === 402) return 'سرویس درخواست را رد کرد (' + st + '): معمولاً نام مدل نادرست یا اعتبار حساب ناکافی است.' + raw;
+      return 'اتصال ناموفق.' + raw;
+    }
+    function aiTest() {
+      aiSave(); aiSay('در حال آزمون…');
+      var pc = Hub.ai.precheck(); if (pc === 'mixed') return aiSay(aiWhy({ code: 'mixed' }), true);
+      Hub.ai.test().then(function (j) { return Hub.ai.status().then(function (v) { aiSay('وصل شد (' + (v === 'artifact' ? 'از راه آرتیفکت claude.ai' : v === 'api' ? 'با کلید Anthropic' : 'با ' + aiBase.value) + '). پاسخ مدل: ' + JSON.stringify(j)); }); })
+        .catch(function (e) {
+          aiSay(aiWhy(e), true);
+          if (aiProv.value === 'openai' && e && (e.status === 404 || e.status === 400)) Hub.ai.models().then(function (m) { if (m.length) aiSay(aiWhy(e) + ' مدل‌هایی که این سرویس اعلام کرد: ' + m.slice(0, 12).join('، ') + (m.length > 12 ? ' و ' + (m.length - 12) + ' مورد دیگر' : ''), true); });
+        });
+    }
+    function aiPreset(prov, base, key) { aiProv.value = prov; aiBase.value = base; aiModel.value = ''; aiModel2.value = ''; if (prov === 'anthropic') { aiModel.value = 'claude-sonnet-5-5'; aiModel2.value = 'claude-opus-5-5'; } aiSay(prov === 'anthropic' ? 'نشانی Anthropic گذاشته شد. کلید را بنویسید و «آزمون اتصال» بزنید.' : 'نشانی گذاشته شد. ' + (key ? 'کلید همان سرویس و ' : '') + 'نام مدل را دقیقاً همان‌طور که سرویس نوشته وارد کنید، سپس «آزمون اتصال» بزنید. اگر نام مدل نادرست باشد، آزمون فهرست مدل‌های سرویس را نشان می‌دهد.'); }
+    var aiPre = h('div', { class: 'row-ctl', 'data-notr': '1' }, [h('span', { class: 'muted', text: 'تنظیم سریع:' }),
+      h('button', { class: 'btn ghost', type: 'button', text: 'Claude (Anthropic)', onclick: function () { aiPreset('anthropic', 'https://api.anthropic.com', 1); } }),
+      h('button', { class: 'btn ghost', type: 'button', text: 'OpenRouter', onclick: function () { aiPreset('openai', 'https://openrouter.ai/api/v1', 1); } }),
+      h('button', { class: 'btn ghost', type: 'button', text: 'مدل محلی: Ollama', onclick: function () { aiPreset('openai', 'http://localhost:11434/v1', 0); } }),
+      h('button', { class: 'btn ghost', type: 'button', text: 'مدل محلی: LM Studio', onclick: function () { aiPreset('openai', 'http://localhost:1234/v1', 0); } })]);
     if (Hub.ai) Hub.ai.status().then(function (v) { aiSt.textContent = v === 'artifact' ? 'Now using: claude.ai artifact.' : v === 'api' ? 'Now using: your Anthropic API key.' : v === 'openai' ? 'Now using: your OpenAI-compatible API.' : 'No AI connected: Strategy Studio, Strict Auditor and Financing Solutions use the local rule-based engine; PDFs are read on this device.'; });
     el.appendChild(h('section', { class: 'panel' }, [
       h('h2', { text: 'AI connection (optional)' }),
       h('p', { class: 'f-help', text: 'Everything works without AI: PDFs are read on this device (text layer + built-in OCR), and Strategy Studio, Strict Auditor and Financing Solutions run a local rule-based engine. An AI service only deepens those three analyses. Options: inside the claude.ai artifact nothing is needed; elsewhere use an Anthropic API key, or any OpenAI-compatible API — OpenRouter, a regional gateway reachable from your network, or a model on your own computer (Ollama: base URL http://localhost:11434/v1, start it with OLLAMA_ORIGINS=* so the page may call it). The key stays in this browser and is sent only to the base URL.' }),
+      aiPre,
       h('div', { class: 'prov' }, [
         h('div', null, [h('label', { for: 'ai-prov', class: 'f-lbl', text: 'Provider' }), aiProv]), h('div', null, [h('label', { for: 'ai-key', class: 'f-lbl', text: 'API key (empty for a local model)' }), aiKey]),
         h('div', null, [h('label', { for: 'ai-base', class: 'f-lbl', text: 'Base URL' }), aiBase]),
@@ -23178,11 +23219,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611111847) */
+/* PWA: offline cache + app updates (version 202611120523) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611111847';
+  window.HUB_APP_VERSION = '202611120523';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
