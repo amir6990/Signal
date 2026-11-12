@@ -7571,6 +7571,52 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       by.info.length ? h('details', null, [h('summary', { class: 'small muted', text: 'یادآوری‌ها (برای متن منتشرشونده مهم است؛ در گزارش داخلی با تاریخ ثابت همراه شود)' }), h('ul', { class: 'studio-l' }, by.info.map(row))]) : null,
       h('p', { class: 'small muted', text: 'این بررسی فقط الگوهای مشخص را می‌گیرد. بازبینی اصطلاحات با یک پرسش انجام می‌شود که خودتان باید پاسخ دهید: «آیا فعال حرفه‌ای بازار سرمایهٔ ایران این اصطلاح را طبیعی، رایج و آشنا می‌داند؟» اگر نه یا نامطمئن، معادل رایج را جایگزین کنید. برنامه نمی‌تواند رایج‌بودن اصطلاح را تأیید کند.' }),
       h('div', { class: 'row-ctl' }, [dm])].filter(Boolean)); }
+
+  /* ---------- article-format report ----------
+   * The same data pack as the pyramid report, written as one continuous Persian analytical article under the user's article rules.
+   * Prose needs a model: it goes through Hub.ai (API key, claude.ai artifact, or the copy-paste Claude chat bridge). */
+  var ARTICLE_RULES = 'Write ONE independent, continuous Persian analytical article of AT MOST 1000 words (count the body only). ' +
+    'Structure as a guide, not as visible sections: introduction that sets up the problem, an explicit arguable thesis, analytical mechanisms (incentives and causal relationships, not a description of events), evidence from the pack, a counterargument or limitation, and a genuine conclusion. ' +
+    'Write it as flowing prose with NO subheadings unless one truly helps comprehension (never more than 4). The title is one formal, grammatically complete Persian sentence, not a contrastive headline. ' +
+    'Persian style (mandatory): formal written Persian of the register of Iranian specialist economic newspapers; use only terms established in Iranian capital-market, financial and economic usage and never a literal translation when an established term exists; complete flowing sentences, no telegraphic fragments, no colloquial or figurative business idioms, no compressed abstract nominal phrases; never use «دارد … می‌کند»; never set a phrase off between two dashes (use a normal clause, a comma or a new sentence); no AI clichés; no absolute words such as «قطعاً»، «بدون تردید»، «حتماً»; use «ریسک دسترسی» (never «حضانت») where that idea appears; gloss a technical term once inside the sentence so a non-specialist follows. ' +
+    'Numbers as numerals in Persian digits (۰-۹). Iran is the subject; no foreign comparison unless the pack contains it. ' +
+    'Time: no relative dating («اخیراً»، «هفتهٔ گذشته»، «سال جاری»، «این هفته»); anchor every figure to the date or period written next to it in the pack. A moving market level (index, price, rate) must never be the central pillar of the argument; if the pack has only such figures, state the point structurally as a recurring pattern and mention a figure only as an illustration with its date. ' +
+    'ZERO-HALLUCINATION: use ONLY facts, numbers, dates and sources that are in the pack; never add an event, cause, source or number; where the pack says something cannot be completed, do not fill it, and say in the article that the claim cannot be made. Keep correlation separate from causation; keep fact, analysis and opinion visibly separate; no definitive forecasts. ' +
+    'Output format: first the article (title on the first line, then paragraphs), then a line containing exactly ===, then «یادداشت برای ویراستار» (data date and the sources named in the pack, any gap, and which claims need human verification). The note is outside the article body. Plain text, no markdown.';
+  function numCheck(pack, t) {
+    var nm = function (x) { return String(x).replace(/[۰-۹]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(c); }).replace(/[٬,]/g, ''); }, pk = nm(pack);
+    return (nm(t).match(/\d+(?:[.٫]\d+)?/g) || []).filter(function (q) { return q.length >= 3 && pk.indexOf(q.replace('٫', '.')) < 0 && pk.indexOf(q) < 0; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+  }
+  function articleBlocks(raw) {
+    var parts = String(raw || '').split(/\n\s*={3,}\s*\n/), body = (parts[0] || '').trim(), note = parts.slice(1).join('\n').trim(), ln = body.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+    var toFa = function (x) { return x.replace(/\d/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[d]; }); };
+    var B = [{ t: 'h1', x: toFa(ln[0] || 'مقاله') }]; ln.slice(1).forEach(function (x) { B.push({ t: 'p', x: toFa(x) }); });
+    var nb = note ? [{ t: 'h3', x: 'یادداشت برای ویراستار (خارج از متن مقاله)' }].concat(note.split('\n').filter(function (x) { return x.trim(); }).map(function (x) { return { t: 'small', x: toFa(x.trim()) }; })) : [];
+    return { article: B, note: nb, all: B.concat(nb) };
+  }
+  function articlePanel(getB, opt) {
+    opt = opt || {}; var U = Hub.util, h = U.h, KEY = 'hub.article.v1', name = opt.name || 'Article', st = h('p', { class: 'studio-status', 'data-notr': '1', 'aria-live': 'polite' }), out = h('div', { 'data-notr': '1' }), cur = null;
+    function load() { try { var o = U.store.get(KEY, {}) || {}; return o[name] || null; } catch (e) { return null; } }
+    function save(v) { try { var o = U.store.get(KEY, {}) || {}; o[name] = v; U.store.set(KEY, o); } catch (e) { /* storage unavailable */ } }
+    function show(rec) {
+      U.clear(out); if (!rec) return; cur = articleBlocks(rec.raw); var lr = lint(cur.article, { mode: 'article' }), w = lr.findings.filter(function (f) { return f.sev === 'warn'; }), bad = numCheck(rec.pack || '', cur.article.map(function (b) { return b.x; }).join(' '));
+      var wc = cur.article.slice(1).map(function (b) { return b.x; }).join(' ').split(/\s+/).filter(Boolean).length;
+      out.appendChild(h('p', { class: wc > 1000 ? 'neg' : 'small muted', 'data-notr': '1', text: 'طول متن مقاله: ' + fa0(wc) + ' کلمه (سقف ۱٬۰۰۰)' + (wc > 1000 ? '؛ از سقف گذشته است. در درخواست بعدی بنویسید «ایده‌های کم‌اهمیت را حذف کن، جمله را کوتاه نکن».' : '') + ' · تولیدشده در ' + new Date(rec.at).toLocaleString('fa-IR') }));
+      if (bad.length) out.appendChild(h('p', { class: 'neg', 'data-notr': '1', text: 'هشدار: این اعداد در مقاله هست ولی در بستهٔ داده نیست و نباید به آن‌ها استناد شود: ' + bad.map(fa0).join('، ') }));
+      if (w.length) out.appendChild(h('details', { 'data-notr': '1' }, [h('summary', { class: 'neg', text: 'سبک نگارش: ' + fa0(w.length) + ' مورد برای اصلاح' }), h('ul', { class: 'studio-l' }, w.map(function (f) { return h('li', { text: f.rule + ': «' + f.snip + '»' + (f.fix ? ' ← ' + f.fix : '') }); }))]));
+      else out.appendChild(h('p', { class: 'small muted', 'data-notr': '1', text: 'الگوهای ممنوع سبک در متن پیدا نشد. بازبینی اصطلاحات و راستی‌آزمایی ادعاها با خودتان است.' }));
+      out.appendChild(buttons(function () { return cur.all; }, name)); out.appendChild(dom(cur.all));
+    }
+    var go = h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'نوشتن گزارش در قالب مقاله', onclick: function () {
+      var sp = Hub.ai ? Hub.ai.sampler() : Promise.resolve(null); st.className = 'studio-status'; st.textContent = 'در حال آماده‌سازی…'; go.disabled = true;
+      sp.then(function (s) { if (!s) { st.className = 'studio-status warn-t'; st.textContent = 'هوش مصنوعی وصل نیست. در «منابع داده و کلیدها» حالت «گفت‌وگوی Claude با کپی و چسباندن» را انتخاب کنید.'; return; }
+        var pack = text(getB()), prompt = ARTICLE_RULES + (opt.focus ? '\n\nFocus: ' + opt.focus : '') + '\n\nDATA PACK:\n' + pack;
+        return (typeof s === 'function' ? s(prompt, { modelTier: 'complex' }).then(function (r) { return r && r.text; }) : s.json(prompt + '\n\nReturn JSON {"text": "..."} where text holds the whole output.', { modelTier: 'complex' }).then(function (j) { return j && j.text; })).then(function (t) {
+          if (!String(t || '').trim()) throw new Error('پاسخ خالی بود.'); var rec = { raw: String(t), pack: pack, at: Date.now() }; save(rec); st.textContent = 'مقاله نوشته شد.'; show(rec); }); })
+        .catch(function (e) { st.className = 'studio-status warn-t'; st.textContent = e && e.code === 'aborted' ? 'لغو شد.' : 'ناموفق: ' + (e && e.message || e); }).then(function () { go.disabled = false; }); } });
+    var rec0 = load(); if (rec0) show(rec0);
+    return h('div', { class: 'stack', 'data-notr': '1' }, [h('p', { class: 'f-help', text: 'همین بستهٔ داده به‌صورت یک مقالهٔ پیوستهٔ فارسی (حداکثر ۱٬۰۰۰ کلمه، بدون بخش‌بندی ساختگی) نوشته می‌شود. فقط از اعداد و منبع‌های گزارش بالا استفاده می‌شود. این متن راستی‌آزمایی نشده است: پیش از انتشار، ادعاها را با منبع اصلی تطبیق دهید. گزارش هرمی بالا همچنان نسخهٔ اصلی و قابل استناد است.' }), h('div', { class: 'row-ctl' }, [go]), st, out]);
+  }
   function buttons(getB, name) { var U = Hub.util, h = U.h;
     return h('div', { class: 'row-ctl' }, [
       h('button', { class: 'btn primary', type: 'button', text: 'چاپ / ذخیره به PDF', 'data-notr': '1', onclick: function () { try { var fr = document.createElement('iframe'); fr.setAttribute('aria-hidden', 'true'); fr.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px'; fr.srcdoc = digits(doc(getB()), digitMode());
@@ -7578,7 +7624,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       h('button', { class: 'btn', type: 'button', text: 'دانلود Word', 'data-notr': '1', onclick: function () { U.saveFile(name + '.doc', new Blob(['﻿' + digits(doc(getB()), digitMode())], { type: 'application/msword' })); } }),
       h('button', { class: 'btn', type: 'button', text: 'دانلود HTML', 'data-notr': '1', onclick: function () { U.saveFile(name + '.html', new Blob([digits(doc(getB()), digitMode())], { type: 'text/html;charset=utf-8' })); } }),
       h('button', { class: 'btn', type: 'button', text: 'کپی متن', 'data-notr': '1', onclick: function () { var t = digits(text(getB()), digitMode()); if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { U.toast('کپی شد.', 'good'); }, function () { U.toast('کپی نشد.', 'warn'); }); } })]); }
-  Hub.report = { html: html, doc: doc, text: text, dom: dom, buttons: buttons, lint: lint, lintPanel: lintPanel, digits: digits, STYLE: STYLE };
+  Hub.report = { html: html, doc: doc, text: text, dom: dom, buttons: buttons, lint: lint, lintPanel: lintPanel, articlePanel: articlePanel, ARTICLE_RULES: ARTICLE_RULES, digits: digits, STYLE: STYLE };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/news.js */
@@ -17704,7 +17750,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function reportTab(ctx) {
     var Xr = ctx.R.X, Bk = finReport(Xr), R = Xr.REC, main = R.main, extra = [];
     if (main && main.type === 'c') extra.push(comboView(main.c)); else if (main && main.type === 's' && main.r.eco) extra.push(ecoView(main.r.eco, main.r));
-    return ctx.group([ctx.panel('گزارش راه‌حل و نقشهٔ اجرا', [h('p', { class: 'f-help', 'data-notr': '1', text: 'ساختار گزارش: اول نتیجه، بعد سه دلیل، بعد شواهد، و در پایان هر چیزی که با اطلاعات فعلی قابل تکمیل نیست. هیچ عددی جز اعداد واردشدهٔ شما و محاسبه از روی آن‌ها در گزارش نیست.' }), Hub.report.buttons(function () { return finReport(ctx.R.X); }, 'Financing_Solution_' + (Xr.E.co.name || 'report').replace(/\s+/g, '_')), Hub.report.lintPanel(function () { return finReport(ctx.R.X); }), Hub.report.dom(Bk)]),
+    return ctx.group([ctx.panel('گزارش راه‌حل و نقشهٔ اجرا', [h('p', { class: 'f-help', 'data-notr': '1', text: 'ساختار گزارش: اول نتیجه، بعد سه دلیل، بعد شواهد، و در پایان هر چیزی که با اطلاعات فعلی قابل تکمیل نیست. هیچ عددی جز اعداد واردشدهٔ شما و محاسبه از روی آن‌ها در گزارش نیست.' }), Hub.report.buttons(function () { return finReport(ctx.R.X); }, 'Financing_Solution_' + (Xr.E.co.name || 'report').replace(/\s+/g, '_')), Hub.report.lintPanel(function () { return finReport(ctx.R.X); }), Hub.report.dom(Bk)]), ctx.panel('گزارش در قالب مقاله', [Hub.report.articlePanel(function () { return finReport(ctx.R.X); }, { name: 'Financing_Article' })]),
       extra.length ? ctx.panel('نمودار و تحلیل اقتصادی راه‌حل پیشنهادی', extra) : null, ctx.panel('گزارش تفصیلی (نسخهٔ قبلی)', [h('details', null, [h('summary', { 'data-notr': '1', text: 'نمایش' }), reportBody(Xr)])])]);
   }
   /* ---------- 0 · intake: write the situation, confirm what was read, get the solution ---------- */
@@ -22521,7 +22567,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var all = R.rows.filter(function (a) { return a.ok; }), box = h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, all.map(function (a) { var i = h('input', { type: 'checkbox', 'aria-label': a.name }); i.checked = !S.rep.sel.length || S.rep.sel.indexOf(a.name) >= 0; i.addEventListener('change', function () { var cur = S.rep.sel.length ? S.rep.sel.slice() : all.map(function (x) { return x.name; }); if (i.checked) { if (cur.indexOf(a.name) < 0) cur.push(a.name); } else cur = cur.filter(function (x) { return x !== a.name; }); S.rep.sel = cur.length === all.length ? [] : cur; ctx.rerender(); }); return h('label', { class: 'chk-l', 'data-notr': '1' }, [i, document.createTextNode(' ' + a.name)]); }));
     var f = G.form({ id: 'lv-r', onChange: ctx.rerender, fields: [{ key: 'ti', label: 'عنوان گزارش', type: 'text', get: function () { return S.rep.title || ''; }, set: function (v) { S.rep.title = v; } }, { key: 'by', label: 'تهیه‌کننده', type: 'text', get: function () { return S.rep.by || ''; }, set: function (v) { S.rep.by = v; } }] });
     var view = h('textarea', { class: 'f-area', rows: 4, dir: 'rtl', 'aria-label': 'نظر تحلیلگر', placeholder: 'نظر و تصمیم خودتان (اختیاری؛ در بخش راه‌حل گزارش می‌آید)' }); view.value = S.rep.view || ''; view.addEventListener('change', function () { S.rep.view = view.value; ctx.rerender(); });
-    return ctx.group([ctx.panel('تنظیم گزارش', [P('گزارش از همین داده و مدل‌ها ساخته می‌شود: اول نتیجه، بعد سه دلیل، بعد شواهد، اعتبار علمی هر روش، و در پایان راه‌حل. بازارها را انتخاب کنید و اگر خواستید نظر خودتان را اضافه کنید.'), f, h('p', { class: 'small muted', 'data-notr': '1', text: 'بازارهای گزارش:' }), box, view, btns]), ctx.panel('پیش‌نمایش گزارش', [Hub.report.lintPanel(function () { return B; }), body])]);
+    return ctx.group([ctx.panel('تنظیم گزارش', [P('گزارش از همین داده و مدل‌ها ساخته می‌شود: اول نتیجه، بعد سه دلیل، بعد شواهد، اعتبار علمی هر روش، و در پایان راه‌حل. بازارها را انتخاب کنید و اگر خواستید نظر خودتان را اضافه کنید.'), f, h('p', { class: 'small muted', 'data-notr': '1', text: 'بازارهای گزارش:' }), box, view, btns]), ctx.panel('پیش‌نمایش گزارش', [Hub.report.lintPanel(function () { return B; }), body]), ctx.panel('گزارش در قالب مقاله', [Hub.report.articlePanel(function () { return B; }, { name: 'Iran_Markets_Article' })])]);
   }
   function dataTab(ctx) {
     var S = ctx.S;
@@ -22785,7 +22831,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         return (typeof s === 'function' ? s(prompt, { modelTier: 'complex' }).then(function (r) { return r && r.text; }) : s.json(prompt + '\n\nReturn JSON {"text": "..."}', { modelTier: 'complex' }).then(function (j) { return j && j.text; })).then(function (t) { t = String(t || ''); var nm = function (x) { return x.replace(/[۰-۹]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(c); }).replace(/[٬,]/g, ''); }, pk = nm(pack), bad = (nm(t).match(/\d+(?:[.٫]\d+)?/g) || []).filter(function (q) { return q.length >= 3 && pk.indexOf(q.replace('٫', '.')) < 0 && pk.indexOf(q) < 0; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
           S.ai = t; U.clear(aiBox); aiBox.appendChild(h('h4', { 'data-notr': '1', text: 'روایت تحلیلی (نگارش هوش مصنوعی از روی همین بستهٔ داده)' })); var lt = Hub.report.lint([{ t: 'p', x: t }]).findings.filter(function (f) { return f.sev === 'warn'; }); if (lt.length) aiBox.appendChild(h('details', { 'data-notr': '1' }, [h('summary', { class: 'neg', text: 'سبک نگارش: ' + fa(lt.length, 0) + ' مورد برای اصلاح در متن هوش مصنوعی' }), h('ul', { class: 'studio-l' }, lt.map(function (f) { return h('li', { text: f.rule + ': «' + f.snip + '»' + (f.fix ? ' ← ' + f.fix : '') }); }))])); if (bad.length) aiBox.appendChild(P_('هشدار: این اعداد در روایت هست ولی در بستهٔ داده نیست و نباید به آن‌ها استناد شود: ' + bad.join('، '), 'neg')); t.split('\n').filter(Boolean).forEach(function (x) { aiBox.appendChild(h('p', { 'data-notr': '1', text: x })); }); st.textContent = bad.length ? 'نگارش شد؛ ' + fa(bad.length, 0) + ' عدد خارج از بستهٔ داده علامت خورد.' : 'نگارش شد؛ همهٔ اعداد در بستهٔ داده هست.'; }); }).catch(function (e) { st.textContent = 'ناموفق: ' + (e && e.message || e); }); } });
     return ctx.group([ctx.panel('درخواست گزارش', [P_('هر بار که این صفحه باز می‌شود یا دکمهٔ به‌روزرسانی را می‌زنید، گزارش از روی دادهٔ همان لحظه از نو ساخته می‌شود. گزارش‌های ثبت‌شدهٔ قبلی فقط برای مقایسه و سنجش پیش‌بینی به کار می‌روند. آمار رسمی را در زبانهٔ «آمار رسمی» با منبع و تاریخ وارد کنید.'), ask, view, h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, [fresh, logB, aiB]), st]),
-      ctx.panel('گزارش (' + fa(words(B), 0) + ' کلمه)', [Hub.report.buttons(function () { return build(ctx.S, ctx.R); }, 'EFI_Report_' + S.topic), Hub.report.lintPanel(function () { return B; }), Hub.report.dom(B), aiBox])]);
+      ctx.panel('گزارش (' + fa(words(B), 0) + ' کلمه)', [Hub.report.buttons(function () { return build(ctx.S, ctx.R); }, 'EFI_Report_' + S.topic), Hub.report.lintPanel(function () { return B; }), Hub.report.dom(B), aiBox]), ctx.panel('گزارش در قالب مقاله', [Hub.report.articlePanel(function () { return build(ctx.S, ctx.R); }, { name: 'EFI_Article_' + S.topic })])]);
   }
   function macroTab(ctx) {
     var lst = ctx.list({ id: 'efi-m', path: 'macro', onChange: ctx.rerender, newRow: function () { return { k: 'x' + Date.now(), name: '', unit: '', value: null, period: '', source: '', date: '' }; }, cols: [{ key: 'name', label: 'شاخص', kind: 'text' }, { key: 'value', label: 'مقدار', kind: 'dec', optional: true }, { key: 'unit', label: 'واحد', kind: 'text' }, { key: 'period', label: 'دورهٔ آماری', kind: 'text' }, { key: 'source', label: 'منبع رسمی', kind: 'text' }, { key: 'date', label: 'تاریخ انتشار', kind: 'text' }] });
@@ -23356,11 +23402,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611121124) */
+/* PWA: offline cache + app updates (version 202611121129) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611121124';
+  window.HUB_APP_VERSION = '202611121129';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
