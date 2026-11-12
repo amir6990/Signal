@@ -1,15 +1,16 @@
 // Finance Hub — home-screen widget for iOS (runs in the free "Scriptable" app).
 // Data: data/widget.json on the hub's own site, written by the hub on the PC when it publishes (same engine, same numbers).
-// Widget parameter (long-press the widget → Edit Widget → Parameter): priorities | signals | pulse   (default: priorities)
+// Widget parameter (long-press the widget → Edit Widget → Parameter): pulse | priorities | signals   (default: pulse)
 // Tap the widget → opens the hub's dashboard. No account data, positions or keys are read or stored.
 const SITE = 'https://amir6990.github.io/Signal/hub/';
-const MODE = ((typeof args !== 'undefined' && args.widgetParameter) || 'priorities').trim().toLowerCase();
+const MODE = ((typeof args !== 'undefined' && args.widgetParameter) || 'pulse').trim().toLowerCase();
 const fm = FileManager.local();
 const CACHE = fm.joinPath(fm.documentsDirectory(), 'hub-widget.json');
 const SEEN = fm.joinPath(fm.documentsDirectory(), 'hub-widget-seen.json');
 const C = { bg: new Color('#11161c'), fg: new Color('#e6edf3'), mute: new Color('#8b98a5'), good: new Color('#3fb27f'), bad: new Color('#e5534b'), warn: new Color('#d29922'), acc: new Color('#d9a74a') };
 const FA = s => String(s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
 const num = v => (typeof v === 'number' && isFinite(v)) ? FA(Math.round(v).toLocaleString('en-US').replace(/,/g, '٬')) : '—';
+const cn = v => (typeof v === 'number' && isFinite(v) && Math.abs(v) >= 1e8) ? FA((v / 1e9).toFixed(v >= 1e10 ? 1 : 2)).replace('.', '٫') + ' میلیارد' : num(v);   // compact for coin/gold prices in rials
 const pc = v => (typeof v === 'number' && isFinite(v)) ? FA((v >= 0 ? '+' : '') + (v * 100).toFixed(1)).replace('.', '٫') + '٪' : '—';
 const gdate = d => d ? FA(String(d).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1/$2/$3')) : '—';
 function ago(iso) { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); if (!isFinite(m)) return '—'; if (m < 60) return FA(m) + ' دقیقه پیش'; if (m < 1440) return FA(Math.round(m / 60)) + ' ساعت پیش'; return FA(Math.round(m / 1440)) + ' روز پیش'; }
@@ -49,7 +50,16 @@ function build(D, fam) {
       if (!small) line(w, 'ورود ' + (x.entry ? num(x.entry[0]) + '–' + num(x.entry[1]) : '—') + ' · ضرر ' + num(x.stop) + ' · هدف ' + (x.tp ? num(x.tp[x.tp.length > 1 ? 1 : 0]) : '—'), Font.systemFont(10), C.mute, 1); });
     (j.alerts || []).slice(0, big ? 3 : 1).forEach(a => line(w, '⚠︎ ' + a, Font.systemFont(10), C.warn, 1));
   } else if (MODE === 'pulse') {
-    (j.pulse || []).filter(x => !x.none).slice(0, small ? 3 : big ? 8 : 5).forEach(x => line(w, x.name + ': ' + num(x.v) + '  ' + pc(x.c1) + (x.stale ? '  (قدیمی)' : ''), Font.systemFont(small ? 10 : 11), x.stale ? C.warn : (x.c1 >= 0 ? C.good : C.bad), 1));
+    const P = (j.pulse || []).filter(x => !x.none), k = small ? 2 : big ? 4 : 2;
+    P.slice(0, k).forEach(x => {
+      line(w, x.name + ': ' + cn(x.v) + '  ' + pc(x.c1) + (x.stale ? '  (قدیمی)' : ''), Font.semiboldSystemFont(small ? 10 : 11), x.stale ? C.warn : (x.c1 >= 0 ? C.good : C.bad), 1);
+      if (small) return;
+      const f = (x.fc || []).map(q => FA(q.h) + ' روز ' + FA(Math.round(q.p * 100)) + '٪' + (q.skill ? '' : '*')).join('، ');
+      if (big) { line(w, 'کف ' + cn(x.lo20) + ' · سقف ' + cn(x.hi20), Font.systemFont(9), C.mute, 1); if (f) line(w, 'احتمال بالاتر بودن: ' + f, Font.systemFont(9), C.mute, 1); }
+      else line(w, 'کف ' + cn(x.lo20) + ' · سقف ' + cn(x.hi20) + (f ? ' · ↑ ' + f : ''), Font.systemFont(9), C.mute, 1);
+      if (x.lv) line(w, (x.lv.tp ? 'حد سود ' + cn(x.lv.tp) + ' · ' : '') + (x.lv.side === 'down' ? 'ابطال ' : 'حد ضرر ') + cn(x.lv.stop) + ' · ' + (x.lv.conf ? 'درجه ' + x.lv.grade : 'تأییدنشده'), Font.systemFont(9), x.lv.conf ? C.good : C.mute, 1);
+    });
+    if (!small) line(w, '* نرخ پایه (مدل مهارت نداشت) · کف/سقف ۲۰ روز', Font.systemFont(8), C.mute, 1);
   } else {
     (j.priorities || []).slice(0, n).forEach(p => { line(w, FA(p.rank) + '. ' + p.asset + ' — ' + p.action, Font.semiboldSystemFont(small ? 11 : 12), p.kind === 'none' || p.kind === 'wait' ? C.mute : p.kind === 'urgent' ? C.bad : C.good, 1);
       if (!small) line(w, 'درجه ' + p.grade + ' · ' + p.horizon + ' · ریسک ' + p.risk, Font.systemFont(10), C.mute, 1); });
