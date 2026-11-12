@@ -554,6 +554,7 @@ details.fold { margin: .6rem 0; } details.fold > summary { cursor: pointer; padd
 .pt-n { font-size: .8rem; opacity: .8; } .pt-v { font-size: 1.1rem; font-weight: 700; overflow-wrap: anywhere; } .pt-c, .pt-d { font-size: .75rem; }
 .wide-only { display: block; } @media (max-width: 860px) { .wide-only { display: none; } }
 .pt-x { font-size: .75rem; opacity: .85; line-height: 1.6; overflow-wrap: anywhere; }
+.upd-box { border-bottom: 1px solid var(--line, #2a3440); padding-bottom: .5rem; margin-bottom: .6rem; }
 
 </style>
 
@@ -23430,6 +23431,33 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return ctx.group([modePanel(ctx), ctx.panel('اجرا و تنظیمات', [h('p', { class: 'f-help', text: 'موتور از دادهٔ ذخیره‌شدهٔ ابزارهای سیگنال (سهام، طلا، ارز، اختیار) می‌خواند، ۲۳ مدل رأی‌دهنده را روی هر دارایی اجرا می‌کند و برای هر کدام یک سیگنال استاندارد با ورود، حد ضرر، اهداف، حجم، اطمینان، دلایل و شرایط ابطال می‌دهد. سیگنال بدون مدیریت ریسک صادر نمی‌شود. این ابزار توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.' }),
       boxes, f]), dataPanel(ctx), Hub.dataSync && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
   }
+  // one action for everything: every feed in turn (a failed feed keeps its last good data and never stops the others),
+  // then the engine cache is cleared and the validation is rerun on the new data, so the dashboard, signals, pulse and widget
+  // all read the same fresh state.
+  var UPD = { busy: false, lines: [] };
+  function updateEverything(ctx, onDone) {
+    if (UPD.busy) return; UPD.busy = true; UPD.lines = []; UPD.at = Date.now();
+    var say = function (i, t, k) { UPD.lines[i] = { t: t, k: k || '' }; var el = document.getElementById('upd-log'); if (el) { U.clear(el); UPD.lines.forEach(function (l) { if (l) el.appendChild(h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t })); }); } };
+    var q = FEEDIDS.map(feed).filter(Boolean), fails = 0;
+    q.reduce(function (p, f, i) { return p.then(function () {
+      var St = loadFeed(f); say(i, FAT[f.id] + ' …');
+      return SG.safeFetch(f.fetch, St, function (a, b, k) { say(i, FAT[f.id] + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + k); })
+        .then(function (errs) { U.store.set(f.storeKey, St); say(i, FAT[f.id] + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
+          function (e) { fails++; say(i, FAT[f.id] + ': ناموفق، دادهٔ قبلی حفظ شد — ' + e.message, 'crit-t'); });
+    }); }, Promise.resolve()).then(function () {
+      if (Hub.dataSync) Hub.dataSync.notify(); TE.clearCache();
+      say(q.length, 'اعتبارسنجی روی دادهٔ تازه …');
+      return new Promise(function (res) { setTimeout(function () { try { var E = ensure(ctx.S), r = TE.validate(E, undefined, ctx.S.j || []); BT = r.bt; BTkey = btKey(E); try { U.store.set('hub.tradingEngine.v1', ctx.S); } catch (e) { /* full */ }
+        say(q.length, 'اعتبارسنجی نسخهٔ ' + fa(E.val.db ? E.val.db.ver : 0, 0) + ' انجام شد.', 'good-t'); } catch (e) { say(q.length, 'اعتبارسنجی ناموفق: ' + e.message, 'crit-t'); } res(); }, 50); });
+    }).then(function () { UPD.busy = false; UPD.doneAt = Date.now(); U.toast(fails ? fa(fails, 0) + ' منبع ناموفق بود؛ بقیه به‌روز شد.' : 'همه‌چیز به‌روز شد.', fails ? 'warn' : 'good'); ctx.rerender(); if (onDone) onDone(); });
+    ctx.rerender();
+  }
+  function updPanel(ctx, compact) {
+    var b = h('button', { class: 'btn primary', type: 'button', text: UPD.busy ? 'در حال به‌روزرسانی…' : 'به‌روزرسانی همه‌چیز (همهٔ داده‌ها + اعتبارسنجی)', disabled: UPD.busy, onclick: function () { updateEverything(ctx); } });
+    var log = h('div', { id: 'upd-log', 'aria-live': 'polite' }, UPD.lines.filter(Boolean).map(function (l) { return h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t }); }));
+    var ages = FEEDIDS.map(function (id) { var f = feed(id); if (!f) return null; var st = feedState(f); return FAT[id].replace(/ \(.*\)/, '') + ': ' + (st.k === 'none' ? 'نمونه' : SG.ageText(st.age)); }).filter(Boolean).join(' · ');
+    return h('div', { class: 'upd-box' }, [h('div', { class: 'row-ctl' }, [b]), h('p', { class: 'small muted', text: 'سن داده‌ها: ' + ages }), log]);
+  }
   function dataPanel(ctx) {
     var wrap = h('div'), log = h('div', { 'aria-live': 'polite' }), busy = false, symIn = h('input', { class: 'f-in', type: 'text', placeholder: 'مثلاً: فولاد، شپنا، طلا', 'aria-label': 'نمادهای انتخابی', style: 'min-width:260px' });
     function doFetch(f, only, label) {
@@ -23446,7 +23474,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var rows = FEEDIDS.map(function (id) { var f = feed(id); if (!f) return null; var st = feedState(f);
         return [FAT[id], f.size(st.S), st.k === 'none' ? '—' : st.S.meta.asOf || '—', st.k === 'none' ? '—' : SG.ageText(st.age), h('span', { class: 'data-age ' + st.k, text: st.k === 'none' ? 'دادهٔ نمونه' : st.k === 'stale' ? 'کهنه' : 'به‌روز' }),
           h('button', { class: 'btn ghost', type: 'button', text: 'به‌روزرسانی', disabled: busy, onclick: function () { doFetch(f, null, FAT[id]); } })]; }).filter(Boolean);
-      wrap.appendChild(table(['داده', 'دامنه', 'آخرین به‌روزرسانی', 'سن', 'وضعیت', ''], rows));
+      wrap.appendChild(table(['داده', 'دامنه', 'آخرین به‌روزرسانی', 'سن', 'وضعیت', ''], rows)); if (UPD.lines.length) wrap.appendChild(h('div', { id: 'upd-log' }, UPD.lines.filter(Boolean).map(function (l) { return h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t }); })));
       var fs = feed('sig-stocks'); if (fs && SG.stocks.mergeUniverse) { var St0 = loadFeed(fs), nU = SG.stocks.mergeUniverse(St0); if (nU) { U.store.set(fs.storeKey, St0); U.toast(fa(nU, 0) + ' نماد از فهرست ۱۴۰۵/۰۸/۲۰ به دیده‌بان اضافه شد.', 'good'); } }
       var stS = fs ? feedState(fs) : null, miss = [];
       if (stS) stS.S.watch.forEach(function (w) { if (w.active === false || !w.symbol) return; var d = stS.live && stS.S.data[w.symbol]; if (!d || !d.px || d.px.length < 30) miss.push(w.symbol); });
@@ -23455,7 +23483,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var St = loadFeed(fs), smp = !feedState(fs).live, n = smp ? (St = SG.stocks.sample(), St.watch.length) : SG.stocks.mergeWatch(St); U.store.set(fs.storeKey, St);
         U.toast(smp ? 'دیده‌بان با ' + fa(n, 0) + ' نماد ساخته شد (دادهٔ نمونه تا دریافت دادهٔ واقعی).' : fa(n, 0) + ' نماد جدید اضافه شد. برای دریافت داده «فقط نمادهای بدون داده» را بزنید.', 'good'); ctx.rerender(); } });
       wrap.appendChild(h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, [
-        h('button', { class: 'btn primary', type: 'button', text: 'به‌روزرسانی همه', disabled: busy, onclick: function () { var q = FEEDIDS.map(feed).filter(Boolean), i = 0; (function nx() { if (i >= q.length) return; var f = q[i++]; doFetch(f, null, FAT[f.id]); var w = setInterval(function () { if (!busy) { clearInterval(w); nx(); } }, 300); })(); } }),
+        h('button', { class: 'btn primary', type: 'button', text: 'به‌روزرسانی همه‌چیز (+ اعتبارسنجی)', disabled: busy || UPD.busy, onclick: function () { updateEverything(ctx); } }),
         h('button', { class: 'btn', type: 'button', text: 'فقط نمادهای بدون داده (' + fa(miss.length, 0) + ')', disabled: busy || !miss.length || !fs, onclick: function () { doFetch(fs, miss, 'نمادهای بدون داده'); } }),
         symIn, h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی نمادهای انتخابی', disabled: busy || !fs, onclick: function () { var only = symIn.value.split(/[،,\s]+/).map(function (x) { return x.trim(); }).filter(Boolean); if (!only.length) { U.toast('نماد را وارد کنید.', 'warn'); return; } doFetch(fs, only, 'نمادهای انتخابی'); } }), merge]));
     }
@@ -23664,7 +23692,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var S = ctx.S, E = ensure(S), X = ctx.R.X, P = X.prio || [], ps = [], db = E.val.db;
     var maxD = 0; X.list.forEach(function (z) { if (!z.a.sample) maxD = Math.max(maxD, z.R.X.d[z.R.X.n - 1]); });
     var top = P[0], head = !top ? 'داده‌ای نیست.' : top.kind === 'none' ? 'بهترین اقدام فعلی: اقدام نکردن (نگه‌داری نقد). ' + top.why : top.kind === 'urgent' ? 'اول: ' + top.action + ' ' + top.asset + ' — ' + top.why : 'بهترین اقدام فعلی: ' + top.action + ' ' + top.asset + ' (درجه ' + top.grade + '، ' + top.horizon + ').';
-    ps.push(ctx.panel('بهترین اقدام من در شرایط فعلی', [h('p', { class: 'today-head', text: head }),
+    ps.push(ctx.panel('بهترین اقدام من در شرایط فعلی', [updPanel(ctx), h('p', { class: 'today-head', text: head }),
       h('p', { class: 'small muted', text: 'داده تا ' + (maxD ? TE.shamsi(maxD) : '—') + (X.sample ? ' · بخشی از داده‌ها نمونه است' : '') + ' · اعتبارسنجی: ' + (X.valState === 'ok' ? 'نسخهٔ ' + fa(db.ver, 0) + ' (' + new Date(db.at).toLocaleDateString('fa-IR') + ')' : X.valState === 'none' ? 'اجرا نشده' : X.valState === 'stale' ? 'منقضی (تنظیمات عوض شده)' : 'روی دادهٔ نمونه') + '. «درجه» قدرت شواهد است؛ «رتبه» اولویت اقدام. این دو یکی نیستند.' }),
       prioCards(P.slice(0, S.dashN || 5)), h('div', { class: 'wide-only' }, [h('h4', { text: 'جدول اولویت‌ها' }), prioTable(P.slice(0, 10))]),
       X.valState !== 'ok' ? h('div', { class: 'row-ctl' }, [(function () { var b = h('button', { class: 'btn primary', type: 'button', text: 'اجرای اعتبارسنجی', onclick: function () { runVal(ctx, b); } }); return b; })()]) : null]));
@@ -24185,11 +24213,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611121956) */
+/* PWA: offline cache + app updates (version 202611122122) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611121956';
+  window.HUB_APP_VERSION = '202611122122';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
