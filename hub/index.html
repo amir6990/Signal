@@ -23685,7 +23685,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var dl = h('button', { class: 'btn', type: 'button', text: 'دریافت اسکریپت ویجت (HubWidget.js)', onclick: function () { var src = (root.HUB_WIDGET_SRC || ''); if (!src) { U.toast('اسکریپت در این نسخه نیست.', 'warn'); return; } var a = h('a', { href: URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), download: 'HubWidget.js' }); document.body.appendChild(a); a.click(); a.remove(); } });
     var send = h('button', { class: 'btn primary', type: 'button', text: 'ارسال به ویجت (Scriptable)', onclick: function () {
       var j = X.widget(); j.priorities.forEach(function (p) { if (p.why && p.why.length > 140) p.why = p.why.slice(0, 140) + '…'; });
-      var url = 'scriptable:///run/' + encodeURIComponent(S.wName || 'HubWidget') + '?clip=1';   // the data goes through the clipboard: a long link can arrive cut if (!j.asOf) { U.toast('دادهٔ واقعی نیست؛ اول داده را به‌روز کنید.', 'warn'); return; } var go2 = function () { location.href = url; }; if (!navigator.clipboard) { U.toast('کلیپ‌بورد در این مرورگر در دسترس نیست.', 'warn'); return; } navigator.clipboard.writeText(JSON.stringify(j)).then(function () { U.toast('داده کپی شد؛ Scriptable باز می‌شود. اگر باز نشد، خودتان Scriptable را باز کنید و اسکریپت HubWidget را یک بار اجرا کنید.', 'good'); setTimeout(go2, 400); }, function () { U.toast('کپی انجام نشد؛ دوباره بزنید.', 'warn'); }); } });
+      var url = 'scriptable:///run/' + encodeURIComponent(S.wName || 'HubWidget') + '?clip=1'; /* data travels through the clipboard: a long link can arrive cut */ if (!j.asOf) { U.toast('دادهٔ واقعی نیست؛ اول داده را به‌روز کنید.', 'warn'); return; } var go2 = function () { location.href = url; }; if (!navigator.clipboard) { U.toast('کلیپ‌بورد در این مرورگر در دسترس نیست.', 'warn'); return; } navigator.clipboard.writeText(JSON.stringify(j)).then(function () { U.toast('داده کپی شد؛ Scriptable باز می‌شود. اگر باز نشد، خودتان Scriptable را باز کنید و اسکریپت HubWidget را یک بار اجرا کنید.', 'good'); setTimeout(go2, 400); }, function () { U.toast('کپی انجام نشد؛ دوباره بزنید.', 'warn'); }); } });
     var cp = h('button', { class: 'btn ghost', type: 'button', text: 'کپی اسکریپت', onclick: function () { if (navigator.clipboard && root.HUB_WIDGET_SRC) navigator.clipboard.writeText(root.HUB_WIDGET_SRC).then(function () { U.toast('کپی شد؛ در Scriptable یک اسکریپت تازه بسازید و بچسبانید.', 'good'); }); } });
     var nI = h('select', { class: 'f-sel', 'aria-label': 'تعداد اولویت‌ها' }, [3, 5, 8].map(function (k) { return h('option', { value: String(k), text: fa(k, 0) + ' اولویت' }); })); nI.value = String(S.dashN || 5); nI.addEventListener('change', function () { S.dashN = Number(nI.value); saveS(S); ctx.rerender(); });
     ps.push(ctx.panel('ویجت صفحهٔ اصلی گوشی', [
@@ -24185,11 +24185,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611121955) */
+/* PWA: offline cache + app updates (version 202611121956) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611121955';
+  window.HUB_APP_VERSION = '202611121956';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
