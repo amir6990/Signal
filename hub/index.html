@@ -21085,7 +21085,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       S.ins.filter(function (x) { return x.active !== false && x.key; }).forEach(function (x) {
         var rows = (S.data || {})[x.key]; if (!rows || rows.length < 30) return;
         if (out.some(function (a) { return a.tg === x.key; })) return;          // the free-market dollar appears in both lists
-        out.push({ key: 'g:' + x.key, tg: x.key, sym: x.series, name: x.series, cls: x.key === 'ons' ? 'gold' : c, sector: c === 'gold' ? 'طلا و سکه' : 'ارز', rows: rows.map(function (r) { return { date: r.date, open: r.open, high: r.high, low: r.low, close: r.close, vol: 0, val: 0, yclose: 0 }; }), sample: smp2, asOf: S.meta.asOf, age: age2, comp: rr[x.key] || rr[x.series], unit: x.key === 'ons' ? 'دلار' : 'ریال' });
+        var isFx = /^price_(dollar|eur|aed|gbp|try|cny)|tether|usdt/i.test(x.key), cl2 = isFx ? 'fx' : x.key === 'ons' ? 'gold' : c;   // a currency is FX even when it comes from the gold list (it is there as an input of the intrinsic value)
+        out.push({ key: 'g:' + x.key, tg: x.key, sym: x.series, name: x.series, cls: cl2, sector: cl2 === 'gold' ? 'طلا و سکه' : 'ارز', rows: rows.map(function (r) { return { date: r.date, open: r.open, high: r.high, low: r.low, close: r.close, vol: 0, val: 0, yclose: 0 }; }), sample: smp2, asOf: S.meta.asOf, age: age2, comp: rr[x.key] || rr[x.series], unit: x.key === 'ons' ? 'دلار' : 'ریال' });
       });
     };
     if (cls.gold !== false) addTG('hub.sig-gold.v1', SG.gold.sample, 'gold');
@@ -21826,25 +21827,15 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
    * Risk label from the asset's 20-day volatility (annualised): < 25% low, < 45% medium, otherwise high. Horizon from the card. */
   function riskFa(vol) { return !isF(vol) ? 'نامشخص' : vol < 0.25 ? 'کم' : vol < 0.45 ? 'متوسط' : 'زیاد'; }
   function hzFa(c) { var k = c.horizon && c.horizon.k; return k === 's' ? 'کوتاه‌مدت' : k === 'l' ? 'بلندمدت' : 'میان‌مدت'; }
+  // the action list is a view of the same decision (decide): urgent actions on held positions, then the ranked opportunities, then cash
   function priorities(X, E) {
-    var P = [], cls = { stock: 'سهام', fund: 'صندوق', gold: 'طلا', fx: 'ارز', option: 'اختیار' };
-    (X.mon || []).forEach(function (m) { if (m.lvl !== 'crit' && !/^خروج|^فروش/.test(m.act || '')) return;
-      P.push({ tier: 1, kind: 'urgent', asset: m.p.asset, market: 'موقعیت شما', action: /^فروش یک‌سوم/.test(m.act) ? 'فروش بخشی (هدف ۱)' : /کاهش/.test(m.act) ? 'خروج یا کاهش' : 'خروج', horizon: 'فوری', risk: 'زیاد', grade: '—', why: m.act, cond: 'جلسهٔ معاملاتی بعد', inval: '—', personal: true }); });
-    X.cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B') && c.cls !== 'option'; }).forEach(function (c) {
-      var ev = c.val.ev || {}, oo = ev.oos || {}, att = (isF(oo.avgR) ? oo.avgR : 0) * c.conf / 100;
-      P.push({ tier: 2, kind: /^مشروط/.test(c.status) ? 'conditional' : 'now', key: c.key, asset: c.sym, market: cls[c.cls] || c.cls, action: c.type === 'long' ? (/^مشروط/.test(c.status) ? 'خرید مشروط' : 'خرید') : 'فروش', horizon: hzFa(c), risk: riskFa(c.vol), grade: c.val.grade, att: att,
-        why: (c.top[0] ? c.top[0].why + '؛ ' : '') + 'شواهد: ' + fa(ev.n || 0, 0) + ' معامله، خارج از نمونه ' + (oo.n ? fa(oo.avgR, 2) + 'R' : '—'), cond: 'ورود ' + fa(c.lo, 0) + '–' + fa(c.hi, 0) + (c.cond[0] ? '؛ ' + c.cond[0] : ''), inval: c.inval[0] || '—',
-        entry: [c.lo, c.hi], stop: c.stop, tp: [c.tp1, c.tp2, c.tp3], rr: c.rr2, expR: oo.avgR, last: c.close, date: c.date });
-    });
-    (X.xg && X.xg.inst || []).filter(function (o) { return o.signal === 'buy'; }).forEach(function (o) {
-      P.push({ tier: 3, kind: 'now', asset: o.name, market: 'طلا (بین‌بازاری)', action: 'خرید', horizon: 'میان‌مدت', risk: 'متوسط', grade: o.grade, att: (o.ev.oos && o.ev.oos.avgR) || 0, why: 'حباب ' + pct(o.now.prem, 1) + ' زیر میانگین خودش (' + pct(o.now.premMean, 1) + ')؛ z ' + fa(o.now.z, 2), cond: 'آخرین ' + fa(o.now.last, 0) + '، هدف ' + fa(o.now.target, 0), inval: 'بسته‌شدن زیر ' + fa(o.now.stop, 0), stop: o.now.stop, tp: [o.now.target], last: o.now.last });
-    });
-    P.sort(function (a, b) { return a.tier - b.tier || (a.grade < b.grade ? -1 : a.grade > b.grade ? 1 : 0) || (b.att || 0) - (a.att || 0); });
-    var buys = P.filter(function (p) { return p.tier > 1; }).length;
-    X.cards.filter(function (c) { return c.candidate; }).sort(function (a, b) { return b.conf - a.conf; }).slice(0, 3).forEach(function (c) {
-      P.push({ tier: 4, kind: 'wait', key: c.key, asset: c.sym, market: cls[c.cls] || c.cls, action: 'انتظار برای تأیید (فعلاً نخرید)', horizon: hzFa(c), risk: riskFa(c.vol), grade: c.val.grade, why: 'الگوی ' + c.candidate.typeFa + ' با اطمینان ' + fa(c.conf, 0) + '٪؛ مانع: ' + (c.val.reasons[0] || c.val.caps[0] || ''), cond: 'تا وقتی درجه به B یا A نرسیده، ورود نکنید', inval: c.inval[0] || '—' });
-    });
-    if (!buys) P.splice(P.filter(function (p) { return p.tier === 1; }).length, 0, { tier: 0, kind: 'none', asset: 'وجه نقد', market: 'همهٔ بازارهای تحت پوشش', action: 'عدم اقدام / نگه‌داری نقد', horizon: 'تا اعتبارسنجی بعدی', risk: 'کم', grade: '—', why: X.valState === 'ok' ? 'هیچ فرصت خرید با درجهٔ A یا B نیست.' : 'اعتبارسنجی معتبر و به‌روز نیست؛ هیچ خریدی تأییدشده نیست.', cond: '—', inval: 'ظهور سیگنال A یا B' });
+    var D = X.decide(), P = [];
+    D.best.urgent.forEach(function (u) { P.push({ tier: 1, kind: 'urgent', asset: u.asset, market: 'موقعیت شما', action: u.action, horizon: 'فوری', risk: 'زیاد', grade: '—', why: u.why, cond: 'جلسهٔ معاملاتی بعد', inval: '—', personal: true }); });
+    D.top.forEach(function (f) { var c = f.key && X.cards.filter(function (x) { return x.key === f.key; })[0];
+      P.push({ tier: f.confirmed ? 2 : 4, kind: f.confirmed ? 'now' : 'wait', key: f.key, asset: f.sym, market: CLSFA[f.cls] || f.cls, action: f.confirmed ? 'خرید' : 'خرید مشروط (هنوز نخرید)', horizon: c ? hzFa(c) : 'میان‌مدت', risk: c ? riskFa(c.vol) : 'متوسط', grade: f.grade, att: f.score,
+        why: f.drivers[0] ? f.drivers[0] + (isF(f.expRet) ? '؛ بازده مورد انتظار هر معامله ' + pct(f.expRet, 1) : '') : f.label, cond: f.confirmed ? (c ? 'ورود ' + fa(c.lo, 0) + '–' + fa(c.hi, 0) : f.scen[0].act) : 'فعال‌شدن: ' + f.confirm, inval: f.invalid,
+        entry: c && f.confirmed ? [c.lo, c.hi] : null, stop: c ? c.stop : null, tp: c ? [c.tp1, c.tp2, c.tp3] : null, rr: c ? c.rr2 : NaN, expR: f.expRet, last: f.last, date: c ? c.date : '' }); });
+    if (D.best.kind === 'cash' || !D.top.some(function (f) { return f.confirmed; })) P.push({ tier: 5, kind: D.best.kind === 'cash' ? 'none' : 'cashalt', asset: 'وجه نقد', market: 'همهٔ بازارهای تحت پوشش', action: D.best.kind === 'cash' ? 'نگه‌داری نقد' : 'نقد تا فعال‌شدن خرید مشروط', horizon: '—', risk: 'کم', grade: '—', why: D.best.kind === 'cash' ? D.best.why : 'هیچ خرید تأییدشده‌ای نیست؛ تا شرط فعال‌شدن گزینه‌های بالا برقرار نشده، نقد بمانید.', cond: '—', inval: D.best.reinvest });
     P.forEach(function (p, i) { p.rank = i + 1; });
     return P;
   }
@@ -21926,8 +21917,15 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var ranked = all.filter(function (f) { return isF(f.score); }).sort(function (a, b) { return (b.confirmed - a.confirmed) || b.score - a.score; });
     var top = ranked.slice(0, 5).map(function (f) { var c = X.cards.filter(function (x) { return x.key === f.key; })[0]; return forecastAsset(c, X.zmap[f.key], true, db); });
     top.forEach(function (f, i) { f.score = ranked[i].score; f.rank = i + 1; f.vs = ranked.slice(5, 10).map(function (r) { return r.sym; }); });
+    top.sort(function (a, b) { return (b.confirmed - a.confirmed) || 0; });
     var days = top[0] && isF(top[0].expDays) ? top[0].expDays * 7 / 5 : 28, cr = isF(E.cashRate) ? E.cashRate : NaN, cashRet = isF(cr) ? cr * days / 365 : NaN;
-    var urgent = (X.prio || []).filter(function (p) { return p.tier === 1; }), best;
+    var urgent = []; (X.mon || []).forEach(function (m) { if (m.lvl !== 'crit' && !/^خروج|^فروش/.test(m.act || '')) return; urgent.push({ asset: m.p.asset, action: /^فروش یک‌سوم/.test(m.act) ? 'فروش بخشی (هدف ۱)' : /کاهش/.test(m.act) ? 'خروج یا کاهش' : 'خروج', why: m.act }); });
+    // cross-market gold strategy XG1: confirmed buys join the same ranking
+    (X.xg && X.xg.inst || []).filter(function (o) { return o.signal === 'buy'; }).forEach(function (o) { var oo = o.ev && o.ev.oos || {}, rf = o.now.last > o.now.stop ? (o.now.last - o.now.stop) / o.now.last : NaN;
+      top.unshift({ key: 'xg:' + o.key, sym: o.name, name: o.name, cls: 'gold', last: o.now.last, dir: 'up', long: 'unknown', longBasis: '—', conf: 100, grade: o.grade, confirmed: true, label: 'سیگنال تأییدشده بین‌بازاری XG1 (درجه ' + o.grade + ')', r20: null, prob: [], expRet: isF(oo.avgR) && isF(rf) ? oo.avgR * rf : NaN, expN: oo.n || 0, riskFrac: rf, down20: NaN, drivers: ['حباب ' + pct(o.now.prem, 1) + ' زیر میانگین خودش (' + pct(o.now.premMean, 1) + ')'], against: [],
+        confirm: 'حباب به میانگین برگردد (هدف ' + fa(o.now.target, 0) + ')', invalid: 'بسته‌شدن زیر ' + fa(o.now.stop, 0), toSignal: 'سیگنال تأییدشده است.', scen: [{ k: 'اصلی', act: 'خرید؛ هدف ' + fa(o.now.target, 0) + '، حد ضرر ' + fa(o.now.stop, 0) }, { k: 'جایگزین', act: 'بسته‌شدن زیر ' + fa(o.now.stop, 0) + ' = خروج' }], vs: [] }); });
+    top = top.slice(0, 5); top.forEach(function (f, i) { f.rank = i + 1; });
+    var best;
     if (urgent.length) best = { kind: 'urgent', text: 'اول: ' + urgent[0].action + ' ' + urgent[0].asset, why: urgent[0].why };
     else if (top.length && top[0].confirmed) best = { kind: 'buy', f: top[0], text: 'خرید ' + top[0].sym + ' (' + CLSFA[top[0].cls] + ')', why: 'سیگنال تأییدشده با درجهٔ ' + top[0].grade + '؛ بالاترین جذابیت میان ' + fa(ranked.length, 0) + ' گزینهٔ دارای دید صعودی و شواهد مثبت.' };
     else if (top.length && (!isF(cashRet) || !isF(top[0].expRet) || top[0].expRet > cashRet)) best = { kind: 'conditional', f: top[0], text: 'خرید مشروط ' + top[0].sym + ' (' + CLSFA[top[0].cls] + ')', why: 'جذاب‌ترین گزینه میان ' + fa(all.length, 0) + ' دارایی بررسی‌شده؛ ولی هنوز سیگنال تأییدشده نیست. فعال‌شدن: ' + top[0].confirm + '. ' + top[0].toSignal };
@@ -21943,6 +21941,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     one('ارز', ['price_dollar_rl', 'crypto-tether-irr', 'price_eur', 'price_aed']); one('طلا و سکه', ['geram18', 'sekee', 'ons', 'geram24', 'mesghal']);
     ['رمزارز', 'بازارهای جهانی و کالا', 'اوراق و نرخ بهره'].forEach(function (n) { mk.push({ name: n, dir: 'none', note: 'داده در موتور نیست؛ پیش‌بینی ممکن نیست' }); });
     if (!db) best.why += ' (اعتبارسنجی اجرا نشده: رتبه‌بندی فقط بر پایهٔ قدرت پیش‌بینی است، بدون شواهد بک‌تست.)'; else if (X.valState === 'stale') best.why += ' (شواهد بک‌تست مربوط به تنظیمات قبلی است؛ دوباره اعتبارسنجی کنید.)';
+    best.urgent = urgent;
     return { best: best, top: top, ranked: ranked.length, screened: all.length, by: by, markets: mk, all: all };
   }
   var DIRFA = { up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: 'بدون داده', unknown: 'نامشخص' }, CLSFA = { stock: 'سهام', fund: 'صندوق', gold: 'طلا', fx: 'ارز', option: 'اختیار' };
@@ -22129,7 +22128,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var counts = { long: cards.filter(function (c) { return c.type === 'long'; }).length, strong: cards.filter(function (c) { return c.type === 'long' && c.strength === 'قوی'; }).length, close: cards.filter(function (c) { return c.type === 'close'; }).length, hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
     var sample = (U.assets || []).some(function (a) { return a.sample; });
     var R0 = { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, ixf: ixF, xg: xgS, markets: rankMarkets(cards, db, list, E, xgS), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
-    R0.prio = priorities(R0, E); R0.pulse = pulse(R0, U); var DC = null; R0.decide = function () { if (!DC) { try { DC = decide(R0, E, U); } catch (e) { DC = { best: { kind: 'error', text: 'خطا در تحلیل', why: e.message }, top: [], markets: [], screened: 0, ranked: 0, all: [] }; } } return DC; }; R0.widget = function () { return widget(R0, E, U); };
+    R0.pulse = pulse(R0, U); var DC = null; R0.decide = function () { if (!DC) { try { DC = decide(R0, E, U); } catch (e) { DC = { best: { kind: 'error', text: 'خطا در تحلیل', why: e.message }, top: [], markets: [], screened: 0, ranked: 0, all: [] }; } } return DC; };
+    R0.prio = priorities(R0, E); R0.widget = function () { return widget(R0, E, U); };
     return R0;
   }
 
@@ -23762,7 +23762,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
 
   /* ---------- dashboard: priorities first (directive 14), forecast, active signals, market pulse, phone widget ---------- */
-  var KINDFA = { urgent: 'فوری (موقعیت شما)', now: 'فوری', conditional: 'مشروط', wait: 'انتظار', none: '—' };
+  var KINDFA = { urgent: 'فوری (موقعیت شما)', now: 'فوری', conditional: 'مشروط', wait: 'مشروط — هنوز نخرید', none: '—', cashalt: 'تا فعال‌شدن شرط' };
   function prioTable(P) { return table(['رتبه', 'بازار / دارایی', 'اقدام پیشنهادی', 'افق زمانی', 'ریسک', 'درجهٔ اعتبار', 'دلیل اولویت'], P.map(function (p) { return [fa(p.rank, 0), p.market + ' · ' + p.asset, p.action, p.horizon, p.risk, p.grade, p.why]; })); }
   function prioCards(P) { return h('div', { class: 'prio-list' }, P.map(function (p) {
     var col = p.kind === 'urgent' ? 'fit-no' : p.kind === 'now' ? 'fit-rec' : p.kind === 'conditional' ? 'fit-cond' : 'sev-info';
@@ -24333,11 +24333,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611122144) */
+/* PWA: offline cache + app updates (version 202611122200) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611122144';
+  window.HUB_APP_VERSION = '202611122200';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
