@@ -20624,7 +20624,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   /* =================== STOCKS =================== */
   var STOCK_SET = [
-    ['HistoryDays', 260, 'Days of price history downloaded (at least 220 for MA200)'], ['MinAvgValueRial', 30000000000, 'Minimum 20-day average traded value (rials) for a signal'],
+    ['HistoryDays', 1250, 'Sessions of price history downloaded; never below the signal engine’s need (1250 = long horizon: 500 warm-up + 3 years of testing)'], ['MinAvgValueRial', 30000000000, 'Minimum 20-day average traded value (rials) for a signal'],
     ['MinRowsForSignal', 60, 'Minimum days of data for a signal'], ['W_Trend', 0.45, 'Weight of the trend block'], ['W_Money', 0.40, 'Weight of the money-flow block'], ['W_Volume', 0.15, 'Weight of the volume block'],
     ['W_SMAStruct', 0.30, 'Moving-average structure, inside trend'], ['W_SMASlope', 0.18, 'Slope of the short MA, inside trend'], ['W_Channel', 0.24, 'Position in the 60-day channel'], ['W_RS', 0.20, 'Relative strength to the total index'], ['W_Mom', 0.08, '20-day momentum'],
     ['W_Net5', 0.28, 'Net individual flow, 5 days'], ['W_Net20', 0.24, 'Net individual flow, 20 days'], ['W_BuyPower', 0.24, 'Individual buyer power'], ['W_Intensity', 0.12, 'Today’s flow intensity'], ['W_Persist', 0.12, 'Flow persistence (share of inflow days)'],
@@ -20772,16 +20772,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       if (nxt >= list.length) return Promise.resolve();
       var w = list[nxt++];
       var code = w.insCode ? Promise.resolve(w.insCode) : tse.resolve(w.symbol).then(function (c) { w.insCode = c; return c; });
-      return code.then(function (c) { return Promise.all([tse.daily(c, Math.round(P.HistoryDays) || 260), tse.clientType(c).catch(function () { return []; })]); })
+      return code.then(function (c) { return Promise.all([tse.daily(c, Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)), tse.clientType(c).catch(function () { return []; })]); })
         .then(function (r) { data[w.symbol] = { px: r[0], ct: r[1].slice(-90) }; }).catch(function (e) { errs.push(w.symbol + ': ' + e.message); }).then(function () { done++; progress && progress(done, list.length, w.symbol); return one(); });
     };
     var step = function () { var ps = []; for (var k = 0; k < Math.min(5, list.length); k++) ps.push(one()); return Promise.all(ps); };
     return step(0).then(function () { return Promise.all([tse.index('32097828799138957').catch(function () { return []; }), tse.index('67130298613737946').catch(function () { return []; }), Hub.data.tgju('price_dollar_rl').catch(function () { return []; })]); })
-      .then(function (r) { if (r[0].length) data._idx = { total: r[0].slice(-2500), ew: r[1].slice(-2500) }; if (r[2].length) data._usd = r[2].slice(-265); S.data = data; if (errs.length >= list.length && list.length) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; } stampData(S, 'TSETMC + TGJU'); return errs; });
+      .then(function (r) { if (r[0].length) data._idx = { total: r[0].slice(-2500), ew: r[1].slice(-2500) }; if (r[2].length) data._usd = r[2].slice(-Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); S.data = data; if (errs.length >= list.length && list.length) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; } stampData(S, 'TSETMC + TGJU'); return errs; });
   }
 
   /* =================== GOLD =================== */
-  var GOLD_SET = [['HistoryDays', 400, 'Days of TGJU history'], ['MinRowsForSignal', 60, 'Minimum days for a signal'], ['BubbleLookback', 120, 'Window for the bubble mean and deviation'], ['OunceGrams', 31.1035, 'Grams per troy ounce'],
+  var GOLD_SET = [['HistoryDays', 1250, 'Sessions of TGJU history; never below the signal engine’s need (1250)'], ['MinRowsForSignal', 60, 'Minimum days for a signal'], ['BubbleLookback', 120, 'Window for the bubble mean and deviation'], ['OunceGrams', 31.1035, 'Grams per troy ounce'],
     ['W_Trend', 0.6, 'Trend block weight'], ['W_Bubble', 0.4, 'Bubble block weight'], ['W_Struct', 0.35, 'MA structure inside trend'], ['W_Slope', 0.25, 'Short-MA slope'], ['W_Chan', 0.25, '60-day channel position'], ['W_Mom', 0.15, '20-day momentum'],
     ['SlopeScale', 0.06, 'Slope for the full score'], ['MomScale', 0.15, 'Momentum for the full score'], ['BubbleZScale', 1, 'Bubble standard deviations per score unit'], ['Thr_StrongBuy', 1.1, ''], ['Thr_Buy', 0.35, ''], ['Thr_Sell', -0.35, ''], ['Thr_StrongSell', -1.1, '']];
   var GOLD_INS = [['انس طلا', 'ons', 'Global', '', ''], ['دلار آزاد', 'price_dollar_rl', 'FX', '', ''], ['طلای ۱۸ عیار', 'geram18', 'Gold', 1, 0.75], ['طلای ۲۴ عیار', 'geram24', 'Gold', 1, 0.995], ['مثقال طلا', 'mesghal', 'Gold', 4.6083, 0.705],
@@ -20824,12 +20824,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function tgjuFetch(S, list, progress) {
     var P = setObj(S.set), data = {}, errs = [];
     var step = function (i) { if (i >= list.length) return Promise.resolve(); var k = list[i]; progress && progress(i + 1, list.length, k);
-      return Hub.data.tgju(k).then(function (r) { data[k] = r.slice(-(Math.round(P.HistoryDays) || 400)); }).catch(function (e) { errs.push(k + ': ' + e.message); }).then(function () { return step(i + 1); }); };
+      return Hub.data.tgju(k).then(function (r) { data[k] = r.slice(-Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); }).catch(function (e) { errs.push(k + ': ' + e.message); }).then(function () { return step(i + 1); }); };
     return step(0).then(function () { S.data = data; stampData(S, 'TGJU'); return errs; });
   }
 
   /* =================== FX =================== */
-  var FX_SET = [['HistoryDays', 400, 'Days of history'], ['MinRowsForSignal', 60, ''], ['SpreadLookback', 120, 'Window for the spread mean and deviation'], ['USDT_Scale', 1, 'Set 10 or 0.1 if USDT and USD differ by a factor of ten (toman / rial)'],
+  var FX_SET = [['HistoryDays', 1250, 'Sessions of history; never below the signal engine’s need (1250)'], ['MinRowsForSignal', 60, ''], ['SpreadLookback', 120, 'Window for the spread mean and deviation'], ['USDT_Scale', 1, 'Set 10 or 0.1 if USDT and USD differ by a factor of ten (toman / rial)'],
     ['W_Trend', 0.7, 'Trend block weight'], ['W_Spread', 0.3, 'Spread block weight (USDT only)'], ['W_Struct', 0.35, ''], ['W_Slope', 0.25, ''], ['W_Chan', 0.25, ''], ['W_Mom', 0.15, ''], ['SlopeScale', 0.05, ''], ['MomScale', 0.12, ''], ['SpreadZScale', 1, ''],
     ['Thr_StrongBuy', 1.1, ''], ['Thr_Buy', 0.35, ''], ['Thr_Sell', -0.35, ''], ['Thr_StrongSell', -1.1, '']];
   var FX_INS = [['دلار آزاد', 'price_dollar_rl', 'FX', false], ['تتر (USDT)', 'crypto-tether-irr', 'Crypto', true], ['یورو', 'price_eur', 'FX', false], ['درهم امارات', 'price_aed', 'FX', false]];
@@ -22412,6 +22412,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
    * The ensemble's own trades are split by the horizon the engine gave them. Thresholds differ by horizon (more trades are
    * required where trades are cheap to generate). */
   var HZN = { s: { fa: 'کوتاه‌مدت (چند روز تا چند هفته)', win: 5, n: 30, oos: 12, mdd: -15 }, m: { fa: 'میان‌مدت (چند هفته تا چند ماه)', win: 10, n: 20, oos: 8, mdd: -15 }, l: { fa: 'بلندمدت (چند ماه به بالا)', win: 20, n: 10, oos: 4, mdd: -10 } };
+  /* history needed per horizon, in trading sessions (Iran ≈ 240 a year), set by the strategies themselves:
+     warm = longest look-back of that horizon's strategies including the high value of the sensitivity test
+            (s: MA200 filter → 200; m: MA200 + brk55 at 70 → 200; l: ltrend needs p + 250 with p up to 250 → 500);
+     test = years of out-of-sample-capable history for walk-forward blocks: s 1 year, m 2 years, l 3 years
+            (holding periods 10 / 40 / 120 sessions → about 24 / 6 / 2 independent trades per asset a year);
+     need = warm + test, rounded up; min = the per-asset floor to issue a signal at all (warm + 60 sessions).
+     The download target is the largest need, so one fetch serves all three horizons. */
+  var HIST = { s: { warm: 200, test: 240, need: 450, min: 260 }, m: { warm: 200, test: 480, need: 700, min: 260 }, l: { warm: 500, test: 720, need: 1250, min: 560 } }; HIST.max = 1250;
   var STRATS = {
     brk: { h: 's', fa: 'شکست سقف کوتاه‌مدت', days: 10, p: [20, 15, 25], f: function (X, I, t, p) { return X.c[t] > hiN(X.h, t - 1, p) && X.c[t - 1] <= hiN(X.h, t - 2, p); } },
     pb: { h: 's', fa: 'پولبک به میانگین ۲۰ در روند صعودی', days: 10, p: [20, 15, 30], f: function (X, I, t, p) { var m = p === 20 ? I.s20 : null, mv = m ? m[t] : mean(X.c.slice(t - p + 1, t + 1)); return X.l[t] <= mv && X.c[t] > mv && I.s50[t] > I.s200[t] && I.s50[t] > I.s50[t - 5]; } },
@@ -22445,7 +22453,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       else if (best) why = (was && was !== best ? (rows[was] && rows[was].ok ? 'تغییر از «' + rows[was].fa + '»: جایگزین بیش از ۲۵٪ پایدارتر' : 'تغییر از «' + (STRFA[was] || was) + '»: آزمون‌ها را دیگر نمی‌گذراند') + '. ' : '') + 'انتخاب «' + rows[best].fa + '» — ' + rows[best].why;
       else why = 'هیچ استراتژی‌ای همهٔ آزمون‌ها را برای این بازار و افق نگذراند؛ سیگنال قابل اتکایی در این افق وجود ندارد.';
       var lk = E.val && E.val.lock && E.val.lock[key]; if (lk && rows[lk]) { why = 'قفل کاربر روی «' + rows[lk].fa + '»' + (lk !== best ? ' (انتخاب خودکار: ' + (best ? '«' + rows[best].fa + '»' : 'هیچ') + ')' : '') + (rows[lk].ok ? '' : ' — هشدار: این استراتژی آزمون‌ها را نمی‌گذراند (' + rows[lk].why + ')؛ دروازهٔ اعتبار سیگنال آن را رد می‌کند'); best = lk; }
-      var dataNote = h === 'l' && !Object.keys(rows).some(function (k) { return rows[k].n >= H.n; }) ? 'تاریخچهٔ داده برای افق بلندمدت کافی نیست (حداقل دو سال لازم است؛ پیش‌فرض دریافت سهام ۲۶۰ روز است)' : '';
+      var dataNote = h !== 'l' && list.filter(function (z) { return z.a.cls === cls; }).every(function (z) { return z.R.X.n < HIST[h].need; }) ? 'تاریخچهٔ همهٔ دارایی‌های این بازار کمتر از ' + fa(HIST[h].need, 0) + ' جلسهٔ هدف این افق است؛ نتایج بر نمونهٔ کوتاه‌تر استوارند' : h === 'l' && !Object.keys(rows).some(function (k) { return rows[k].n >= H.n; }) ? 'تاریخچهٔ داده برای افق بلندمدت کافی نیست (' + fa(HIST.l.need, 0) + ' جلسه لازم است: ' + fa(HIST.l.warm, 0) + ' جلسه گرم‌شدن + ' + fa(HIST.l.test, 0) + ' جلسه آزمون). یک بار «به‌روزرسانی داده» بزنید؛ اگر منبع تاریخچهٔ کمتری بدهد، همین پیام می‌ماند' : '';
       out[key] = { cls: cls, h: h, rows: rows, sel: best, was: was || null, changed: !!(was && best !== was), why: why, data: dataNote, locked: !!(lk && rows[lk]) }; });
     return out;
   }
@@ -22966,7 +22974,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function hzSignals(x, z, E, db, live) {
     var X = z.R.X, I = z.R.I, t = X.n - 1, cl = X.c[t], atr = I.atr[t], minRR = Number(E.acct.minRR) || 1.5, th = Object.assign({}, VTH, E.val && E.val.th), rg = z.R.RG[t], out = {};
     ['s', 'm', 'l'].forEach(function (h) {
-      var H = HZN[h], need = h === 's' ? 120 : h === 'm' ? 220 : 500, view, lv, chk = [], add = function (c, ok, txt) { chk.push({ c: c, ok: ok, t: txt }); return ok; };
+      var H = HZN[h], need = HIST[h].min, view, lv, chk = [], add = function (c, ok, txt) { chk.push({ c: c, ok: ok, t: txt }); return ok; };
       if (h === 's') view = cl > I.s20[t] && I.s20[t] > I.s20[t - 5] ? 'up' : cl < I.s20[t] && I.s20[t] < I.s20[t - 5] ? 'down' : 'flat';
       else if (h === 'm') view = cl > I.s50[t] && I.s50[t] > I.s200[t] ? 'up' : cl < I.s50[t] && I.s50[t] < I.s200[t] ? 'down' : 'flat';
       else view = X.n < 270 ? 'none' : cl > I.s200[t] && I.s200[t] > I.s200[t - 20] && cl > X.c[t - 250] ? 'up' : cl < I.s200[t] && I.s200[t] < I.s200[t - 20] ? 'down' : 'flat';
@@ -22976,7 +22984,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var rrNow = cl > lv.stop ? (lv.tp[1] - cl) / (cl - lv.stop) : NaN;
       var key = x.cls + '|' + h, sr = db && db.strat ? db.strat[key] : null, k = sr && sr.sel, row = k ? sr.rows[k] : null;
       // 1 data
-      var d1 = add('data', !x.c.sample && !(isF(x.c.age) && x.c.age > 96) && X.n >= need, x.c.sample ? 'دادهٔ نمونه' : isF(x.c.age) && x.c.age > 96 ? 'داده ' + fa(x.c.age / 24, 0) + ' روز قدیمی' : X.n < need ? 'تاریخچه ' + fa(X.n, 0) + ' جلسه؛ این افق دست‌کم ' + fa(need, 0) + ' جلسه می‌خواهد' : 'تازه و کافی (' + fa(X.n, 0) + ' جلسه، منبع ' + (x.c.src || (x.cls === 'gold' || x.cls === 'fx' ? 'TGJU' : 'TSETMC')) + ')');
+      var d1 = add('data', !x.c.sample && !(isF(x.c.age) && x.c.age > 96) && X.n >= need, x.c.sample ? 'دادهٔ نمونه' : isF(x.c.age) && x.c.age > 96 ? 'داده ' + fa(x.c.age / 24, 0) + ' روز قدیمی' : X.n < need ? 'تاریخچه ' + fa(X.n, 0) + ' جلسه؛ این افق دست‌کم ' + fa(need, 0) + ' جلسه می‌خواهد (هدف دریافت: ' + fa(HIST.max, 0) + ')' : 'تازه و کافی (' + fa(X.n, 0) + ' جلسه، منبع ' + (x.c.src || (x.cls === 'gold' || x.cls === 'fx' ? 'TGJU' : 'TSETMC')) + ')');
       // 2 strategy for this market × horizon
       var d2 = add('strat', !!k, k ? '«' + STRFA[k] + '» برای ' + (MKFA[x.cls] || x.cls) + ' / ' + H.fa : sr ? sr.why : 'اعتبارسنجی اجرا نشده یا این بازار در آن نبوده');
       // 3 back-test valid and current
@@ -23394,7 +23402,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -25099,7 +25107,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       d.push(table(['L', 'zIn', 'معامله', 'امید ریاضی'], o.grid.map(function (g) { return [fa(g.L, 0), fa(g.zIn, 1), fa(g.n, 0), g.n ? fa(g.avgR, 2) + 'R' : '—']; })));
       if (o.trades.length) d.push(table(['ورود', 'خروج', 'z ورود', 'نتیجه', 'بازده', 'دلیل خروج'], o.trades.slice().reverse().map(function (t) { return [TE.shamsi(t.d), TE.shamsi(t.xd), fa(t.z, 2), fa(t.r, 2) + 'R', pct(t.ret, 2), { tp: 'بازگشت به میانگین', stop: 'حد ضرر', time: 'مهلت' }[t.exit] || t.exit]; })));
       body.push(h('details', null, d)); });
-    body.push(h('p', { class: 'f-help', text: 'محدودیت‌ها: تاریخچه همان مقدار دریافتی از TGJU است (پیش‌فرض ابزار طلا ۴۰۰ روز؛ پارامتر HistoryDays) و با ۱۲۰ روز گرم‌شدن، معامله‌ها کم می‌مانند؛ نمونهٔ کم یعنی درجهٔ پایین، نه رد راهبرد. اونس در روزهای تعطیل جهانی از آخرین روز قبل برداشته می‌شود. دلار آزاد TGJU مبنای ذاتی است، نه نرخ رسمی یا نیمایی.' }));
+    body.push(h('p', { class: 'f-help', text: 'محدودیت‌ها: تاریخچه همان مقدار دریافتی از TGJU است (هدف دریافت ۱٬۲۵۰ جلسه، تعیین‌شده بر اساس افق‌ها) و با ۱۲۰ روز گرم‌شدن، معامله‌ها کم می‌مانند؛ نمونهٔ کم یعنی درجهٔ پایین، نه رد راهبرد. اونس در روزهای تعطیل جهانی از آخرین روز قبل برداشته می‌شود. دلار آزاد TGJU مبنای ذاتی است، نه نرخ رسمی یا نیمایی.' }));
     return ctx.panel('تحلیل بین‌بازاری: طلای داخلی در برابر طلای جهانی (راهبرد XG1)', body);
   }
 
@@ -25235,7 +25243,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
           h('bdi', { 'data-notr': '1', dir: 'ltr', class: 'small', text: g.sigId + (g.valId ? ' · ' + g.valId : ' · no Validation ID') }), h('button', { class: 'btn btn-sm', text: 'نمایش', onclick: function () { pick(x, g.h); } })]; }))
         : h('p', { class: 'small muted', text: 'سیگنالی برای اعتبارسنجی در فهرست نیست.' });
       var cur = null, curG = null; K.items.forEach(function (x) { if (x.key === S.valKey && x.hzs) { cur = x; curG = x.hzs[S.valH] || x.gate; } }); if (!cur && rows.length) { cur = rows[0].x; curG = rows[0].g; }
-      var body = [tb, h('p', { class: 'small muted', text: 'درون‌روزی: دادهٔ درون‌روزی (کندل ساعتی/دقیقه‌ای) به سامانه وصل نیست؛ برای این افق سیگنالی صادر نمی‌شود. بلندمدت: دست‌کم ۵۰۰ جلسه تاریخچه لازم است (تنظیم «روزهای تاریخچه»). هر سیگنال تنها وقتی «معتبر» است که هر هشت کنترل دروازه را بگذراند؛ در غیر این صورت اقدام «ورود» صادر نمی‌شود.' })];
+      var body = [tb, h('p', { class: 'small muted', text: 'درون‌روزی: دادهٔ درون‌روزی (کندل ساعتی/دقیقه‌ای) به سامانه وصل نیست؛ برای این افق سیگنالی صادر نمی‌شود. تاریخچهٔ لازم را سامانه خودش تعیین و دریافت می‌کند: کوتاه‌مدت ۴۵۰، میان‌مدت ۷۰۰، بلندمدت ۱٬۲۵۰ جلسه (گرم‌شدن شاخص‌ها + ۱، ۲ و ۳ سال آزمون)؛ حداقل هر دارایی برای صدور سیگنال: ۲۶۰ / ۲۶۰ / ۵۶۰ جلسه. هر سیگنال تنها وقتی «معتبر» است که هر هشت کنترل دروازه را بگذراند؛ در غیر این صورت اقدام «ورود» صادر نمی‌شود.' })];
       if (cur && curG) {
         var g = curG, x = cur, r = g.row, key = x.cls + '|' + g.h, sr = db && db.strat ? db.strat[key] : null, lv = g.lv, V = E.val || {}, hist = (V.selHist || []).filter(function (q) { return q.key === key; });
         var tk = (K.track && K.track.sig || []).filter(function (s) { return s.key === x.key && (s.h || 'm') === g.h; }), last = tk[tk.length - 1];
@@ -25852,11 +25860,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611131559) */
+/* PWA: offline cache + app updates (version 202611131614) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611131559';
+  window.HUB_APP_VERSION = '202611131614';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
