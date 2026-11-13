@@ -7535,6 +7535,411 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.finIntake;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+/* js/core/findisc.js */
+/* =====================================================================
+ * FINANCING OPPORTUNITY DISCOVERY — from a raw problem to operational
+ * financing structures (directives: Solution-Driven Financing Advisory,
+ * Market Feasibility & Alternative Structuring, Creative Structuring &
+ * Capital-Market Compliance; Nov 2026).
+ *
+ * A layer over the solution engine (js/core/finengine.js) and its bank
+ * (js/data/finbank-*). It never replaces the engine's gates; it adds:
+ *   1 a seed form built from a few answers (archetype, asset, value, need,
+ *     timing, ownership) so the engine runs before any statements exist;
+ *   2 the economic objectives behind the problem (hypotheses the user ticks);
+ *   3 ranking that adds objective fit, timing, ownership and market capacity
+ *     to the engine score — every adjustment is listed;
+ *   4 market feasibility on seven dimensions, staged execution when the deal
+ *     is larger than what one channel absorbs, primary / alternative /
+ *     fallback paths with the conditions that move you to the next one;
+ *   5 for capital-market routes: who owns, who is originator, who issues, who
+ *     receives the money, who pays and what holders can reach; a regulatory
+ *     feasibility matrix per legal person (parent, asset company / SPV,
+ *     special-purpose intermediary) and the four separate SPV audit questions;
+ *   6 five outcome statuses, three maturity levels, three tiers (direct /
+ *     structured / hybrid), staged information requests and a roadmap.
+ * Honesty rules: no market capacity, discount, time or probability is
+ * invented. Capacity per channel, extra bulk discount and scenario shifts are
+ * the user's inputs; unknown stays "نامشخص" and becomes a question. Rule
+ * citations reuse the texts already encoded in js/core/sukukrules.js
+ * ([IJ] ijara instruction, [CR] rating instruction, [DV] new instruments
+ * act, [PR] SEO practice); anything else is flagged "نیازمند استعلام".
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var HB = 1e4;   // 1 همت = 10,000 میلیارد ریال (engine unit used here: billion rials)
+  function num(v) { return v === null || v === undefined || v === '' ? NaN : Number(v); }
+  function has(v) { return isFinite(num(v)); }
+  function fa(n) { return String(n).replace(/\d/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }); }
+  function H(v) { if (!isFinite(v)) return 'نامشخص'; var r = Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10; return fa(r.toLocaleString('en-US')) + ' همت'; }
+  function P(v) { return isFinite(v) ? fa(Math.round(v * 100)) + '٪' : 'نامشخص'; }
+  function Mo(a, b) { return fa(a) + (b != null && b !== a ? '–' + fa(b) : '') + ' ماه'; }
+
+  /* ---------- problem archetypes (directive A §1) ---------- */
+  var ARCH = [
+    { k: 're', fa: 'دارایی ملکی بزرگ دارم؛ می‌خواهم از آن نقدینگی بسازم', pur: 'monet', at: 'realestate', obj: ['cash', 'keepUse', 'keepOwn', 'collat', 'release', 'investor', 'hidden'] },
+    { k: 'wc', fa: 'دارایی زیاد دارم اما سرمایه در گردش کم است', pur: 'wc', at: 'realestate', obj: ['cash', 'keepUse', 'collat', 'release'] },
+    { k: 'expand', fa: 'ظرفیت خالی یا طرح توسعه دارم اما منابع تکمیلش را ندارم', pur: 'expand', at: 'machinery', obj: ['growth', 'investor', 'collat', 'hidden'] },
+    { k: 'ar', fa: 'مطالبات زیاد دارم و وصول آن زمان‌بر است', pur: 'release', at: 'receivable', obj: ['release', 'cash'] },
+    { k: 'nodebt', fa: 'منابع می‌خواهم اما نه افزایش سرمایه و نه بدهی بانکی', pur: 'unknown', at: 'realestate', obj: ['cash', 'keepOwn', 'investor', 'hidden'], seed: { eqOk: 'no', noBank: 'yes' } },
+    { k: 'project', fa: 'پروژهٔ سودآور دارم اما تأمین مالی مستقلش ممکن نشده', pur: 'project', at: '', obj: ['growth', 'investor'] },
+    { k: 'refi', fa: 'بدهی کوتاه‌مدت دارم و می‌خواهم سررسیدها را اصلاح کنم', pur: 'refi', at: '', obj: ['tenor', 'costCut', 'collat'] },
+    { k: 'other', fa: 'مسئلهٔ دیگر (در شرح بنویسید)', pur: 'unknown', at: 'realestate', obj: [] }];
+
+  /* ---------- economic objectives (directive A §2) and the routes that serve each ---------- */
+  var OBJ = [
+    ['cash', 'تبدیل دارایی غیرمولد به نقدینگی', ['A09', 'A05', 'A01', 'E04', 'A14', 'A04', 'D19', 'D07']],
+    ['keepUse', 'نقد کردن دارایی بدون توقف فعالیت عملیاتی', ['A04', 'A05']],
+    ['keepOwn', 'حفظ مالکیت دارایی و ایجاد جریان نقدی', ['A08', 'A06', 'D03', 'D04', 'A10']],
+    ['collat', 'استفاده از دارایی به‌عنوان وثیقه', ['A06', 'D12', 'D11', 'A11']],
+    ['release', 'آزادسازی منابع محبوس در دارایی‌ها', ['A04', 'A05', 'A06', 'D19', 'D07', 'A09', 'A14']],
+    ['growth', 'تأمین مالی طرح توسعه با پشتوانهٔ دارایی', ['D03', 'A04', 'E07', 'D20', 'D06', 'E08', 'D12']],
+    ['investor', 'ورود سرمایه‌گذار جدید به دارایی یا پروژه', ['E07', 'A07', 'E05', 'A01', 'E08', 'E06']],
+    ['costCut', 'کاهش هزینهٔ سرمایه و بهبود ساختار ترازنامه', ['D03', 'D01', 'E10', 'E01']],
+    ['hidden', 'شناسایی ارزش اقتصادی پنهان دارایی‌ها', ['E10', 'A07', 'A02', 'A08', 'A10']],
+    ['tenor', 'اصلاح ساختار سررسید بدهی', ['D03', 'D01', 'D12', 'D14', 'A04']]];
+  var OBJFA = {}; OBJ.forEach(function (o) { OBJFA[o[0]] = o[1]; });
+
+  /* ---------- market channels: who has to say yes for the money to arrive ---------- */
+  var CH = { buyers: 'خریداران مستقیم دارایی', sukuk: 'بازار اوراق بدهی (سرمایه‌گذاران اوراق)', bank: 'بانک‌ها و مؤسسات اعتباری', fund: 'سرمایه‌گذاران صندوق (بازار سرمایه)', partner: 'شریک، سرمایه‌گذار راهبردی یا توسعه‌دهنده', equity: 'سهامداران و بازار سهام', other: 'طرف قرارداد خاص' };
+  var CHMAP = { A09: 'buyers', A05: 'buyers', E04: 'equity', A14: 'buyers', D01: 'sukuk', D02: 'sukuk', D03: 'sukuk', D04: 'sukuk', D06: 'sukuk', D07: 'sukuk', D09: 'sukuk', D10: 'sukuk', A04: 'sukuk', A12: 'sukuk', D08: 'sukuk',
+    D11: 'bank', D12: 'bank', D13: 'bank', D14: 'bank', D15: 'bank', D16: 'bank', D19: 'bank', A06: 'bank', D20: 'bank', D21: 'bank', A11: 'bank', D17: 'bank', D18: 'bank',
+    A01: 'fund', A02: 'fund', E08: 'fund', E09: 'fund', E05: 'partner', E06: 'partner', E07: 'partner', A07: 'partner', A10: 'partner', A08: 'partner', E01: 'equity', E02: 'equity', E03: 'equity', E11: 'equity' };
+  var BANK = ['D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'A06'];   // "no bank debt" removes these
+  // tiers (directive C §7): direct = no new legal person or market instrument; structured = intermediary, fund, SPV or securities; hybrid = multi-step structures
+  var STRUCTURED = { D01: 1, D02: 1, D03: 1, D04: 1, D06: 1, D07: 1, D08: 1, D09: 1, D10: 1, A01: 1, A02: 1, A03: 1, A04: 1, A12: 1, A13: 1, E03: 1, E07: 1, E08: 1, E11: 1, E12: 1, E09: 1, D05: 1 };
+  var CAPMKT = { D01: 1, D02: 1, D03: 1, D04: 1, D05: 1, D06: 1, D07: 1, D08: 1, D09: 1, D10: 1, A04: 1, A12: 1, A01: 1, A02: 1, E03: 1, E08: 1, E09: 1, E11: 1, E04: 1 };
+  var SUKUK = { D01: 1, D02: 1, D03: 1, D04: 1, D06: 1, D07: 1, D09: 1, A04: 1 };
+
+  function defaults() {
+    return { arch: 're', note: '', at: 'realestate', use: 'unk', val: null, need: null, by: null, keep: 'unk', noBank: 'unk', eqOk: 'unk', inc: 'unk', incVal: null, op: 'unk', title: 'unk',
+      listed: 'unk', form: 'unk', opinion: 'unk', obj: {}, cap: {}, ev: {}, seg: { op: null, inc: null, idle: null }, sc: { dn: 0.10, up: 0.05 }, bulk: null, spv: 'auto' };
+  }
+  function archOf(k) { for (var i = 0; i < ARCH.length; i++) if (ARCH[i].k === k) return ARCH[i]; return ARCH[ARCH.length - 1]; }
+  function objOn(M, k) { var a = archOf(M.arch); return M.obj && k in M.obj ? !!M.obj[k] : a.obj.indexOf(k) >= 0; }
+
+  /* ---------- 1 · seed form for the engine ---------- */
+  function seed(M) {
+    var A = archOf(M.arch), v = num(M.val), at = M.at || A.at;
+    var keep = M.keep, E = { mode: 'auto', co: { unit: 'billion', purpose: A.pur, need: has(M.need) ? num(M.need) * HB : null, needBy: has(M.by) ? num(M.by) : null, listing: M.listed, form: M.form,
+      canEquity: M.eqOk, assetSaleOk: keep === 'keep' ? 'no' : keep === 'any' ? 'yes' : 'unk', investorOk: keep === 'keep' ? 'unk' : 'unk', controlPriority: keep === 'keep' ? 'high' : 'unk' },
+      fin: { opinion: M.opinion }, cons: { noSale: keep === 'keep' ? 'yes' : keep === 'any' ? 'no' : 'unk', noOwn: keep === 'keep' ? 'yes' : keep === 'any' ? 'no' : 'unk', noDebt: 'unk' }, assets: [] };
+    if (A.k === 'project') { E.co.projectCost = isFinite(v) ? v * HB : null; }
+    else if (at && isFinite(v) && v > 0) {
+      var incYes = M.inc === 'yes' || M.inc === 'partial';
+      E.assets.push({ type: at, name: 'دارایی اعلام‌شده', mv: v * HB, bv: null,
+        // income stated but amount unknown: a marker > 0 keeps income-based routes open; yields from it are never shown
+        inc: M.inc === 'no' ? 0 : has(M.incVal) ? num(M.incVal) * HB : incYes ? 1e-9 : null,
+        idle: M.inc === 'no' ? 1 : null, util: at === 'machinery' && A.k === 'expand' ? 0.6 : null, title: M.title === 'clean' ? 'clean' : M.title === 'issue' ? 'issue' : 'unk', transfer: 'unk', pledge: 'unk',
+        use: M.use === 'unk' ? 'other' : M.use, strategic: M.op === 'operational' ? 'high' : M.op === 'nonop' ? 'low' : 'unk', develop: M.use === 'land' ? 'unk' : 'unk', longterm: at === 'receivable' ? 'yes' : 'unk' });
+    }
+    return E;
+  }
+
+  /* ---------- helpers on engine output ---------- */
+  function phys(M) { var at = M.at || archOf(M.arch).at; return at === 'realestate' || at === 'machinery'; }
+  function idsOf(it) { return it.kind === 'c' ? it.ids : [it.id]; }
+  function chOf(it) { if (it.kind === 's') return CHMAP[it.id] || 'other'; var lead = it.c.req.map(function (i) { return CHMAP[i]; }).filter(Boolean); return lead[lead.length - 1] || 'other'; }
+  function tierOf(it) { return it.kind === 'c' ? 'hybrid' : STRUCTURED[it.id] ? 'structured' : 'direct'; }
+  var TIERFA = { direct: 'مستقیم (بدون شخصیت حقوقی یا ابزار جدید)', structured: 'ساختاریافته (نهاد واسط، صندوق، شرکت مستقل یا اوراق)', hybrid: 'ترکیبی و نوآورانه (چندمرحله‌ای)' };
+
+  /* ---------- 2 · candidates with transparent discovery score ---------- */
+  function candidates(X, M) {
+    var R = X.R, by = {}; R.forEach(function (r) { by[r.id] = r; });
+    var noBank = M.noBank === 'yes', need = num(M.need), deadline = num(M.by), list = [];
+    var objKeys = OBJ.map(function (o) { return o[0]; }).filter(function (k) { return objOn(M, k); });
+    function common(it) {
+      var why = [], adj = 0, ids = idsOf(it);
+      var hits = objKeys.filter(function (k) { var o = OBJ.filter(function (x) { return x[0] === k; })[0]; return ids.some(function (i) { return o[2].indexOf(i) >= 0; }); });
+      it.objHits = hits;
+      if (hits.length) { var b = 6 * Math.min(3, hits.length); adj += b; why.push('به ' + fa(hits.length) + ' هدف اقتصادی پاسخ می‌دهد (+' + fa(b) + ')'); }
+      else if (objKeys.length) { adj -= 6; why.push('به هیچ‌یک از اهداف علامت‌خورده پاسخ مستقیم نمی‌دهد (−۶)'); }
+      if (isFinite(deadline)) { if (deadline < it.tm[0]) { adj -= 20; why.push('حداقل زمان اجرا (' + Mo(it.tm[0]) + ') از مهلت شما (' + Mo(deadline) + ') بیشتر است (−۲۰)'); it.late = true; } else if (deadline < it.tm[1]) { adj -= 6; why.push('حداکثر زمان اجرا از مهلت بیشتر است (−۶)'); } }
+      if (M.keep === 'keep' && it.ow < 0.6) { adj -= 15; why.push('مالکیت را تا ' + P(it.ow) + ' حفظ می‌کند؛ شما حفظ کامل خواسته‌اید (−۱۵)'); it.ownClash = true; }
+      else if (M.keep === 'partial' && it.ow < 0.4) { adj -= 8; why.push('حفظ مالکیت کمتر از ۴۰٪ (−۸)'); }
+      if (ids.indexOf('A03') >= 0 && ids.some(function (i) { return SUKUK[i]; })) { it.spvBani = true; adj -= 8; why.push('بانی اوراق، شرکت تازه‌تأسیس است و دو دورهٔ مالی حسابرسی‌شده ندارد [IJ] ۲ و ۶ (−۸)'); }
+      var cap = num((M.cap || {})[it.ch]);
+      if (isFinite(it.amtH) && it.amtH > 0) { if (isFinite(cap) && cap > 0) { if (it.amtH > cap) { var n = Math.ceil(it.amtH / cap); adj -= Math.min(15, 5 * (n - 1)); why.push('مبلغ بیش از ظرفیت یک‌نوبتی کانال؛ ' + fa(n) + ' مرحله لازم (−' + fa(Math.min(15, 5 * (n - 1))) + ')'); } }
+        else { adj -= 4; why.push('ظرفیت جذب «' + CH[it.ch] + '» وارد نشده (−۴)'); } }
+      if (isFinite(need) && need > 0 && isFinite(it.amtH) && it.amtH > 0) { var cov = it.amtH / need; if (cov >= 1) { adj += 4; why.push('برآورد مبلغ کل نیاز را پوشش می‌دهد (+۴)'); } else if (cov < 0.25) { adj -= 6; why.push('برآورد مبلغ کمتر از ربع نیاز است (−۶)'); } }
+      it.adj = adj; it.why = why; it.disc = Math.max(0, Math.min(100, Math.round((it.base + adj) * 10) / 10)); return it;
+    }
+    R.forEach(function (r) {
+      if (r.label === 'na' || r.s.k === 'enabler') return;
+      var it = { kind: 's', id: r.id, fa: r.s.fa, r: r, s: r.s, base: r.sc.total, tm: r.s.tm, ow: r.s.ow, st: r.s.st, label: r.label, definitive: r.definitive, z: r.z, amtH: isFinite(r.z.amt) ? r.z.amt / HB : NaN, val: r.z.val };
+      it.ch = chOf(it); it.tier = tierOf(it);
+      if (noBank && BANK.indexOf(r.id) >= 0) { it.bankOut = true; }
+      list.push(common(it));
+    });
+    (X.C || []).forEach(function (c) {
+      if (!c.active) return;
+      var comps = c.comps, ids = comps.map(function (r) { return r.id; });
+      var it = { kind: 'c', id: c.c.id, fa: c.c.fa, c: c.c, cc: c, comps: comps, ids: ids, base: c.score, tm: [Math.max.apply(null, comps.map(function (r) { return r.s.tm[0]; })), comps.reduce(function (s, r) { return s + r.s.tm[1]; }, 0)],
+        ow: Math.min.apply(null, comps.map(function (r) { return r.s.ow; })), st: comps.some(function (r) { return r.s.st === 'dev'; }) ? 'dev' : comps.some(function (r) { return r.s.st === 'cond'; }) ? 'cond' : 'exec', label: c.label, definitive: c.definitive, amtH: c.cash > 0 ? c.cash / HB : NaN };
+      it.ch = chOf(it); it.tier = 'hybrid';
+      if (noBank && ids.some(function (i) { return BANK.indexOf(i) >= 0 && c.c.req.indexOf(i) >= 0; })) it.bankOut = true;
+      list.push(common(it));
+    });
+    list.forEach(function (it) { feas(it, X, M); status5(it, M); });
+    list.sort(function (a, b) { return b.disc - a.disc; });
+    return list;
+  }
+
+  /* ---------- 3 · market feasibility on seven dimensions (directive B) ---------- */
+  function feas(it, X, M) {
+    var D = [], add = function (k, n, st, t) { D.push({ k: k, n: n, st: st, t: t }); };
+    var cap = num((M.cap || {})[it.ch]), amt = it.amtH, need = num(M.need), val = num(M.val), by = num(M.by);
+    var ev = (M.ev || {})[it.ch];
+    // capacity
+    if (!(amt > 0)) add('cap', 'ظرفیت بازار', amt === 0 ? 'na' : 'unk', amt === 0 ? 'وجه نقد مستقیم ایجاد نمی‌کند؛ ارزش دارایی به پروژه یا صندوق منتقل می‌شود.' : 'مبلغ قابل برآورد نیست (' + (it.z ? it.z.formula : 'اجزای ساختار') + ').');
+    else if (isFinite(cap) && cap > 0) { it.tranches = Math.ceil(amt / cap); add('cap', 'ظرفیت بازار', it.tranches > 1 ? 'warn' : 'ok', it.tranches > 1 ? 'بزرگ‌ترین معاملهٔ قابل جذب در یک نوبت ' + H(cap) + ' (ورودی شما' + (ev ? '، شاهد: ' + ev : '، بدون شاهد ثبت‌شده') + ')؛ ' + H(amt) + ' در ' + fa(it.tranches) + ' مرحله.' : 'در یک نوبت در ظرفیت واردشدهٔ ' + H(cap) + ' جا می‌شود' + (ev ? ' (شاهد: ' + ev + ')' : ' (شاهد بازار ثبت نشده)') + '.'); }
+    else add('cap', 'ظرفیت بازار', 'unk', 'ظرفیت جذب «' + CH[it.ch] + '» در یک معامله وارد نشده. بدون معاملات مشابه، اندازهٔ قابل جذب قابل برآورد نیست.');
+    // scale
+    if (amt > 0 && isFinite(need) && need > 0) add('scale', 'مقیاس معامله', amt >= need ? 'ok' : amt >= 0.5 * need ? 'warn' : 'bad', 'برآورد ' + H(amt) + ' در برابر نیاز ' + H(need) + ' (' + P(amt / need) + ' پوشش).');
+    else if (amt > 0 && isFinite(val) && val > 0) add('scale', 'مقیاس معامله', 'unk', 'برآورد ' + H(amt) + ' معادل ' + P(amt / val) + ' ارزش اعلام‌شده؛ مبلغ نیاز وارد نشده.');
+    else add('scale', 'مقیاس معامله', amt === 0 ? 'na' : 'unk', 'نامشخص.');
+    // time
+    var n = it.tranches || 1, t0 = it.tm[0], t1 = it.tm[1] + (n - 1) * Math.max(1, it.tm[0]); it.tmEff = [t0, t1];
+    add('time', 'زمان اجرا', isFinite(by) ? (by < t0 ? 'bad' : by < t1 || (it.spvBani && by < 18) ? 'warn' : 'ok') : (it.spvBani ? 'warn' : 'unk'), 'بازهٔ پروفایل راهکار ' + Mo(it.tm[0], it.tm[1]) + (n > 1 ? '؛ با ' + fa(n) + ' مرحله تا حدود ' + Mo(t1) + ' (فرض: مرحلهٔ اول کل بازه، هر مرحلهٔ بعد حداقل زمان پروفایل)' : '') + (isFinite(by) ? '؛ مهلت شما ' + Mo(by) + '.' : '؛ مهلت وارد نشده.') + (it.spvBani ? ' اگر شرکت تازه‌تأسیس بانی باشد، احراز شرایط بانی حدود دو دورهٔ مالی (≈ ۱۸ ماه) به‌علاوهٔ حسابرسی طول می‌کشد مگر معافیت یا بانی شدن شرکت مادر — بازهٔ پروفایل این را لحاظ نکرده است.' : ''));
+    // realizable price
+    if (it.kind === 's' && it.z && isFinite(it.z.val) && it.z.val > 0 && amt > 0) { var hc = 1 - amt * HB / it.z.val, bulk = num(M.bulk); it.haircut = hc;
+      add('price', 'قیمت تحقق‌یافتنی', 'warn', 'ارزش مبنا ' + H(it.z.val / HB) + ' → برآورد قابل دریافت ' + H(amt) + ' (کسر ' + P(hc) + ' طبق فرض‌های موتور)' + (it.s.k === 'sale' && n > 1 ? '؛ فروش یکجا معمولاً تخفیف بیشتری می‌طلبد' + (isFinite(bulk) ? ' — با تخفیف اضافهٔ واردشدهٔ شما ' + P(bulk) + ': ' + H(amt * (1 - bulk)) : ' — اندازه‌اش را وارد کنید') : '') + '. ارزش کارشناسی، دفتری، منصفانه و قیمت تحقق‌یافتنی یکی نیستند.'); }
+    else if (it.kind === 's' && /sale|slb|reit|surplus|finsale|block/.test(it.s.sz)) add('price', 'قیمت تحقق‌یافتنی', 'unk', 'ارزش مبنا یا تخفیف قابل محاسبه نیست.');
+    else add('price', 'قیمت تحقق‌یافتنی', 'na', it.s && it.s.k === 'debt' ? 'بدهی: مبلغ به ظرفیت بازپرداخت و ارزش وثیقه/دارایی بستگی دارد.' : 'موضوعیت ندارد یا در اجزای ساختار سنجیده می‌شود.');
+    // cost
+    var cl = it.kind === 's' ? it.s.cl : Math.max.apply(null, it.comps.map(function (r) { return r.s.cl; }));
+    var rate = it.kind === 's' && it.r.eco && isFinite(it.r.eco.rate) ? it.r.eco.rate : NaN;
+    add('cost', 'هزینهٔ اجرا', cl >= 4 ? 'warn' : 'ok', 'سطح هزینه ' + fa(cl) + ' از ۵' + (isFinite(rate) ? '؛ نرخ تمام‌شده با فرض‌های شما ' + P(rate) : '') + (it.kind === 's' ? '. ' + it.s.cost : '. جمع هزینهٔ اجزای ساختار.'));
+    // failure risk drivers
+    var dr = [], du = [];
+    if (it.st === 'dev') dr.push('ابزار در ایران توسعه‌ای است و سابقهٔ اجرای کافی ندارد');
+    else if (it.st === 'cond') du.push('اجرای آن در ایران مشروط است');
+    if (!(isFinite(cap) && cap > 0) && amt > 0) du.push('ظرفیت جذب کانال نامشخص');
+    if (n > 2) dr.push('اجرای چندمرحله‌ای (' + fa(n) + ' مرحله)');
+    if (phys(M) && (it.kind === 'c' || it.s.ast.length)) { if (M.title === 'issue') dr.push('سند یا مالکیت نیازمند اصلاح'); else if (M.title !== 'clean') du.push('وضعیت سند و قابلیت انتقال تأیید نشده'); }
+    var gl = it.kind === 's' ? [it.r] : it.comps, gf = gl.reduce(function (s, r) { return s + r.fail.length; }, 0), gu = gl.reduce(function (s, r) { return s + r.unk.length; }, 0);
+    if (gf) dr.push(fa(gf) + ' شرط مقرراتی یا مالی برقرار نیست');
+    if (gu) du.push(fa(gu) + ' شرط مقرراتی یا اطلاعاتی نامشخص');
+    it.risk = dr.concat(du); it.riskHard = dr;
+    add('risk', 'ریسک عدم موفقیت', dr.length >= 2 ? 'bad' : dr.length ? 'warn' : du.length ? 'unk' : 'ok', it.risk.length ? (dr.length ? 'مانع: ' + dr.join('؛ ') + (du.length ? '. ' : '') : '') + (du.length ? 'نامشخص: ' + du.join('؛ ') : '') + '.' : 'عامل شناخته‌شده‌ای برای شکست با اطلاعات فعلی دیده نشد.');
+    // fit with the company's goal
+    var fit = [], fst = 'ok';
+    if (it.late) { fit.push('به مهلت نمی‌رسد'); fst = 'bad'; }
+    if (it.ownClash) { fit.push('با حفظ کامل مالکیت سازگار نیست'); fst = 'bad'; }
+    if (it.bankOut) { fit.push('بدهی بانکی است و شما آن را نمی‌خواهید'); fst = 'bad'; }
+    if (it.objHits && it.objHits.length) fit.push('اهداف: ' + it.objHits.map(function (k) { return OBJFA[k]; }).join('، ')); else if (fst === 'ok') fst = 'warn';
+    add('fit', 'تناسب با هدف شرکت', fst, fit.join('؛ ') || 'هدف تأییدشده‌ای ندارد.');
+    it.D = D;
+    var bad = D.filter(function (d) { return d.st === 'bad'; }).length, warn = D.filter(function (d) { return d.st === 'warn'; }).length, unk = D.filter(function (d) { return d.st === 'unk'; }).length;
+    it.fclass = bad ? 'low' : unk >= 3 ? 'unk' : warn >= 3 ? 'med' : unk ? 'med' : 'high';
+  }
+  var FCLASS = { high: 'امکان‌پذیری بالا', med: 'امکان‌پذیری متوسط', low: 'امکان‌پذیری پایین', unk: 'نامشخص (اطلاعات بازار کم)' };
+
+  /* ---------- 4 · five outcome statuses, three groups, three maturity levels (directives A §5, C §6) ---------- */
+  var S5 = { exec: 'قابل اجرا', fix: 'قابل اجرا پس از اصلاح', reg: 'نیازمند نظر یا تأیید نهاد ناظر', risk: 'دارای ریسک اجرایی بالا', reject: 'غیرقابل توصیه در شرایط فعلی' };
+  var GROUP = { exec: 'قابل اجرا در شرایط فعلی', fix: 'قابل اجرا پس از تکمیل پیش‌نیازها', reg: 'قابل اجرا پس از تکمیل پیش‌نیازها', risk: 'جذابیت نظری با محدودیت اجرایی بالا', reject: 'کنار گذاشته در شرایط فعلی' };
+  var LEVEL = { exec: 'راهکار قابل اجرا و اخذ مجوز', fix: 'ساختار قابل طراحی', reg: 'ساختار قابل طراحی', risk: 'ایدهٔ خلاقانه', reject: 'ایدهٔ خلاقانه' };
+  var REGLEAD = { A01: 1, A02: 1, E08: 1, D04: 1, D06: 1, D07: 1, D09: 1, D10: 1, E03: 1, E11: 1, A12: 1, D08: 1, E09: 1 };
+  // a route is not 'executable' while a constraint it depends on (may we sell / transfer / pledge / take a partner?) or the title is still unknown
+  function openCons(it, M) { var gl = it.kind === 's' ? [it.r] : it.comps; return gl.some(function (r) { return r.unk.some(function (g) { return g.c.indexOf('c:') === 0 || g.c === 'partner' || g.c === 'equityOk'; }); }) || (phys(M) && M.title !== 'clean' && (it.kind === 'c' || it.s.ast.length > 0)); }
+  function status5(it, M) {
+    var why;
+    if (it.label === 'excluded' || it.late || it.ownClash || it.bankOut) { it.s5 = 'reject'; why = it.label === 'excluded' ? 'با یکی از محدودیت‌های قطعی شما تعارض دارد' : it.late ? 'در مهلت شما قابل اجرا نیست' : it.ownClash ? 'با حفظ کامل مالکیت سازگار نیست' : 'شامل بدهی بانکی است'; }
+    else if (it.st === 'dev' || (it.tranches || 1) >= 3 || (it.riskHard && it.riskHard.length >= 2)) { it.s5 = 'risk'; why = it.st === 'dev' ? 'ابزار توسعه‌ای' : (it.tranches || 1) >= 3 ? 'بیش از دو مرحله برای جذب' : 'عوامل شکست متعدد'; }
+    else if (it.definitive && it.fclass !== 'low' && !openCons(it, M)) { it.s5 = 'exec'; why = 'شرایط مقرراتی موتور و محدودیت‌های شما احراز شده'; }
+    else if (it.kind === 'c' ? it.comps.some(function (r) { return REGLEAD[r.id]; }) || it.c.id === 'C01' : REGLEAD[it.id]) { it.s5 = 'reg'; why = 'امکان‌پذیری به ضوابط یا تأیید سازمان بورس وابسته است'; }
+    else { it.s5 = 'fix'; why = 'شرایط احرازنشده یا اطلاعات ناقص دارد'; }
+    it.s5why = why;
+  }
+
+  /* ---------- 5 · priorities: 3–5, no padding, prefer different channels ---------- */
+  function priorities(list) {
+    var ok = list.filter(function (it) { return it.s5 !== 'reject' && it.disc >= 35; }), out = [], used = {};
+    ok.forEach(function (it) { if (out.length < 5 && !used[it.ch]) { out.push(it); used[it.ch] = 1; } });
+    ok.forEach(function (it) { if (out.length < 3 && out.indexOf(it) < 0) out.push(it); });
+    return out.sort(function (a, b) { return b.disc - a.disc; });
+  }
+
+  /* ---------- 6 · paths with switch conditions (directive B §6) ---------- */
+  function pathOf(it, M) {
+    var pre = [], sw = [];
+    var gates = it.kind === 's' ? it.r.gates : [].concat.apply([], it.comps.map(function (r) { return r.gates; }));
+    gates.filter(function (g) { return g.r === 'unk' || g.r === 'fail'; }).forEach(function (g) { if (pre.indexOf(g.n) < 0) pre.push(g.n); });
+    if (it.spvBani) pre.unshift('بانی واجد شرایط: شرکت تازه‌تأسیس دو دورهٔ مالی حسابرسی‌شده ندارد — شرکت مادر بانی شود یا از سازمان بورس استعلام شود');
+    if (phys(M) && M.title !== 'clean' && (it.kind === 'c' || (it.s && it.s.ast.length))) pre.unshift('سند رسمی، نبود معارض و قابلیت انتقال یا توثیق دارایی');
+    (it.D || []).filter(function (d) { return d.st === 'unk' && (d.k === 'cap' || d.k === 'price'); }).forEach(function (d) { pre.push('شاهد بازار برای ' + d.n); });
+    pre.slice(0, 4).forEach(function (p) { sw.push('اگر «' + p + '» احراز نشد'); });
+    if (it.amtH > 0) sw.push('اگر تا ماه ' + fa(it.tmEff ? it.tmEff[1] : it.tm[1]) + ' کمتر از ' + H(it.amtH * 0.5) + ' (نصف برآورد) جذب شد');
+    if (it.haircut != null) sw.push('اگر قیمت پیشنهادی بیش از ' + P(Math.min(0.9, it.haircut + num(M.sc && M.sc.dn || 0.1))) + ' زیر ارزش مبنا بود (فرض سناریوی بدبینانهٔ شما)');
+    return { pre: pre, sw: sw };
+  }
+  function paths(pr, list, M) {
+    var main = pr[0] || null; if (!main) return [];
+    var alt = pr.filter(function (x) { return x !== main && x.ch !== main.ch; })[0] || pr[1] || null;
+    var fb = list.filter(function (x) { return x !== main && x !== alt && x.s5 !== 'reject' && x.ch !== main.ch && (!alt || x.ch !== alt.ch); })[0] || null;
+    return [['مسیر اصلی', main], ['مسیر جایگزین', alt], ['مسیر پشتیبان', fb]].filter(function (p) { return p[1]; }).map(function (p) { var q = pathOf(p[1], M); return { role: p[0], it: p[1], pre: q.pre, sw: q.sw }; });
+  }
+
+  /* ---------- 7 · portfolio segmentation (directive B §2; hybrid design) ---------- */
+  function segments(M) {
+    var v = num(M.val), sg = M.seg || {}, parts = [['op', 'املاک عملیاتی (محل فعالیت)', ['A04', 'A05'], 'فروش و اجارهٔ مجدد یا اوراق اجاره: نقد بدون توقف فعالیت'], ['inc', 'املاک درآمدزا (اجاره‌داده‌شده)', ['A01', 'A06', 'A08'], 'صندوق املاک، توثیق یا تبدیل جریان اجاره به مبنای تأمین مالی'], ['idle', 'املاک راکد، زمین یا مازاد', ['A07', 'A02', 'A09'], 'مشارکت در ساخت، صندوق زمین و ساختمان یا فروش مرحله‌ای']];
+    var any = parts.some(function (p) { return has(sg[p[0]]); }), sum = parts.reduce(function (s, p) { return s + (has(sg[p[0]]) ? num(sg[p[0]]) : 0); }, 0);
+    return { entered: any, sum: sum, rows: parts.map(function (p) { var sh = num(sg[p[0]]); return { k: p[0], fa: p[1], ids: p[2], route: p[3], share: sh, val: isFinite(sh) && isFinite(v) ? v * sh : NaN }; }) };
+  }
+
+  /* ---------- 8 · roles and flow of funds for capital-market routes (directive C §4) ---------- */
+  function roles(it, M) {
+    if (!it) return null;
+    var ids = idsOf(it), spv = M.spv === 'yes' || (M.spv === 'auto' && ids.indexOf('A03') >= 0);
+    var suk = ids.filter(function (i) { return SUKUK[i]; })[0], cm = ids.filter(function (i) { return CAPMKT[i]; })[0];
+    if (!cm) return { cm: false, note: 'این مسیر ابزار بازار سرمایه ندارد؛ نقش‌ها همان طرفین قرارداد مستقیم‌اند (' + (it.kind === 's' ? it.s.par.join('، ') : it.comps.map(function (r) { return r.s.par.join('، '); }).join(' | ')) + ').' };
+    if (suk) {
+      var bani = spv ? 'شرکت مستقل مالک املاک (SPV)، اگر شرایط بانی را احراز کند؛ در غیر این صورت شرکت مادر' : 'شرکت (مالک فعلی دارایی)';
+      return { cm: true, kind: 'sukuk', spv: spv, cite: '[HB] مدل عملیاتی صکوک شرکت مدیریت دارایی مرکزی؛ [IJ] دستورالعمل اوراق اجاره — جزئیات هر انتشار در امیدنامه',
+        rows: [['مالک فعلی دارایی', 'شرکت مادر'], ['دارایی به چه کسی منتقل می‌شود', spv ? 'مرحلهٔ ۱: از مادر به SPV (فروش یا آوردهٔ غیرنقدی)؛ مرحلهٔ ۲: از بانی به نهاد واسط' : 'از بانی به نهاد واسط (در اوراق اجاره، تا سررسید)'],
+          ['بانی', bani], ['ناشر اوراق', 'نهاد واسط (شرکت واسط مالی وابسته به شرکت مدیریت دارایی مرکزی بازار سرمایه) به وکالت از دارندگان اوراق'],
+          ['وجوه انتشار به چه کسی می‌رسد', spv ? 'به SPV (بهای دارایی)؛ انتقال آن به مادر معاملهٔ با اشخاص وابسته است (وام، سود سهام یا بهای انتقال) و باید مستند و افشا شود' : 'به بانی (بهای دارایی یا کالا)'],
+          ['متعهد پرداخت اجاره‌بها / سود و اصل', 'بانی؛ در صورت نکول، ضامن یا وثایق'], ['دسترسی دارندگان اوراق هنگام نکول', 'ضامن، اوراق بهادار توثیق‌شده یا دارایی موضوع اوراق — هرکدام که در امیدنامه آمده باشد'],
+          ['سازوکار حمایت از سرمایه‌گذار', 'امین، ضامن یا رتبهٔ اعتباری، بازارگردان، افشای دوره‌ای']] };
+    }
+    var s = Hub.finBank.get(cm);
+    return { cm: true, kind: 'other', spv: spv, cite: 'پروفایل راهکار «' + s.fa + '» در بانک راهکارها؛ مستندات با برچسب «نیازمند استعلام»', rows: [['ساختار', s.str], ['منبع وجوه', s.src], ['بازده سرمایه‌گذار / بازپرداخت', s.rep], ['ارکان', s.par.join('، ')], ['مجوزها', s.lic.join('؛ ')]] };
+  }
+
+  /* ---------- 9 · regulatory feasibility matrix: parent · asset company (SPV) · intermediary (directive C §1, §3) ---------- */
+  var RS = { ok: 'احراز', no: 'احراز نشده', unk: 'نامشخص', inq: 'نیازمند استعلام', na: 'نامرتبط', camc: 'با شرکت مدیریت دارایی مرکزی', must: 'الزامی' };
+  function regMatrix(it, M) {
+    var ids = it ? idsOf(it) : [], suk = ids.some(function (i) { return SUKUK[i]; }), spv = M.spv === 'yes' || (M.spv === 'auto' && ids.indexOf('A03') >= 0);
+    if (!suk) return null;
+    var op = M.opinion, opP = op === 'unqualified' || op === 'qualified' ? 'ok' : op === 'adverse' || op === 'none' ? 'no' : 'unk';
+    var formP = M.form === 'pjs' || M.form === 'prjs' ? 'ok' : M.form === 'other' ? 'no' : 'unk';
+    var titleP = M.title === 'clean' ? 'ok' : M.title === 'issue' ? 'no' : 'unk', S = spv ? null : 'na';
+    var rows = [
+      ['شکل حقوقی سهامی / تعاونی / صندوق و ثبت در ایران', '[IJ] ۲(الف)(۱-۲)', formP, S || 'must', 'camc', 'SPV باید از ابتدا سهامی ثبت شود.'],
+      ['جمع جریان نقد عملیاتی دو سال مالی اخیر مثبت', '[IJ] ۲(الف)(۳) — با ضمانت بانکی دارای تأیید بانک مرکزی یا توثیق کامل اوراق بهادار معاف', 'unk', S || 'no', 'na', 'اولین دورهٔ مالی ≥ ۶ ماه یک سال محسوب می‌شود (مصوبهٔ تفسیری ۱۴۰۱/۱۲/۲۰)؛ SPV تازه‌تأسیس پیش از دو دوره احراز نمی‌کند مگر با معافیت.'],
+      ['بدهی‌ها / دارایی‌ها ≤ ۹۰٪', '[IJ] ۲(الف)(۴) — همان معافیت‌ها', 'unk', S || 'unk', 'na', 'برای SPV با ساختار سرمایهٔ آن تعیین می‌شود.'],
+      ['اظهارنظر حسابرس و بازرس دو سال اخیر: مردود یا عدم اظهارنظر نباشد', '[IJ] ۲(الف)(۵) — در متن کدگذاری‌شده معافیت ندارد', opP, S || 'inq', 'na', 'SPV دو سال سابقه ندارد؛ نحوهٔ اعمال برای شرکت تازه‌تأسیس باید از سازمان بورس استعلام شود.'],
+      ['حسابرس معتمد سازمان؛ ارائهٔ صورت‌های حسابرسی‌شدهٔ دو سال', '[IJ] ۶ و ۲۰(۲)', 'unk', S || 'inq', 'na', 'از تأسیس SPV حسابرس معتمد انتخاب شود تا سابقه از روز اول ساخته شود.'],
+      ['نبود تأخیر در پرداخت اصل و فرع اوراق در دو سال اخیر', '[CR] ۸', 'unk', S || 'ok', 'na', 'SPV سابقهٔ نکول ندارد.'],
+      ['ضامن، رتبهٔ اعتباری یا توثیق اوراق بهادار', '[IJ] ۵؛ [CR] ۲ و ۵', 'unk', S || 'inq', 'na', 'ضامن نباید تحت کنترل بانی باشد [IJ] ۵؛ صلاحیت شرکت مادر به‌عنوان ضامن SPV در متن کدگذاری‌شده نیست — استعلام.'],
+      ['تأییدیهٔ قابلیت انتقال دارایی (ثبت اسناد یا مرجع ذی‌صلاح)؛ اسناد مالکیت', 'مدارک انتشار [IJ]', titleP, S || 'unk', 'na', 'پس از انتقال به SPV، سند باید به نام SPV باشد.'],
+      ['گزارش کارشناسان رسمی دربارهٔ ارزش و عمر اقتصادی دارایی', 'مدارک انتشار [IJ]', 'must', S || 'must', 'na', ''],
+      ['مصوبهٔ رکن ذی‌صلاح بانی برای تأمین مالی', 'مدارک انتشار [IJ]', 'must', S || 'must', 'na', 'در مسیر SPV مصوبهٔ مادر برای انتقال دارایی هم لازم است.'],
+      ['کل اوراق در جریان ≤ سرمایهٔ ثبتی', '[PR] رویهٔ اجرایی سازمان — مصوبهٔ منتشرشده ندارد', 'unk', S || 'unk', 'na', 'سرمایهٔ ثبتی SPV سقف عملی حجم انتشار است؛ با آوردهٔ غیرنقدی املاک تعیین می‌شود.'],
+      ['عدم شمول مادهٔ ۱۴۱ اصلاحیهٔ قانون تجارت', 'لایحهٔ اصلاحی قانون تجارت', 'unk', S || 'ok', 'na', 'SPV تازه‌تأسیس زیان انباشته ندارد.'],
+      ['گزارشگری و افشای ناشر (کدال)', 'قانون بازار اوراق بهادار — مادهٔ مربوط (به گفتهٔ شما مادهٔ ۴۵) با متن رسمی تطبیق نشده', M.listed === 'ifb' || M.listed === 'tse' ? 'ok' : 'unk', S || 'inq', 'camc', ''],
+      ['معاملات با اشخاص وابسته و تلفیق صورت‌های مالی', 'استانداردهای حسابداری — تطبیق نشده', spv ? 'must' : 'na', S || 'must', 'na', 'انتقال مادر → SPV و جریان وجوه SPV → مادر معاملهٔ با اشخاص وابسته است.'],
+      ['مالیات نقل‌وانتقال دارایی', '[DV] مواد ۱۱–۱۲: معافیت انتقال به نهاد واسط', 'inq', S || 'inq', 'ok', 'برای انتقال مادر → SPV معافیتی در متون کدگذاری‌شده نیست؛ هزینهٔ مالیاتی این مرحله باید استعلام شود.']];
+    return { spv: spv, cols: ['شرکت مادر', 'شرکت مالک املاک (SPV)', 'نهاد واسط'], rows: rows.map(function (r) { return { req: r[0], cite: r[1], p: r[2], s: r[3], n: r[4], note: r[5] }; }) };
+  }
+  // the four questions that are not the same thing (directive C §3)
+  function spvAudit(M) {
+    var title = M.title === 'clean' ? 'ok' : M.title === 'issue' ? 'no' : 'unk';
+    return [
+      { q: 'تهیهٔ صورت‌های مالی از زمان تأسیس (ترازنامهٔ افتتاحیه پس از انتقال)', st: 'ok', t: 'از نظر فنی ممکن است؛ کیفیت آن به مستندات انتقال و ارزش‌گذاری بستگی دارد.' },
+      { q: 'قابلیت حسابرسی و دریافت گزارش حسابرس', st: title === 'ok' ? 'unk' : title === 'no' ? 'no' : 'unk', t: title === 'no' ? 'سند معارض یا نیازمند اصلاح، رسیدگی حسابرس به مالکیت را مختل می‌کند.' : 'به سند به نام SPV، گزارش کارشناس رسمی، قراردادهای اجارهٔ قابل اثبات و مستندسازی معاملات با مادر بستگی دارد.' },
+      { q: 'احراز شرایط بانی برای اوراق اجاره', st: 'no', t: 'جریان نقد عملیاتی دوساله و اظهارنظر دو سال اخیر [IJ] ۲(الف)(۳) و (۵): برای SPV تازه‌تأسیس احراز نمی‌شود. جریان نقد و نسبت بدهی با ضمانت بانکی دارای تأیید بانک مرکزی معاف‌شدنی است؛ اظهارنظر دوساله و حسابرس معتمد در متن کدگذاری‌شده معافیت ندارند. اگر قاعدهٔ «اولین دورهٔ ≥ ۶ ماه = یک سال» برای این آزمون‌ها هم پذیرفته شود، حداقل دو دورهٔ مالی (حدود ۱۸ ماه) به‌علاوهٔ زمان حسابرسی لازم است — نیازمند استعلام از سازمان بورس.' },
+      { q: 'اخذ مجوز انتشار و عرضه', st: 'inq', t: 'وابسته به تصمیم سازمان بورس پس از احراز موارد بالا؛ تاکنون هیچ‌کدام برای SPV احراز نشده است.' }];
+  }
+  function spvAlternatives() {
+    return ['شرکت مادر بانی شود و دارایی مستقیم به نهاد واسط منتقل شود (فروش و اجارهٔ مجدد با اوراق اجاره) — بدون انتظار برای سابقهٔ SPV؛ معافیت مالیاتی انتقال به نهاد واسط [DV].',
+      'یک شرکت موجود و واجد شرایط گروه (دارای دو سال صورت حسابرسی‌شده با حسابرس معتمد) به‌جای SPV جدید.',
+      'SPV اکنون تأسیس و دارایی منتقل شود اما تأمین مالی اولیه با توثیق یا تسهیلات انجام شود؛ انتشار اوراق پس از ساختن سابقهٔ مالی.',
+      'ابزاری که سابقهٔ دوسالهٔ بانی نمی‌خواهد (صندوق املاک، مشارکت با سرمایه‌گذار در سطح SPV) — هرکدام با ضوابط خودش.'];
+  }
+
+  /* ---------- 10 · staged information (directive A §7) and the one decisive question ---------- */
+  function infoStages(M, pr) {
+    var st = function (ok) { return ok ? 'دریافت شده' : 'لازم'; };
+    var s1 = [['نوع و ارزش تقریبی دارایی', st(has(M.val) && (M.at || archOf(M.arch).at || archOf(M.arch).k === 'project')), 'اندازهٔ معامله و فهرست ابزارهای مرتبط'],
+      ['هدف اصلی تأمین مالی', st(Object.keys(M.obj || {}).length || archOf(M.arch).obj.length), 'کدام ساختار به مسئلهٔ واقعی پاسخ می‌دهد'],
+      ['مبلغ نیاز و مهلت', st(has(M.need) && has(M.by)), 'ابزارهای کند یا کوچک کنار می‌روند'],
+      ['تمایل به واگذاری مالکیت', st(M.keep !== 'unk'), 'فروش و صندوق در برابر وثیقه و اوراق']];
+    var s2 = [['اسناد مالکیت و وضعیت ثبتی', st(M.title !== 'unk'), 'قابلیت انتقال، توثیق و حسابرسی‌پذیری دارایی'], ['ارزش کارشناسی و ارزش روز', 'لازم', 'فاصلهٔ ارزش اعلام‌شده تا قیمت تحقق‌یافتنی'],
+      ['وثایق، بازداشت‌ها و محدودیت‌های حقوقی', 'لازم', 'آزاد بودن دارایی برای فروش، توثیق یا انتقال به SPV'], ['درآمد و هزینه‌های دارایی', st(M.inc !== 'unk' && (M.inc === 'no' || has(M.incVal))), 'صندوق املاک و تأمین مالی مبتنی بر اجاره ممکن است یا نه'],
+      ['بدهی‌ها و تعهدات شرکت', 'لازم', 'ظرفیت بازپرداخت؛ بدون آن هیچ مسیر بدهی قطعی نمی‌شود'], ['وضعیت مالی و اعتباری (اظهارنظر حسابرس، رتبه، ضامن)', st(M.opinion !== 'unk'), 'شرایط بانی اوراق و تسهیلات']];
+    var s3 = [['صورت‌های مالی و گزارش‌های حسابرسی دو سال', 'لازم', 'آزمون‌های [IJ] ۲ و طراحی ابزار بدهی'], ['جزئیات جریان‌های نقدی', 'لازم', 'تطبیق سررسید ابزار با جریان نقد'], ['اطلاعات مالیاتی و حقوقی', 'لازم', 'هزینهٔ مالیاتی انتقال و ساختار'],
+      ['ساختار سهامداری و مصوبات لازم', 'لازم', 'مجمع/هیئت‌مدیره و حق تقدم'], ['اسناد موردنیاز ارکان و نهادهای تأمین مالی', 'لازم', 'تشکیل پرونده نزد سازمان، ضامن و متعهد پذیره‌نویسی']];
+    // decisive question: an unknown that separates the top two priorities
+    var q = null, a = pr[0], b = pr[1];
+    if (a && b) {
+      if (M.keep === 'unk' && Math.abs(a.ow - b.ow) >= 0.3) q = ['آیا حفظ مالکیت دارایی الزامی است؟', '«' + a.fa + '» مالکیت را ' + P(a.ow) + ' و «' + b.fa + '» ' + P(b.ow) + ' حفظ می‌کند.'];
+      else if (!has(M.by) && Math.abs(a.tm[1] - b.tm[1]) >= 4) q = ['نقدینگی تا چند ماه دیگر لازم است؟', 'زمان اجرای دو گزینهٔ اول ' + Mo(a.tm[0], a.tm[1]) + ' و ' + Mo(b.tm[0], b.tm[1]) + ' است.'];
+      else if (M.inc === 'unk' && [a, b].some(function (x) { return idsOf(x).some(function (i) { return i === 'A01' || i === 'A08'; }); })) q = ['آیا دارایی اکنون درآمد اجاره دارد و چقدر؟', 'صندوق املاک و ساختارهای مبتنی بر اجاره فقط با درآمد مستند ممکن‌اند.'];
+      else if (M.op === 'unk' && [a, b].some(function (x) { return idsOf(x).some(function (i) { return i === 'A04' || i === 'A05' || i === 'A09'; }); })) q = ['آیا شرکت خودش از این دارایی استفاده می‌کند؟', 'دارایی عملیاتی به فروش و اجارهٔ مجدد می‌رود، دارایی مازاد به فروش مرحله‌ای.'];
+      else if (!has(M.need)) q = ['مبلغ نقدینگی موردنیاز چقدر است؟', 'بدون آن، پوشش نیاز و مقیاس هر گزینه سنجیده نمی‌شود.'];
+    }
+    return { s1: s1, s2: s2, s3: s3, decisive: q };
+  }
+
+  /* ---------- 11 · roadmap of the main path, with the decision gate to the alternative ---------- */
+  function owner(step) { return /مجمع/.test(step) ? 'هیئت‌مدیره و مجمع' : /مجوز|ثبت|پذیرش/.test(step) ? 'مشاور عرضه / مشاور حقوقی' : /ارزیاب|ارزش‌گذاری|کارشناس/.test(step) ? 'کارشناس رسمی / مشاور مالی' : /قرارداد|مذاکره|خریدار|سرمایه‌گذار|شریک/.test(step) ? 'مدیر مالی و مشاور حقوقی' : /ضمانت|رتبه/.test(step) ? 'مدیر مالی و ضامن / مؤسسهٔ رتبه‌بندی' : 'مدیر مالی'; }
+  function roadmap(P3, M, regM) {
+    var out = [], t = 0, main = P3[0], alt = P3[1];
+    if (!main) return out;
+    var inq = regM ? regM.rows.filter(function (r) { return r.p === 'inq' || r.s === 'inq'; }).map(function (r) { return r.req; }) : [];
+    out.push({ step: 'تکمیل اطلاعات مرحلهٔ دوم (سند، ارزش کارشناسی، وثایق، درآمد، بدهی‌ها) و شاهد ظرفیت بازار', from: 0, to: 1, owner: 'مدیر مالی', out: 'پروندهٔ دارایی و فهرست معاملات مشابه' });
+    if (inq.length) out.push({ step: 'استعلام از سازمان بورس، مشاور مالیاتی و ثبت: ' + inq.slice(0, 4).join('؛ '), from: 0, to: 2, owner: 'مشاور حقوقی / مشاور عرضه', out: 'پاسخ کتبی یا نظر مشورتی' });
+    t = 1;
+    var steps = main.it.kind === 's' ? main.it.s.stp.map(function (s) { return [s, main.it.s.tm[1] / Math.max(1, main.it.s.stp.length)]; }) : main.it.c.ph.map(function (p) { var sols = p[1].map(function (i) { return Hub.finBank.get(i); }).filter(Boolean); return [p[0], sols.length ? Math.max.apply(null, sols.map(function (s) { return s.tm[1]; })) : 2]; });
+    steps.forEach(function (s) { var d = Math.max(0.5, Math.round(s[1] * 10) / 10); out.push({ step: s[0], from: t, to: Math.round((t + d) * 10) / 10, owner: owner(s[0]), out: '' }); t = Math.round((t + d) * 10) / 10; });
+    if (alt) out.push({ step: 'نقطهٔ تصمیم: ' + (main.sw[0] || 'بررسی پیشرفت') + ' ← انتقال به «' + alt.it.fa + '»', from: Math.min(t, 1 + Math.ceil(main.it.tm[0])), to: Math.min(t, 1 + Math.ceil(main.it.tm[0])), owner: 'هیئت‌مدیره', out: 'تصمیم ادامه یا تغییر مسیر' });
+    return out;
+  }
+
+  /* ---------- 12 · eleven-criterion matrix (directive A §5): 1 weak … 5 strong, rule per cell ---------- */
+  var CRIT = ['امکان‌پذیری حقوقی و مقرراتی', 'امکان‌پذیری اجرایی', 'ظرفیت جذب منابع', 'هزینهٔ تأمین مالی', 'زمان اجرا', 'حفظ مالکیت', 'ریسک مالی', 'مقیاس‌پذیری', 'استقبال بازار', 'پیچیدگی اجرا (۵ = ساده)', 'کیفیت ساختار و تناسب با هدف'];
+  function crit(it, M) {
+    var gates = it.kind === 's' ? it.r.gates : [].concat.apply([], it.comps.map(function (r) { return r.gates; }));
+    var REGc = { audit: 1, jsc: 1, credit: 1, nart141: 1, cfo2: 1, la: 1, profit2: 1 }, rg = gates.filter(function (g) { return REGc[g.c]; });
+    var legal = rg.some(function (g) { return g.r === 'fail'; }) ? 1 : rg.some(function (g) { return g.r === 'unk'; }) ? 3 : 5;
+    var ex = it.st === 'exec' ? 5 : it.st === 'cond' ? 3 : 1, need = num(M.need);
+    var capS = !(it.amtH > 0) ? (it.amtH === 0 ? 1 : 2) : isFinite(need) && need > 0 ? (it.amtH >= need ? 5 : it.amtH >= 0.5 * need ? 4 : 3) : 3;
+    var cl = it.kind === 's' ? it.s.cl : Math.max.apply(null, it.comps.map(function (r) { return r.s.cl; }));
+    var t1 = (it.tmEff || it.tm)[1], tm = t1 <= 3 ? 5 : t1 <= 6 ? 4 : t1 <= 9 ? 3 : t1 <= 12 ? 2 : 1;
+    var own = Math.max(1, Math.round(it.ow * 5));
+    var kind = it.kind === 's' ? it.s.k : 'combo', fr = kind === 'debt' ? (it.definitive ? 3 : 2) : kind === 'sale' || kind === 'monet' ? 4 : kind === 'equity' ? 4 : 3;
+    var scal = it.kind === 'c' || CAPMKT[it.id] ? 4 : 2;
+    var cap = num((M.cap || {})[it.ch]), mk = !(it.amtH > 0) ? 3 : isFinite(cap) && cap > 0 ? (it.amtH <= cap ? 4 : it.amtH <= 2 * cap ? 3 : 2) : 2;
+    var par = it.kind === 's' ? it.s.par.length : it.comps.reduce(function (s, r) { return s + r.s.par.length; }, 0), cx = par <= 3 ? 5 : par <= 5 ? 4 : par <= 7 ? 3 : par <= 9 ? 2 : 1;
+    var q = Math.min(5, 1 + (it.objHits ? it.objHits.length : 0) + (it.fclass === 'high' ? 1 : 0));
+    return [legal, ex, capS, 6 - cl, tm, own, fr, scal, mk, cx, q];
+  }
+  var CRITRULE = ['شرایط مقرراتی موتور: رد = ۱، نامشخص = ۳، احراز = ۵', 'وضعیت در ایران: قابل اجرا ۵، مشروط ۳، توسعه‌ای ۱', 'برآورد مبلغ به نیاز: ≥۱۰۰٪ = ۵، ≥۵۰٪ = ۴، کمتر = ۳، نامشخص = ۲، بدون نقد = ۱', '۶ − سطح هزینهٔ پروفایل', 'حداکثر ماه: ≤۳ = ۵، ≤۶ = ۴، ≤۹ = ۳، ≤۱۲ = ۲، بیشتر = ۱', 'سهم مالکیت حفظ‌شده × ۵',
+    'بدهی قطعی ۳، بدهی نامطمئن ۲، فروش یا سرمایه ۴', 'ابزار بازار سرمایه یا ساختار ترکیبی ۴، مستقیم ۲', 'مبلغ به ظرفیت واردشدهٔ کانال: جا می‌شود ۴، تا دو برابر ۳، نامشخص یا بیشتر ۲', 'تعداد ارکان: ≤۳ = ۵ … >۹ = ۱', '۱ + تعداد اهداف پاسخ‌داده + ۱ اگر امکان‌پذیری بالا'];
+
+  /* ---------- 13 · scenario and sensitivity on realizable proceeds (inputs: your shifts) ---------- */
+  function scen(it, M) {
+    if (!it || !(it.amtH > 0)) return null;
+    var dn = num(M.sc && M.sc.dn), up = num(M.sc && M.sc.up), base = it.amtH, hc = it.haircut != null ? it.haircut : 0, val = it.haircut != null ? base / (1 - hc) : NaN;
+    var rows = isFinite(val) ? [['بدبینانه', hc + (isFinite(dn) ? dn : 0)], ['پایه', hc], ['خوش‌بینانه', Math.max(0, hc - (isFinite(up) ? up : 0))]].map(function (r) { return { n: r[0], hc: r[1], amt: val * (1 - r[1]) }; })
+      : [['بدبینانه', -(isFinite(dn) ? dn : 0)], ['پایه', 0], ['خوش‌بینانه', isFinite(up) ? up : 0]].map(function (r) { return { n: r[0], hc: NaN, amt: base * (1 + r[1]) }; });
+    var shares = [0.25, 0.5, 0.75, 1], hcs = [-0.1, -0.05, 0, 0.05, 0.1, 0.2].map(function (d) { return Math.max(0, Math.min(0.95, hc + d)); });
+    var grid = isFinite(val) ? hcs.map(function (h) { return { hc: h, v: shares.map(function (s) { return val * s * (1 - h); }) }; }) : null;
+    return { rows: rows, val: val, shares: shares, grid: grid, priceBased: isFinite(val) };
+  }
+
+  /* ---------- run ---------- */
+  function run(M0) {
+    var M = merge(defaults(), M0 || {}), A0 = archOf(M.arch); if (A0.seed) Object.keys(A0.seed).forEach(function (k) { if (M[k] === 'unk' || M[k] == null) M[k] = A0.seed[k]; });
+    var E = seed(M), X = Hub.finEngine.run(E, null, null);
+    var list = candidates(X, M), pr = priorities(list), P3 = paths(pr, list, M), main = P3[0] ? P3[0].it : null;
+    var cmIt = pr.filter(function (it) { return idsOf(it).some(function (i) { return SUKUK[i]; }); })[0] || list.filter(function (it) { return it.s5 !== 'reject' && idsOf(it).some(function (i) { return SUKUK[i]; }); })[0] || null;
+    var regM = regMatrix(cmIt, M), info = infoStages(M, pr);
+    var best = {}; list.forEach(function (it) { if (it.s5 !== 'reject' && !best[it.tier]) best[it.tier] = it; });
+    var conv = list.filter(function (it) { return it.kind === 's' && it.s5 !== 'reject' && !(it.s.sub === 'راهکارهای نوآورانه'); }).slice(0, 8);
+    var creative = list.filter(function (it) { return (it.kind === 'c' || (it.s && it.s.sub === 'راهکارهای نوآورانه') || it.st === 'dev'); });
+    var groups = {}; list.forEach(function (it) { var g = GROUP[it.s5]; (groups[g] = groups[g] || []).push(it); });
+    return { M: M, E: E, X: X, list: list, pr: pr, paths: P3, main: main, roles: roles(main, M), cmIt: cmIt, cmRoles: cmIt && cmIt !== main ? roles(cmIt, M) : null, reg: regM, spv: regM && regM.spv ? { q: spvAudit(M), alt: spvAlternatives() } : null, spvAny: { q: spvAudit(M), alt: spvAlternatives() },
+      info: info, road: roadmap(P3, M, regM), tiers: best, conv: conv, creative: creative, groups: groups, seg: segments(M), scen: scen(main, M), objectives: OBJ.map(function (o) { return { k: o[0], fa: o[1], on: objOn(M, o[0]) }; }), arch: archOf(M.arch) };
+  }
+  function merge(a, b) { Object.keys(b).forEach(function (k) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object') merge(a[k], b[k]); else if (b[k] !== undefined) a[k] = b[k]; }); return a; }
+
+  Hub.finDisc = { run: run, defaults: defaults, seed: seed, ARCH: ARCH, OBJ: OBJ, CH: CH, S5: S5, LEVEL: LEVEL, GROUP: GROUP, FCLASS: FCLASS, TIERFA: TIERFA, RS: RS, CRIT: CRIT, CRITRULE: CRITRULE, crit: crit, HB: HB, H: H, P: P, fa: fa };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Hub.finDisc;
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* js/core/report.js */
 /* =====================================================================
  * REPORT — one block format for every written report in the hub, in pyramid order
@@ -17844,6 +18249,215 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   Hub.finUI = { intakeTab: intakeTab, finReport: finReport, ensure: ensure, compute: compute, diagTab: diagTab, engineTab: engineTab, structTab: structTab, rankTab: rankTab, reportTab: reportTab, excel: excel, reportBody: reportBody };
 })(typeof window !== 'undefined' ? window : globalThis);
 
+/* js/models/financing-disc.js */
+/* =====================================================================
+ * FINANCING OPPORTUNITY DISCOVERY — UI tab, report and Excel sheets for
+ * js/core/findisc.js. First tab of the financing tool: a raw problem in, a
+ * structured first-meeting answer out, before any statements exist.
+ * Report order follows the directive's nine-part output (problem → priorities
+ * → conventional → creative / hybrid → comparison → execution structure →
+ * requirements → information still needed → action plan), answer first.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  if (!root.document) return;
+  var U = Hub.util, h = U.h, G = Hub.grid, D = function () { return Hub.finDisc; };
+  var TRI = [['unk', 'نامشخص'], ['yes', 'بله'], ['no', 'خیر']];
+  var STC = { ok: 'fit-rec', warn: 'fit-cond', bad: 'fit-no', unk: 'fit-ok', na: 'fit-ok', inq: 'fit-cond', must: 'fit-ok', camc: 'fit-ok', no: 'fit-no' };
+  var STFA = { ok: 'مناسب', warn: 'محدودیت', bad: 'مانع', unk: 'نامشخص', na: '—' };
+  var S5C = { exec: 'fit-rec', fix: 'fit-cond', reg: 'fit-cond', risk: 'fit-no', reject: 'fit-no' };
+
+  function state(S) { var d = D().defaults(); S.disc = D().seed ? Object.assign(d, S.disc || {}) : d; ['obj', 'cap', 'ev', 'seg', 'sc'].forEach(function (k) { S.disc[k] = Object.assign({}, d[k], S.disc[k] || {}); }); return S.disc; }
+  function fa(v) { return D().fa(v); }
+  function chip(cls, t) { return h('span', { class: 'sev ' + (cls || 'fit-ok'), 'data-notr': '1', text: t }); }
+
+  /* ---------- report blocks (shared by the tab, print / Word and Excel) ---------- */
+  function blocks(r) {
+    var F = D(), M = r.M, B = [], H = F.H, P = F.P, gaps = [];
+    var nm = function (it) { return it ? it.fa : '—'; }, amt = function (it) { return isFinite(it.amtH) ? H(it.amtH) : 'نامشخص'; }, tm = function (it) { var t = it.tmEff || it.tm; return fa(t[0]) + '–' + fa(t[1]) + ' ماه'; };
+    B.push({ t: 'h1', x: 'کشف فرصت‌های تأمین مالی — ' + r.arch.fa });
+    // ---------- answer first ----------
+    var p0 = r.paths[0], p1 = r.paths[1];
+    if (!p0) B.push({ t: 'lead', x: 'با اطلاعات فعلی هیچ مسیری از غربال عبور نکرد. محدودیت‌ها (حفظ مالکیت، بدون بدهی بانکی، بدون افزایش سرمایه، مهلت) را بازبینی کنید یا ارزش و نوع دارایی را وارد کنید.' });
+    else B.push({ t: 'lead', x: 'با همین اطلاعات، مسیر اصلی «' + nm(p0.it) + '» است (' + F.S5[p0.it.s5] + '، برآورد ' + amt(p0.it) + '، ' + tm(p0.it) + ')' + (p1 ? ' و اگر شرط‌هایش احراز نشد «' + nm(p1.it) + '» (' + F.S5[p1.it.s5] + ')' : '') + '. ' +
+      (p0.it.s5 === 'exec' ? 'مسیر اصلی با اطلاعات فعلی قابل شروع است.' : 'هنوز هیچ‌کدام توصیهٔ نهایی نیست؛ ' + (p0.pre.length ? 'پیش‌شرط اول: ' + p0.pre[0] + '.' : 'شاهد بازار لازم است.')) + (r.info.decisive ? ' پرسش تعیین‌کننده: ' + r.info.decisive[0] : '') });
+    B.push({ t: 'small', x: 'مبالغ بر حسب همت (هزار میلیارد تومان). برآوردها از ارزش اعلام‌شدهٔ شما و فرض‌های قابل تغییر موتور (ضریب وثیقه، تخفیف فروش و …) محاسبه شده‌اند؛ ظرفیت بازار، تخفیف فروش یکجا و شاهد معاملات مشابه ورودی شماست. هیچ احتمال موفقیتی ساخته نشده است.' });
+    // ---------- 1 ----------
+    B.push({ t: 'h2', x: '۱. تعریف مسئله و هدف اقتصادی' });
+    B.push({ t: 'p', x: 'مسئلهٔ مطرح‌شده: ' + r.arch.fa + (M.note ? ' — «' + M.note + '»' : '') + '. ' + (isFinite(+M.val) && M.val !== null && M.val !== '' ? (r.arch.k === 'project' ? 'هزینهٔ پروژه ' : 'ارزش اعلام‌شدهٔ دارایی ') + H(+M.val) + '. ' : 'ارزش دارایی وارد نشده. ') + (M.need !== null && M.need !== '' ? 'نیاز نقدینگی ' + H(+M.need) + '. ' : '') + (M.by !== null && M.by !== '' ? 'مهلت ' + fa(M.by) + ' ماه.' : '') });
+    var on = r.objectives.filter(function (o) { return o.on; }), off = r.objectives.filter(function (o) { return !o.on; });
+    B.push({ t: 'p', x: 'هدف اقتصادی واقعی می‌تواند یکی یا چند مورد زیر باشد. موارد علامت‌خورده فرضیه‌های فعال‌اند و رتبه‌بندی را شکل می‌دهند:' });
+    B.push({ t: 'ul', x: on.map(function (o) { return '✔ ' + o.fa; }).concat(off.map(function (o) { return '○ ' + o.fa + ' (فعال نیست)'; })) });
+    // ---------- 2 ----------
+    B.push({ t: 'h2', x: '۲. اولویت‌های پیشنهادی' });
+    if (r.pr.length) B.push({ t: 'table', head: ['رتبه', 'راهکار', 'سطح', 'وضعیت', 'امکان‌پذیری بازار', 'برآورد مبلغ', 'زمان', 'حفظ مالکیت', 'امتیاز (موتور + تعدیل)', 'دلیل تعدیل'],
+      rows: r.pr.map(function (it, i) { return [fa(i + 1), it.fa, F.TIERFA[it.tier].split(' (')[0], F.S5[it.s5], F.FCLASS[it.fclass], amt(it), tm(it), P(it.ow), fa(Math.round(it.disc)) + ' (' + fa(Math.round(it.base)) + (it.adj >= 0 ? ' + ' : ' − ') + fa(Math.abs(Math.round(it.adj))) + ')', it.why.join('؛ ') || '—']; }) });
+    else B.push({ t: 'p', x: 'هیچ راهکاری امتیاز کافی (≥ ۳۵) و سازگاری با محدودیت‌ها نداشت؛ گزینهٔ غیرضروری اضافه نشد.' });
+    B.push({ t: 'small', x: 'امتیاز موتور = میانگین وزنی اجرایی، تناسب، هزینه، سرعت و مالکیت (وزن‌ها در زبانهٔ «مقایسه و رتبه‌بندی»). تعدیل کشف فرصت: +۶ برای هر هدف پاسخ‌داده (حداکثر ۱۸)، −۶ اگر به هیچ هدفی پاسخ ندهد، −۲۰ اگر حداقل زمان از مهلت بیشتر باشد، −۱۵ تعارض با حفظ کامل مالکیت، −۴ ظرفیت کانال نامشخص، تا −۱۵ برای اجرای چندمرحله‌ای، +۴ پوشش کامل نیاز.' });
+    // ---------- 3 ----------
+    B.push({ t: 'h2', x: '۳. تحلیل راهکارهای متعارف' });
+    if (r.conv.length) B.push({ t: 'table', head: ['راهکار', 'هدف', 'نکتهٔ کلیدی اجرایی', 'وضعیت', 'برآورد مبلغ و فرمول'], rows: r.conv.map(function (it) { return [it.fa, it.objHits.length ? it.objHits.map(function (k) { return r.objectives.filter(function (o) { return o.k === k; })[0].fa; }).join('، ') : it.s.sv, (it.s.mn || []).slice(0, 3).join('؛ '), F.S5[it.s5], amt(it) + ' — ' + it.z.formula]; }) });
+    // ---------- 4 ----------
+    B.push({ t: 'h2', x: '۴. راهکارهای نوآورانه و ترکیبی' });
+    var cr = r.creative.filter(function (it) { return it.s5 !== 'reject'; }).slice(0, 6);
+    if (cr.length) B.push({ t: 'table', head: ['ساختار', 'منطق اقتصادی', 'اجزا', 'وضعیت', 'سطح بلوغ', 'برآورد نقد'], rows: cr.map(function (it) { return [it.fa, it.kind === 'c' ? (it.c.why || it.c.d || '') : it.s.sv, it.kind === 'c' ? it.comps.map(function (x) { return x.s.fa; }).join(' + ') : '—', F.S5[it.s5], F.LEVEL[it.s5], amt(it)]; }) });
+    B.push({ t: 'h3', x: 'طراحی سبد تفکیک‌شده (هر گروه دارایی با روش خودش)' });
+    B.push({ t: 'table', head: ['گروه دارایی', 'سهم از کل', 'ارزش', 'مسیر پیشنهادی'], rows: r.seg.rows.map(function (g) { return [g.fa, isFinite(g.share) ? P(g.share) : 'وارد نشده', isFinite(g.val) ? H(g.val) : '—', g.route]; }) });
+    if (!r.seg.entered) gaps.push('سهم املاک عملیاتی، درآمدزا و راکد از کل وارد نشده؛ طراحی سبد تفکیک‌شده فقط به‌صورت الگو آمده است.');
+    else if (Math.abs(r.seg.sum - 1) > 0.02) B.push({ t: 'warn', x: 'جمع سهم‌ها ' + P(r.seg.sum) + ' است، نه ۱۰۰٪.' });
+    var Q7 = [['بدون فروش کامل، ارزش دارایی آزاد شود؟', ['A04', 'A06', 'A08', 'A01', 'D03']], ['جریان نقدی آینده به منبع تأمین مالی تبدیل شود؟', ['A08', 'D03', 'D04', 'A12', 'D21']], ['سرمایه‌گذار مستقیم وارد دارایی یا پروژه شود، نه شرکت؟', ['E07', 'A07', 'A01', 'E08', 'C03']],
+      ['تفکیک مالکیت و بهره‌برداری ساختار بهتری بسازد؟', ['A03', 'C01', 'A04', 'A05']], ['ترکیب بدهی و سرمایه هزینه و ریسک را کم کند؟', ['C03', 'C04', 'C10', 'E13']], ['تجمیع چند دارایی به مقیاس اقتصادی برسد؟', ['A03', 'C01', 'C02', 'A01']], ['تغییر مدل بهره‌برداری ارزش و جریان نقد را بالا ببرد؟', ['A07', 'A02', 'A08', 'A10', 'C12']]];
+    var live = {}; r.list.forEach(function (it) { if (it.s5 !== 'reject') live[it.id] = it.fa; });
+    B.push({ t: 'h3', x: 'هفت پرسش طراحی ساختار' });
+    B.push({ t: 'ul', x: Q7.map(function (q) { var a = q[1].filter(function (i) { return live[i]; }).map(function (i) { return live[i]; }); return q[0] + ' ← ' + (a.length ? a.join('، ') : 'با محدودیت‌های فعلی گزینه‌ای باقی نمانده'); }) });
+    // ---------- 5 ----------
+    B.push({ t: 'h2', x: '۵. مقایسه و انتخاب' });
+    var tiers = ['direct', 'structured', 'hybrid'].filter(function (t) { return r.tiers[t]; });
+    if (tiers.length) B.push({ t: 'table', head: ['سطح', 'بهترین گزینه', 'برآورد مبلغ', 'زمان', 'هزینه (۱ ارزان … ۵ گران)', 'تعداد ارکان', 'نیاز به صورت مالی حسابرسی‌شده', 'حفظ مالکیت', 'امکان‌پذیری بازار', 'وضعیت'],
+      rows: tiers.map(function (t) { var it = r.tiers[t], comps = it.kind === 'c' ? it.comps : [it.r], audit = comps.some(function (x) { return x.gates.some(function (g) { return g.c === 'audit'; }); });
+        return [F.TIERFA[t], it.fa, amt(it), tm(it), fa(Math.max.apply(null, comps.map(function (x) { return x.s.cl; }))), fa(comps.reduce(function (s, x) { return s + x.s.par.length; }, 0)), audit ? 'بله' : 'خیر', P(it.ow), F.FCLASS[it.fclass], F.S5[it.s5]]; }) });
+    if (r.pr.length) {
+      B.push({ t: 'h3', x: 'ماتریس یازده‌معیاره (۱ ضعیف … ۵ قوی)' });
+      B.push({ t: 'table', head: ['معیار'].concat(r.pr.map(function (it) { return it.fa.split(' (')[0].slice(0, 28); })).concat(['قاعدهٔ امتیاز']), rows: F.CRIT.map(function (c, j) { return [c].concat(r.pr.map(function (it) { return fa(F.crit(it, M)[j]); })).concat([F.CRITRULE[j]]); }) });
+      B.push({ t: 'h3', x: 'امکان‌پذیری بازار — هفت بُعد' });
+      r.pr.slice(0, 3).forEach(function (it) { B.push({ t: 'h4', x: it.fa + ' — ' + F.FCLASS[it.fclass] }); B.push({ t: 'table', head: ['بُعد', 'وضعیت', 'شرح'], rows: it.D.map(function (d) { return [d.n, STFA[d.st], d.t]; }) }); });
+    }
+    // ---------- 6 ----------
+    B.push({ t: 'h2', x: '۶. ساختار اجرایی راهکار منتخب' });
+    if (p0) {
+      var it0 = p0.it;
+      B.push({ t: 'p', x: it0.kind === 's' ? 'ساختار: ' + it0.s.str + ' منبع وجوه: ' + it0.s.src + ' بازپرداخت / بازده: ' + it0.s.rep : 'ساختار ترکیبی: ' + it0.comps.map(function (x) { return x.s.fa; }).join(' ← ') + '.' });
+      B.push({ t: 'p', x: 'ارکان: ' + (it0.kind === 's' ? it0.s.par : [].concat.apply([], it0.comps.map(function (x) { return x.s.par; })).filter(function (v, i, a) { return a.indexOf(v) === i; })).join('، ') + '.' });
+      [[r.roles, it0], [r.cmRoles, r.cmIt]].forEach(function (pair) { var R0 = pair[0]; if (!R0) return; if (!R0.cm) { B.push({ t: 'small', x: R0.note }); return; }
+        B.push({ t: 'h3', x: 'نقش اشخاص و جریان وجوه — ' + pair[1].fa }); B.push({ t: 'table', head: ['پرسش', 'پاسخ'], rows: R0.rows }); B.push({ t: 'small', x: 'منبع: ' + R0.cite }); });
+      if ((it0.tranches || 1) > 1) { B.push({ t: 'h3', x: 'اجرای مرحله‌ای (حجم بیش از ظرفیت یک‌نوبتی)' }); var cap = +M.cap[it0.ch], rem = it0.amtH, rows = []; for (var i = 0; i < it0.tranches; i++) { var a = Math.min(cap, rem); rem -= a; rows.push([fa(i + 1), H(a), i === 0 ? fa(it0.tm[0]) + '–' + fa(it0.tm[1]) + ' ماه' : '+' + fa(Math.max(1, it0.tm[0])) + ' ماه']); } B.push({ t: 'table', head: ['مرحله', 'مبلغ', 'زمان'], rows: rows }); }
+      if (r.scen) { B.push({ t: 'h3', x: 'سناریوها' }); B.push({ t: 'table', head: ['سناریو', r.scen.priceBased ? 'کسر از ارزش مبنا' : 'تغییر مبلغ', 'برآورد قابل دریافت'], rows: r.scen.rows.map(function (x) { return [x.n, r.scen.priceBased ? P(x.hc) : '', H(x.amt)]; }) });
+        if (r.scen.grid) { B.push({ t: 'h4', x: 'حساسیت: سهم فروخته‌شده × کسر از ارزش' }); B.push({ t: 'table', head: ['کسر'].concat(r.scen.shares.map(function (s) { return 'سهم ' + P(s); })), rows: r.scen.grid.map(function (g) { return [P(g.hc)].concat(g.v.map(H)); }) }); } }
+    }
+    // ---------- 7 ----------
+    B.push({ t: 'h2', x: '۷. الزامات و موانع' });
+    if (p0) B.push({ t: 'ul', x: ['مجوزها: ' + (p0.it.kind === 's' ? p0.it.s.lic : [].concat.apply([], p0.it.comps.map(function (x) { return x.s.lic; }))).join('؛ ')].concat(p0.pre.map(function (x) { return 'پیش‌شرط: ' + x; }))
+      .concat((p0.it.kind === 's' ? p0.it.s.law : []).map(function (l) { return 'مستند: ' + l[0] + (l[1] === 'v' ? ' [تطبیق‌شده با منبع رسمی]' : l[1] === 'p' ? ' [رویهٔ بازار]' : ' [نیازمند استعلام]'); })) });
+    if (r.reg) {
+      B.push({ t: 'h3', x: 'نقشهٔ انطباق مقرراتی — ' + r.cmIt.fa + (r.reg.spv ? ' (با شرکت مستقل مالک املاک)' : ' (بانی: شرکت فعلی؛ ستون SPV فقط برای مقایسه)') });
+      B.push({ t: 'table', head: ['الزام', 'مستند', 'شرکت مادر', 'شرکت مالک املاک (SPV)', 'نهاد واسط', 'توضیح'], rows: r.reg.rows.map(function (x) { return [x.req, x.cite, F.RS[x.p], F.RS[x.s], F.RS[x.n], x.note]; }) });
+    }
+    var sp = r.spv || r.spvAny;
+    B.push({ t: 'h3', x: 'شرکت مستقل (SPV): چهار پرسش جدا' });
+    B.push({ t: 'table', head: ['پرسش', 'وضعیت', 'شرح'], rows: sp.q.map(function (q) { return [q.q, F.RS[q.st] || q.st, q.t]; }) });
+    B.push({ t: 'p', x: 'تحقق یکی از این چهار، تحقق بقیه نیست. مسیرهای جایگزین اگر SPV به‌موقع واجد شرایط نشود:' });
+    B.push({ t: 'ul', x: sp.alt });
+    // ---------- 8 ----------
+    B.push({ t: 'h2', x: '۸. اطلاعات تکمیلی موردنیاز' });
+    if (r.info.decisive) B.push({ t: 'lead', x: 'پرسش تعیین‌کننده: ' + r.info.decisive[0] + ' — ' + r.info.decisive[1] });
+    [['مرحلهٔ اول — طراحی راهکار', r.info.s1], ['مرحلهٔ دوم — امکان‌سنجی', r.info.s2], ['مرحلهٔ سوم — طراحی و اجرای ساختار', r.info.s3]].forEach(function (s) { B.push({ t: 'h3', x: s[0] }); B.push({ t: 'table', head: ['اطلاعات', 'وضعیت', 'کدام ابهام را رفع می‌کند'], rows: s[1] }); });
+    // ---------- 9 ----------
+    B.push({ t: 'h2', x: '۹. برنامهٔ اقدام و مسیرهای جایگزین' });
+    r.paths.forEach(function (p) { B.push({ t: 'h3', x: p.role + ': ' + p.it.fa + ' — ' + F.S5[p.it.s5] }); B.push({ t: 'ul', x: p.pre.map(function (x) { return 'پیش‌شرط: ' + x; }).concat(p.sw.map(function (x) { return 'انتقال به مسیر بعدی: ' + x; })) }); });
+    if (r.road.length) B.push({ t: 'table', head: ['اقدام', 'از ماه', 'تا ماه', 'مسئول', 'خروجی'], rows: r.road.map(function (s) { return [s.step, fa(s.from), fa(s.to), s.owner, s.out || '—']; }) });
+    B.push({ t: 'small', x: 'زمان‌ها از بازهٔ پروفایل هر راهکار در بانک راهکارها می‌آیند و برآورد تقریبی‌اند، نه تعهد زمانی.' });
+    // ---------- groups ----------
+    B.push({ t: 'h2', x: 'دسته‌بندی همهٔ راهکارهای بررسی‌شده' });
+    B.push({ t: 'table', head: ['گروه', 'تعداد', 'نمونه‌ها'], rows: Object.keys(r.groups).map(function (g) { return [g, fa(r.groups[g].length), r.groups[g].slice(0, 5).map(function (x) { return x.fa + ' (' + x.s5why + ')'; }).join('؛ ')]; }) });
+    // ---------- gaps ----------
+    if (M.val === null || M.val === '') gaps.push('ارزش دارایی وارد نشده؛ هیچ مبلغی برآورد نمی‌شود.');
+    Object.keys(F.CH).forEach(function (k) { if (r.pr.some(function (it) { return it.ch === k && it.amtH > 0; }) && !(+M.cap[k] > 0)) gaps.push('ظرفیت جذب «' + F.CH[k] + '» و شاهد معاملات مشابه وارد نشده؛ مقیاس قابل جذب و تعداد مراحل نامعلوم است.'); });
+    if (M.title === 'unk') gaps.push('وضعیت سند و قابلیت انتقال دارایی نامشخص است.');
+    gaps.push('سابقهٔ عملکرد صندوق‌های املاک ایران (استقبال، نقدشوندگی، فاصلهٔ قیمت با NAV) و تخفیف‌های تحقق‌یافته در فروش‌های بزرگ در این ابزار داده ندارد؛ پیش از انتخاب صندوق یا فروش یکجا باید جمع‌آوری شود.');
+    B.push({ t: 'h2', x: 'آنچه با اطلاعات فعلی قابل تکمیل نیست' });
+    B.push({ t: 'ul', x: gaps.filter(function (v, i, a) { return a.indexOf(v) === i; }) });
+    B.push({ t: 'small', x: 'غربالگری و طراحی اولیه است، نه نظر حقوقی یا مالیاتی. استنادهای [IJ]، [CR]، [DV] و [PR] همان متون کدگذاری‌شده در ابزار ظرفیت اوراق‌اند؛ بقیه با برچسب «نیازمند استعلام» آمده‌اند. تصمیم نهایی با شماست.' });
+    return B;
+  }
+
+  /* ---------- tab ---------- */
+  function tab(ctx) {
+    var S = ctx.S, M = state(S), F = D(), r = F.run(M);
+    var opt = function (k, label, options, help) { return { key: k, label: label, options: options, help: help, get: function () { return String(M[k]); }, set: function (v) { M[k] = v; } }; };
+    var numF = function (k, label, unit, help, obj) { var o = obj || M; return { key: k, label: label, unit: unit, optional: true, fmt: unit === '٪' ? 'pct' : 'num', help: help, get: function () { return o[k] === null || o[k] === '' ? null : o[k]; }, set: function (v) { o[k] = v; } }; };
+    var f1 = G.form({ id: 'fd-q', onChange: ctx.rerender, fields: [
+      opt('arch', 'مسئلهٔ مطرح‌شده', F.ARCH.map(function (a) { return [a.k, a.fa]; })),
+      { key: 'note', label: 'شرح آزاد (اختیاری)', text: true, get: function () { return M.note; }, set: function (v) { M.note = v; } },
+      opt('at', 'نوع دارایی اصلی', [['realestate', 'املاک و مستغلات'], ['machinery', 'ماشین‌آلات و تجهیزات'], ['receivable', 'مطالبات'], ['financial', 'سهام و سرمایه‌گذاری'], ['inventory', 'موجودی کالا'], ['contract', 'قرارداد فروش بلندمدت']]),
+      numF('val', r.arch.k === 'project' ? 'هزینهٔ پروژه' : 'ارزش تقریبی دارایی', 'همت'), numF('need', 'نقدینگی موردنیاز', 'همت', 'خالی = نامشخص'), numF('by', 'مهلت (تا چند ماه دیگر)', 'ماه'),
+      opt('keep', 'مالکیت دارایی', [['unk', 'نامشخص'], ['keep', 'باید کامل حفظ شود'], ['partial', 'واگذاری بخشی ممکن است'], ['any', 'فروش هم ممکن است']]),
+      opt('noBank', 'بدهی بانکی ممنوع است؟', TRI), opt('eqOk', 'افزایش سرمایه ممکن است؟', TRI)] });
+    var f2 = G.form({ id: 'fd-a', onChange: ctx.rerender, fields: [
+      opt('use', 'کاربری (ملک)', [['unk', 'نامشخص'], ['commercial', 'تجاری'], ['office', 'اداری'], ['industrial', 'صنعتی'], ['residential', 'مسکونی'], ['land', 'زمین'], ['mixed', 'ترکیبی']]),
+      opt('inc', 'درآمد اجاره دارد؟', [['unk', 'نامشخص'], ['yes', 'بله'], ['partial', 'بخشی از آن'], ['no', 'خیر (راکد)']]), numF('incVal', 'درآمد سالانهٔ دارایی', 'همت'),
+      opt('op', 'شرکت خودش از دارایی استفاده می‌کند؟', [['unk', 'نامشخص'], ['operational', 'بله (عملیاتی)'], ['mixed', 'بخشی'], ['nonop', 'خیر (مازاد)']]),
+      opt('title', 'سند و مالکیت', [['unk', 'نامشخص'], ['clean', 'سند رسمی سالم و قابل انتقال'], ['issue', 'معارض / نیازمند اصلاح']]),
+      opt('listed', 'شرکت در بازار سرمایه', [['unk', 'نامشخص'], ['none', 'غیربورسی'], ['ifb', 'فرابورس'], ['tse', 'بورس تهران']]),
+      opt('form', 'شخصیت حقوقی', [['unk', 'نامشخص'], ['pjs', 'سهامی عام'], ['prjs', 'سهامی خاص'], ['other', 'سایر']]),
+      opt('opinion', 'اظهارنظر حسابرس سال آخر', [['unk', 'نامشخص'], ['unqualified', 'مقبول'], ['qualified', 'مشروط'], ['adverse', 'مردود'], ['none', 'عدم اظهارنظر']]),
+      opt('spv', 'ساختار شرکت مستقل مالک املاک (SPV)', [['auto', 'هر جا ساختار نیاز داشت'], ['yes', 'بررسی شود'], ['no', 'بررسی نشود']])] });
+    // objectives
+    var objBox = h('div', { class: 'row-ctl', style: 'flex-wrap:wrap;gap:.4rem 1rem' }, r.objectives.map(function (o) { var cb = h('input', { type: 'checkbox', 'aria-label': o.fa }); cb.checked = o.on; cb.addEventListener('change', function () { M.obj[o.k] = cb.checked; ctx.rerender(); }); return h('label', { class: 'small', 'data-notr': '1' }, [cb, ' ' + o.fa]); }));
+    // market capacity, evidence, scenarios, segmentation
+    var capRows = Object.keys(F.CH).filter(function (k) { return k !== 'other'; }).map(function (k) {
+      var inp = h('input', { class: 'f-in', type: 'text', inputmode: 'decimal', placeholder: 'نامشخص', 'aria-label': 'ظرفیت ' + F.CH[k], value: M.cap[k] == null ? '' : String(M.cap[k]) });
+      inp.addEventListener('change', function () { var v = String(inp.value).trim(); M.cap[k] = v === '' ? null : Number(U.fromInput ? U.fromInput(v, 'num') : v); ctx.rerender(); });
+      var ev = h('input', { class: 'f-text', type: 'text', placeholder: 'شاهد: معاملهٔ مشابه، منبع، تاریخ', 'aria-label': 'شاهد ' + F.CH[k], value: M.ev[k] || '' });
+      ev.addEventListener('change', function () { M.ev[k] = ev.value; ctx.rerender(); });
+      return h('tr', null, [h('td', { 'data-notr': '1', text: F.CH[k] }), h('td', null, [inp]), h('td', null, [ev])]); });
+    var capT = h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, ['کانال', 'بزرگ‌ترین مبلغ قابل جذب در یک معامله (همت)', 'شاهد بازار'].map(function (x) { return h('th', { class: 'lbl', 'data-notr': '1', text: x }); }))]), h('tbody', null, capRows)])]);
+    var f3 = G.form({ id: 'fd-s', onChange: ctx.rerender, fields: [numF('bulk', 'تخفیف اضافهٔ فروش یکجا', '٪', 'نسبت به فرض تخفیف موتور؛ خالی = اعمال نشود'), numF('dn', 'سناریوی بدبینانه: کسر اضافه', '٪', null, M.sc), numF('up', 'سناریوی خوش‌بینانه: کسر کمتر', '٪', null, M.sc),
+      { type: 'head', label: 'تفکیک سبد املاک (سهم از کل)' }, numF('op', 'املاک عملیاتی', '٪', null, M.seg), numF('inc', 'املاک درآمدزا', '٪', null, M.seg), numF('idle', 'راکد، زمین یا مازاد', '٪', null, M.seg)] });
+    var fold = function (t, kids, open) { var d = h('details', { class: 'fold' }, [h('summary', { 'data-notr': '1', text: t })].concat(kids)); if (open) d.open = true; return d; };
+    var apply = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'انتقال این اطلاعات به فرم کامل موتور', onclick: function () {
+      var E = Hub.finUI.ensure(S), Sd = r.E; Hub.finEngine.merge(E.co, Sd.co); Hub.finEngine.merge(E.fin, Sd.fin); Hub.finEngine.merge(E.cons, Sd.cons);
+      if (Sd.assets.length && !E.assets.some(function (a) { return a.name === 'دارایی اعلام‌شده'; })) E.assets.push(Sd.assets[0]);
+      U.toast('در فرم «تشخیص و ارزیابی شرکت» ثبت شد (واحد: میلیارد ریال).', 'good'); ctx.rerender(); } });
+    var top = r.pr.slice(0, 3).map(function (it, i) { return h('div', { class: 'prio-card' }, [h('div', { 'data-notr': '1', style: 'font-weight:600', text: fa(i + 1) + '. ' + it.fa }), h('div', { class: 'row-ctl', style: 'gap:.3rem;flex-wrap:wrap' }, [chip(S5C[it.s5], F.S5[it.s5]), chip(it.fclass === 'high' ? 'fit-rec' : it.fclass === 'low' ? 'fit-no' : 'fit-cond', F.FCLASS[it.fclass]), chip('fit-ok', F.TIERFA[it.tier].split(' (')[0])]),
+      h('div', { class: 'small', 'data-notr': '1', text: 'برآورد ' + (isFinite(it.amtH) ? F.H(it.amtH) : 'نامشخص') + ' · ' + fa((it.tmEff || it.tm)[0]) + '–' + fa((it.tmEff || it.tm)[1]) + ' ماه · حفظ مالکیت ' + F.P(it.ow) })]); });
+    return ctx.group([
+      ctx.panel('مسئلهٔ خام را بگویید؛ همین الان راهکار بگیرید', [h('p', { class: 'f-help', 'data-notr': '1', text: 'لازم نیست همهٔ اطلاعات را داشته باشید. با مسئله و ارزش تقریبی، راهکارها طراحی و غربال می‌شوند؛ هر چیز نامشخص به پرسش مرحلهٔ بعد تبدیل می‌شود، نه توقف تحلیل.' }), f1.el,
+        fold('ویژگی‌های دارایی و شرکت (هرچه می‌دانید)', [f2.el]), fold('اهداف اقتصادی — فرضیه‌ها را تیک بزنید', [objBox]),
+        fold('ظرفیت بازار، شاهد معاملات، سناریوها و تفکیک سبد (ورودی شما)', [h('p', { class: 'f-help', 'data-notr': '1', text: 'ابزار ظرفیت جذب بازار را حدس نمی‌زند. اگر معاملهٔ مشابه یا تجربهٔ انتشار می‌شناسید، بزرگ‌ترین مبلغ قابل جذب در یک نوبت را با منبعش وارد کنید؛ اجرای مرحله‌ای و زمان از آن محاسبه می‌شود.' }), capT, f3.el]),
+        h('div', { class: 'row-ctl' }, [apply])]),
+      ctx.panel('سه اولویت اول', top.length ? [h('div', { class: 'pulse-grid' }, top)] : [h('p', { class: 'small', 'data-notr': '1', text: 'گزینه‌ای از غربال عبور نکرد.' })]),
+      ctx.panel('تحلیل کامل (ترتیب نُه‌بخشی)', [Hub.report.buttons(function () { return blocks(F.run(state(S))); }, 'financing-discovery'), Hub.report.dom(blocks(r))])]);
+  }
+
+  /* ---------- Excel ---------- */
+  function excel(b, S) {
+    var F = D(), M = state(S), r = F.run(M), opt = { rightToLeft: true }, L = Hub.xl.L, c = function (col, row) { return L(col) + row; }, a = function (col, row) { return '$' + L(col) + '$' + row; };
+    var put = function (sh, row, vals, kind) { vals.forEach(function (v, i) { sh.put(1 + i, row, v, kind || (typeof v === 'number' ? 'calc' : 'wrap')); }); };
+    var s1 = b.sheet('کشف فرصت', [2, 44, 16, 14, 14, 12, 12, 12, 26, 60], opt); s1.title('کشف فرصت‌های تأمین مالی — ' + r.arch.fa, 'مبالغ به همت · امتیاز = پایه + تعدیل (فرمول)');
+    put(s1, 4, ['ورودی', 'مقدار'], 'hdr'); var inRows = [['ارزش دارایی / هزینهٔ پروژه (همت)', M.val], ['نیاز (همت)', M.need], ['مهلت (ماه)', M.by], ['مالکیت', M.keep], ['بدهی بانکی ممنوع', M.noBank], ['افزایش سرمایه', M.eqOk], ['درآمد اجاره', M.inc], ['سند', M.title]];
+    inRows.forEach(function (x, i) { s1.put(1, 5 + i, x[0], 'wrap'); s1.put(2, 5 + i, x[1] == null || x[1] === '' ? 'نامشخص' : x[1], 'in'); });
+    var y = 7 + inRows.length; put(s1, y, ['راهکار', 'سطح', 'وضعیت', 'امکان‌پذیری', 'امتیاز موتور', 'تعدیل', 'امتیاز (فرمول)', 'برآورد (همت)', 'دلیل تعدیل'], 'hdr');
+    r.list.filter(function (it) { return it.s5 !== 'reject'; }).slice(0, 30).forEach(function (it, i) { var row = y + 1 + i; put(s1, row, [it.fa, F.TIERFA[it.tier].split(' (')[0], F.S5[it.s5], F.FCLASS[it.fclass]]); s1.put(5, row, it.base, 'in', 'dec'); s1.put(6, row, it.adj, 'in', 'dec');
+      s1.put(7, row, { f: '=MAX(0,MIN(100,' + c(5, row) + '+' + c(6, row) + '))' }, 'calc', 'dec'); s1.put(8, row, isFinite(it.amtH) ? it.amtH : null, 'calc', 'dec'); s1.put(9, row, it.why.join('؛ '), 'wrap'); });
+    var s2 = b.sheet('امکان‌پذیری بازار', [2, 36, 14, 14, 14, 14, 14, 50], opt); s2.title('امکان‌پذیری بازار و اجرای مرحله‌ای', 'ظرفیت کانال، کسرها و سهم‌ها ورودی شما (سلول‌های آبی)');
+    put(s2, 4, ['راهکار', 'برآورد (همت)', 'ظرفیت یک‌نوبتی (همت)', 'تعداد مراحل (فرمول)', 'حداقل ماه', 'حداکثر ماه پروفایل', 'حداکثر ماه با مراحل (فرمول)', 'ابعاد'], 'hdr');
+    r.pr.forEach(function (it, i) { var row = 5 + i; s2.put(1, row, it.fa, 'wrap'); s2.put(2, row, isFinite(it.amtH) ? it.amtH : null, 'in', 'dec'); s2.put(3, row, +M.cap[it.ch] > 0 ? +M.cap[it.ch] : null, 'in', 'dec');
+      s2.put(4, row, { f: '=IF(AND(ISNUMBER(' + c(2, row) + '),ISNUMBER(' + c(3, row) + '),' + c(3, row) + '>0),ROUNDUP(' + c(2, row) + '/' + c(3, row) + ',0),1)' }, 'calc', 'int'); s2.put(5, row, it.tm[0], 'in', 'int'); s2.put(6, row, it.tm[1], 'in', 'int');
+      s2.put(7, row, { f: '=' + c(6, row) + '+(' + c(4, row) + '-1)*MAX(1,' + c(5, row) + ')' }, 'calc', 'int'); s2.put(8, row, it.D.map(function (d) { return d.n + ': ' + STFA[d.st]; }).join(' · '), 'wrap'); });
+    if (r.scen) { var y2 = 7 + r.pr.length, pb = r.scen.priceBased;
+      s2.put(1, y2, pb ? 'ارزش مبنای مسیر اصلی (همت)' : 'برآورد پایهٔ مسیر اصلی (همت)', 'sub'); s2.put(2, y2, pb ? r.scen.val : r.main.amtH, 'in', 'dec');
+      s2.put(1, y2 + 1, pb ? 'کسر پایه' : '—', 'sub'); s2.put(2, y2 + 1, pb ? r.main.haircut : 0, 'in', 'pct2');
+      s2.put(1, y2 + 2, pb ? 'کسر اضافهٔ بدبینانه' : 'کاهش بدبینانه', 'sub'); s2.put(2, y2 + 2, +M.sc.dn || 0, 'in', 'pct2'); s2.put(1, y2 + 3, pb ? 'کسر کمتر خوش‌بینانه' : 'افزایش خوش‌بینانه', 'sub'); s2.put(2, y2 + 3, +M.sc.up || 0, 'in', 'pct2');
+      var V0 = a(2, y2), H0 = a(2, y2 + 1), DN = a(2, y2 + 2), UP = a(2, y2 + 3);
+      put(s2, y2 + 5, ['سناریو: ' + r.main.fa, 'برآورد (فرمول)'], 'hdr');
+      (pb ? [['بدبینانه', '=' + V0 + '*(1-(' + H0 + '+' + DN + '))'], ['پایه', '=' + V0 + '*(1-' + H0 + ')'], ['خوش‌بینانه', '=' + V0 + '*(1-MAX(0,' + H0 + '-' + UP + '))']]
+        : [['بدبینانه', '=' + V0 + '*(1-' + DN + ')'], ['پایه', '=' + V0], ['خوش‌بینانه', '=' + V0 + '*(1+' + UP + ')']]).forEach(function (x, i) { s2.put(1, y2 + 6 + i, x[0], 'wrap'); s2.put(2, y2 + 6 + i, { f: x[1] }, 'calc', 'dec'); });
+      if (r.scen.grid) { var g0 = y2 + 10; s2.put(1, g0, 'حساسیت: کسر (سطر) × سهم فروخته‌شده (ستون)', 'hdr'); r.scen.shares.forEach(function (sh, j) { s2.put(2 + j, g0, sh, 'in', 'pct2'); });
+        r.scen.grid.forEach(function (g, i) { var row = g0 + 1 + i; s2.put(1, row, g.hc, 'in', 'pct2'); r.scen.shares.forEach(function (sh, j) { s2.put(2 + j, row, { f: '=' + V0 + '*' + L(2 + j) + '$' + g0 + '*(1-$' + L(1) + row + ')' }, 'calc', 'dec'); }); }); } }
+    var s3 = b.sheet('انطباق مقرراتی', [2, 46, 34, 16, 18, 16, 50], opt); s3.title('نقش اشخاص، نقشهٔ انطباق مقرراتی و پرسش‌های SPV', r.cmIt ? 'ساختار: ' + r.cmIt.fa : 'مسیر بازار سرمایه در اولویت‌ها نیست');
+    var y3 = 4; [r.roles, r.cmRoles].forEach(function (R0) { if (!R0 || !R0.cm) return; put(s3, y3, ['پرسش', 'پاسخ'], 'hdr'); R0.rows.forEach(function (x, i) { put(s3, y3 + 1 + i, x); }); y3 += R0.rows.length + 3; });
+    if (r.reg) { put(s3, y3, ['الزام', 'مستند', 'شرکت مادر', 'SPV', 'نهاد واسط', 'توضیح'], 'hdr'); r.reg.rows.forEach(function (x, i) { put(s3, y3 + 1 + i, [x.req, x.cite, F.RS[x.p], F.RS[x.s], F.RS[x.n], x.note]); }); y3 += r.reg.rows.length + 3; }
+    var sp = r.spv || r.spvAny; put(s3, y3, ['پرسش SPV', 'وضعیت', 'شرح'], 'hdr'); sp.q.forEach(function (q, i) { put(s3, y3 + 1 + i, [q.q, F.RS[q.st] || q.st, q.t]); });
+    var s4 = b.sheet('اطلاعات و نقشه راه', [2, 50, 16, 50, 14, 14, 30], opt); s4.title('اطلاعات مرحله‌ای، مسیرها و برنامهٔ اقدام', r.info.decisive ? 'پرسش تعیین‌کننده: ' + r.info.decisive[0] : '');
+    var y4 = 4; [['مرحلهٔ اول', r.info.s1], ['مرحلهٔ دوم', r.info.s2], ['مرحلهٔ سوم', r.info.s3]].forEach(function (st) { put(s4, y4, [st[0], 'وضعیت', 'کدام ابهام'], 'hdr'); st[1].forEach(function (x, i) { put(s4, y4 + 1 + i, x); }); y4 += st[1].length + 2; });
+    r.paths.forEach(function (p) { put(s4, y4, [p.role + ': ' + p.it.fa, F.S5[p.it.s5]], 'hdr'); p.pre.concat(p.sw).forEach(function (x, i) { put(s4, y4 + 1 + i, [x]); }); y4 += p.pre.length + p.sw.length + 2; });
+    put(s4, y4, ['اقدام', 'از ماه', 'مسئول', 'تا ماه', 'خروجی'], 'hdr'); r.road.forEach(function (s, i) { put(s4, y4 + 1 + i, [s.step, s.from, s.owner, s.to, s.out || '']); });
+  }
+
+  Hub.finDiscUI = { tab: tab, blocks: blocks, excel: excel, state: state };
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* js/models/financing.js */
 /* =====================================================================
  * FINANCING SOLUTIONS — which funding routes fit this company, given its
@@ -18091,7 +18705,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   function build(ExcelJS, S, R) {
     var X = Hub.xl, b = X.book(ExcelJS, 'Financing');
-    if (R.X && Hub.finUI) Hub.finUI.excel(b, S, R.X);
+    if (R.X && Hub.finUI) Hub.finUI.excel(b, S, R.X); if (Hub.finDiscUI && S.disc) Hub.finDiscUI.excel(b, S);
     var F = b.sheet('Screening', [2, 40, 14, 18, 70, 50, 50]);
     F.title('Financing solutions · screening', R.rec ? R.rec.file + ' · need ' + U.fmtNum(num(S.q.need)) + ' · ' + tx(PURPOSE[S.q.purpose]) : '');
     F.put(1, 3, 'Debt capacity'); F.put(2, 3, R.debtCap, 'calc', 'money');
@@ -18132,14 +18746,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     headControls: function (ctx, seg) { return [seg('Output language', [['auto', 'Interface'], ['fa', 'فارسی'], ['en', 'English']], ctx.S.settings.lang, function (v) { ctx.S.settings.lang = v; ctx.rerender(); })]; },
     eyebrow: function () { return 'Financial management · Financing solutions'; }, heading: function (S) { var r = Hub.companyData && Hub.companyData.get(); return S && S.e && S.e.co && S.e.co.name ? S.e.co.name : r ? r.file : 'No statements loaded'; },
     filename: function () { return 'Financing_solutions'; },
-    xlsx: function (S, R) { if (R.empty) { var b0 = Hub.xl.book(root.ExcelJS, 'Financing'); if (R.X) Hub.finUI.excel(b0, S, R.X); return b0.wb; } var wb = build(root.ExcelJS, S, R); return wb; },
+    xlsx: function (S, R) { if (R.empty) { var b0 = Hub.xl.book(root.ExcelJS, 'Financing'); if (R.X) Hub.finUI.excel(b0, S, R.X); if (Hub.finDiscUI && S.disc) Hub.finDiscUI.excel(b0, S); return b0.wb; } var wb = build(root.ExcelJS, S, R); return wb; },
     kpis: function (ctx) { var X = function () { return ctx.R.X; }, nm = function (x) { return x ? (x.type === 's' ? x.r.s.fa : x.c.c.fa) : '–'; }; return [
       ['Main recommendation', function () { return X() ? nm(X().REC.main) : '–'; }, function () { var m = X() && X().REC.main; return m ? (m.def ? 'قطعی' : 'مشروط') + ' · امتیاز ' + m.score : 'اطلاعات کافی نیست'; }],
       ['Debt capacity', function () { return X() && isFinite(X().G.debtCap) ? U.fmtNum(X().G.debtCap) : '–'; }, function () { return 'اهرم، پوشش بهره، بازپرداخت از سود'; }],
       ['Definitive routes', function () { return X() ? String(X().count.definitive) : '–'; }, function () { return X() ? 'از ' + X().count.applicable + ' راهکار مرتبط' : ''; }],
       ['Structures', function () { return X() ? String(X().count.combos) : '–'; }, function () { return 'ساختار ترکیبی فعال'; }],
       ['Opportunities', function () { return X() ? String(X().O.length) : '–'; }, function () { return 'فرصت شناسایی‌شده'; }]]; },
-    tabs: [{ group: 'Solution engine', items: [['intake', 'بنویسید و راه‌حل بگیرید', function (ctx) { return Hub.finUI.intakeTab(ctx); }], ['diag', 'تشخیص و ارزیابی شرکت', function (ctx) { return Hub.finUI.diagTab(ctx); }], ['debt', 'تأمین مالی بدهی', function (ctx) { return Hub.finUI.engineTab('D')(ctx); }],
+    tabs: [{ group: 'Solution engine', items: [['disc', 'کشف فرصت از مسئلهٔ خام', function (ctx) { return Hub.finDiscUI.tab(ctx); }], ['intake', 'بنویسید و راه‌حل بگیرید', function (ctx) { return Hub.finUI.intakeTab(ctx); }], ['diag', 'تشخیص و ارزیابی شرکت', function (ctx) { return Hub.finUI.diagTab(ctx); }], ['debt', 'تأمین مالی بدهی', function (ctx) { return Hub.finUI.engineTab('D')(ctx); }],
       ['equity', 'سرمایه‌ای و ترکیبی', function (ctx) { return Hub.finUI.engineTab('E')(ctx); }], ['asset', 'مولدسازی دارایی‌ها', function (ctx) { return Hub.finUI.engineTab('A')(ctx); }], ['struct', 'ساختارهای ترکیبی', function (ctx) { return Hub.finUI.structTab(ctx); }],
       ['rank', 'مقایسه و رتبه‌بندی', function (ctx) { return Hub.finUI.rankTab(ctx); }], ['report', 'گزارش نهایی و نقشهٔ اجرا', function (ctx) { return Hub.finUI.reportTab(ctx); }]] },
       { group: 'Statements screening', items: [['screen', 'Screening', function (ctx) {
@@ -24495,11 +25109,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611130959) */
+/* PWA: offline cache + app updates (version 202611131041) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611130959';
+  window.HUB_APP_VERSION = '202611131041';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
