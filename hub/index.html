@@ -9847,7 +9847,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var faL = Hub.i18n && Hub.i18n.lang() === 'fa', tried = list.map(function (x) { return x[0]; }).join(faL ? '، ' : ', ');
         var e = new Error(source + ': ' + (HTTPS ? (faL ? 'به سرور نرسید (' + (errs[errs.length - 1] || '') + '). این سرور فقط از اینترنت داخل ایران جواب می‌دهد: فیلترشکن را خاموش کنید و دوباره بزنید؛ اگر نشد «تست اتصال» را بزنید.' : 'could not reach the server (' + (errs[errs.length - 1] || '') + '). It answers only from inside Iran: switch the VPN off and retry, or run the connection test.')
           : (faL ? 'به سرور نرسید (امتحان‌شده: ' + tried + '). پروکسی محلی را اجرا کنید: معامله‌گری ← مرکز دادهٔ بازار ← دسترسی و اتصال.' : 'could not reach the server (tried: ' + tried + '). Start the local proxy: Trading → Market data centre → Access.')));
-        e.routes = errs; e.detail = errs.join(' | '); if (!good[hst]) dead[hst] = { at: Date.now(), msg: e.message, detail: e.detail }; throw e; }
+        e.routes = errs; e.detail = errs.join(' | '); if (!good[hst] && !errs.some(function (x) { return /timeout|HTTP 5\d\d|empty/.test(x); })) dead[hst] = { at: Date.now(), msg: e.message, detail: e.detail }; throw e; }
       return get(wrap(list[i][1], url)).then(function (r) { good[hst] = list[i][0]; lastRoute = { name: list[i][0], host: hst, at: Date.now() }; return r; })
         .catch(function (e) { errs.push(list[i][0] + ': ' + String(e && e.message || e).replace(/^[A-Za-z]+: /, '').slice(0, 90)); return next(i + 1); });
     }
@@ -20762,9 +20762,24 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     }, function (e) { var o = JSON.parse(keep); S.data = o.data; S.meta = o.meta; throw e; });
   }
   function maxAgeH() { var m = (Hub.util && Hub.util.store.get('hub.marketdata.v1', null)) || {}; return Number(m.maxAgeH) > 0 ? Number(m.maxAgeH) : 24; }
+  /* price history that never shrinks and does not depend on one big request:
+     - stored history already deep enough and recent → fetch only the missing tail (gap + 10 sessions, at least 30) and merge by date;
+     - otherwise try the target depth, then 700, 450, 260 sessions (the first that answers is kept) and merge with what is stored.
+     A large request can time out on a slow line or be refused by the server; the shorter steps keep the update working. */
+  function mergeRows(a, b) { var m = {}; (a || []).forEach(function (r) { m[r.date] = r; }); (b || []).forEach(function (r) { m[r.date] = r; }); return Object.keys(m).map(function (k) { return m[k]; }).sort(function (x, y) { return x.date - y.date; }); }
+  // cap = deepest request the server answered recently (kept a week), so a refused 1250 is not re-tried on every update
+  function deepDaily(code, old, tgt, cap) {
+    var tse = Hub.data.tse, have = old && old.length ? old : null, enough = Math.min(tgt, cap && cap.n && Date.now() - cap.at < 7 * 864e5 ? cap.n : tgt);
+    if (have && have.length >= enough * 0.9) { var l = have[have.length - 1].date, y = Math.floor(l / 10000), mo = Math.floor(l / 100) % 100, d = l % 100, gap = Math.ceil((Date.now() - Date.UTC(y, mo - 1, d)) / 864e5);
+      return tse.daily(code, Math.max(30, Math.min(tgt, gap + 10))).then(function (r) { return mergeRows(have, r).slice(-tgt); }); }
+    var steps = [tgt, 700, 450, 260].filter(function (n, i, a) { return n <= tgt && a.indexOf(n) === i; }), last = null;
+    var go = function (i) { if (i >= steps.length) { if (have) return have; throw last || new Error('no data'); }
+      return tse.daily(code, steps[i]).then(function (r) { if (!r.length) throw new Error('empty'); if (cap && (!cap.n || steps[i] > cap.n || Date.now() - cap.at >= 7 * 864e5)) { cap.n = steps[i]; cap.at = Date.now(); } return mergeRows(have, r).slice(-tgt); }, function (e) { last = e; return go(i + 1); }); };
+    return go(0);
+  }
   function stocksFetch(S, progress, only) {
     // only: optional array of symbols to refresh; symbols not refreshed (or failing) keep their previous data
-    var tse = Hub.data.tse, P = setObj(S.set), list = S.watch.filter(function (w) { return w.active !== false && w.symbol && (!only || only.indexOf(w.symbol) >= 0); }), errs = [];
+    var tse = Hub.data.tse, P = setObj(S.set), cap = (S.meta && S.meta.depth) || {}, tgt = Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250), list = S.watch.filter(function (w) { return w.active !== false && w.symbol && (!only || only.indexOf(w.symbol) >= 0); }), errs = [];
     var smp = !S.meta || /synthetic|Illustrative/i.test(S.meta.source || ''), data = {};
     if (!smp) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });
     // five symbols at a time (the earlier one-by-one loop took minutes on a phone line)
@@ -20772,12 +20787,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       if (nxt >= list.length) return Promise.resolve();
       var w = list[nxt++];
       var code = w.insCode ? Promise.resolve(w.insCode) : tse.resolve(w.symbol).then(function (c) { w.insCode = c; return c; });
-      return code.then(function (c) { return Promise.all([tse.daily(c, Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)), tse.clientType(c).catch(function () { return []; })]); })
+      return code.then(function (c) { return Promise.all([deepDaily(c, data[w.symbol] && data[w.symbol].px, tgt, cap), tse.clientType(c).catch(function () { return []; })]); })
         .then(function (r) { data[w.symbol] = { px: r[0], ct: r[1].slice(-90) }; }).catch(function (e) { errs.push(w.symbol + ': ' + e.message); }).then(function () { done++; progress && progress(done, list.length, w.symbol); return one(); });
     };
-    var step = function () { var ps = []; for (var k = 0; k < Math.min(5, list.length); k++) ps.push(one()); return Promise.all(ps); };
+    // deep first fetch is heavy (≈ 5 years per symbol): three at a time; later updates only fetch the missing tail, five at a time
+    var deep = list.some(function (w) { var d = data[w.symbol]; return !d || !d.px || d.px.length < tgt * 0.9; });
+    var step = function () { var ps = []; for (var k = 0; k < Math.min(deep ? 3 : 5, list.length); k++) ps.push(one()); return Promise.all(ps); };
     return step(0).then(function () { return Promise.all([tse.index('32097828799138957').catch(function () { return []; }), tse.index('67130298613737946').catch(function () { return []; }), Hub.data.tgju('price_dollar_rl').catch(function () { return []; })]); })
-      .then(function (r) { if (r[0].length) data._idx = { total: r[0].slice(-2500), ew: r[1].slice(-2500) }; if (r[2].length) data._usd = r[2].slice(-Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); S.data = data; if (errs.length >= list.length && list.length) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; } stampData(S, 'TSETMC + TGJU'); return errs; });
+      .then(function (r) { if (r[0].length) data._idx = { total: r[0].slice(-2500), ew: r[1].slice(-2500) }; if (r[2].length) data._usd = r[2].slice(-Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); S.data = data; if (errs.length >= list.length && list.length) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; } stampData(S, 'TSETMC + TGJU'); if (cap.n) S.meta.depth = cap; return errs; });
   }
 
   /* =================== GOLD =================== */
@@ -21085,7 +21102,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   Hub.signals = { feeds: FEEDS, safeFetch: safeFetch, summErr: summErr, maxAgeH: maxAgeH, stampData: stampData, dataAge: dataAge, ageText: ageText, adjust: adjust, trendBlock: trendBlock, ewmaVol: ewmaVol, varRatio: varRatio, ichimoku: ichimoku, donchian: donchian, rsi: rsi, levels: levels, bs: bs, impliedVol: impliedVol, synth: synth, parseCSV: parseCSV,
     stocks: { sample: stocksSample, run: stocksRun, fetch: stocksFetch, WATCH: WATCH, mergeWatch: mergeWatch, mergeUniverse: mergeUniverse }, gold: { sample: goldSample, run: goldRun, fetch: function (S, pr) { return tgjuFetch(S, keysOf(S, ['ons', 'price_dollar_rl']), pr); } }, fx: { sample: fxSample, run: fxRun, fetch: function (S, pr) { return tgjuFetch(S, keysOf(S, ['price_dollar_rl']), pr); } }, options: { sample: optSample, run: optRun, fetch: optFetch, shamsi: shamsi, UNDS: OPT_UNDS }, temporal: { sample: tempSample, run: tempRun, fetch: tempFetch } };
   var act = function (a) { return a.filter(function (x) { return x.active !== false && (x.symbol || x.key); }).length; };
-  FEEDS.push({ id: 'sig-stocks', title: 'Stock Signals (TSE)', storeKey: 'hub.sigstocks.v1', sample: stocksSample, fetch: stocksFetch, size: function (S) { return act(S.watch) + (isFa() ? ' نماد' : ' symbols'); }, src: 'TSETMC + TGJU' });
+  FEEDS.push({ id: 'sig-stocks', title: 'Stock Signals (TSE)', storeKey: 'hub.sigstocks.v1', sample: stocksSample, fetch: stocksFetch, size: function (S) { var L = Object.keys(S.data || {}).filter(function (k) { return k[0] !== '_' && S.data[k] && S.data[k].px; }).map(function (k) { return S.data[k].px.length; }).sort(function (a, b) { return a - b; }); return act(S.watch) + (isFa() ? ' نماد' : ' symbols') + (L.length ? (isFa() ? ' · تاریخچهٔ میانه ' : ' · median history ') + L[Math.floor(L.length / 2)] + (isFa() ? ' جلسه' : ' sessions') : ''); }, src: 'TSETMC + TGJU' });
   FEEDS.push({ id: 'sig-options', title: 'Options Signals (TSE)', storeKey: 'hub.sigoptions.v1', sample: optSample, fetch: optFetch, size: function (S) { return (act(S.contracts) + act(S.chain || [])) + (isFa() ? ' قرارداد' : ' contracts'); }, src: 'TSETMC' });
   FEEDS.push({ id: 'sig-temporal', title: 'Temporal Analysis (cycles & time windows)', storeKey: 'hub.sigtemporal.v1', sample: tempSample, fetch: function (S) { return tempFetch(S); }, size: function () { return isFa() ? 'یک سری' : '1 series'; }, src: 'TSETMC / TGJU' });
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.signals;
@@ -25860,11 +25877,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611131614) */
+/* PWA: offline cache + app updates (version 202611131707) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611131614';
+  window.HUB_APP_VERSION = '202611131707';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
