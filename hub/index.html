@@ -22004,18 +22004,24 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var CACHE = {};
   // full = votes for every bar (back-test); otherwise only the last TAIL bars, which is all the live cards read (a large watchlist would otherwise take minutes on a phone)
   var TAIL = 3;
+  /* model votes are back-tested on the last BTWIN sessions only (≈ 3 years: the medium horizon's 700-session need + margin);
+     the fixed-rule strategies (short / medium / long) still use the whole history. Keeps a 76-symbol × 1250-session validation inside a phone's memory. */
+  var BTWIN = 760;
   function analyse(a, full) {
     var ck = a.key + '|' + a.rows.length + '|' + a.rows[a.rows.length - 1].date + '|' + a.rows[a.rows.length - 1].close + '|' + (a.ct ? a.ct.length : 0);
     if (CACHE[ck + '|F']) return CACHE[ck + '|F']; if (!full && CACHE[ck]) return CACHE[ck];
     var X = prep(a.rows), I = indicators(X), n = X.n, A = { flowAt: flowAccessor(X, a.ct) }, V = {}, RG = [];
     Object.keys(VOTE).forEach(function (m) { V[m] = new Array(n).fill(null); });
-    var t0 = full ? 25 : Math.max(25, n - TAIL);
-    for (var t = 0; t < n; t++) { var rg = regimeAt(X, I, t); RG.push(rg); if (t < t0) continue; Object.keys(VOTE).forEach(function (m) { try { V[m][t] = VOTE[m](X, I, t, rg, A); } catch (e) { V[m][t] = null; } }); }
+    var t0 = full ? Math.max(25, n - BTWIN) : Math.max(25, n - TAIL);
+    for (var t = 0; t < n; t++) { var rg = regimeAt(X, I, t); RG.push(rg); if (t < t0) continue; var keepWhy = t >= n - TAIL; Object.keys(VOTE).forEach(function (m) { try { var o = VOTE[m](X, I, t, rg, A); if (o && !keepWhy) o.why = ''; V[m][t] = o; } catch (e) { V[m][t] = null; } }); }   // back-test bars keep the number, not the explanation text (memory on phones)
     var LV = Hub.longView; V.channel = new Array(n).fill(null); V.wdiv = new Array(n).fill(null);            // long-view school: log channel position and weekly RSI divergence
     if (LV && !full && n > 150) { try { var lv0 = LV.votesAt(X, n - 1); V.channel[n - 1] = lv0.channel; V.wdiv[n - 1] = lv0.wdiv; } catch (e) { /* skip */ } }
-    else if (LV) for (t = 150; t < n; t++) { if (t !== n - 1 && t % 5 && V.channel[t - 1]) { V.channel[t] = V.channel[t - 1]; V.wdiv[t] = V.wdiv[t - 1]; continue; }   // weekly quantities: refresh every 5th bar and on the last bar
+    else if (LV) for (t = Math.max(150, t0); t < n; t++) { if (t !== n - 1 && t % 5 && V.channel[t - 1]) { V.channel[t] = V.channel[t - 1]; V.wdiv[t] = V.wdiv[t - 1]; continue; }   // weekly quantities: refresh every 5th bar and on the last bar
       try { var lv = LV.votesAt(X, t); V.channel[t] = lv.channel; V.wdiv[t] = lv.wdiv; } catch (e) { /* skip */ } }
-    var res = { X: X, I: I, V: V, RG: RG, A: A, full: !!full }; CACHE[ck + (full ? '|F' : '')] = res; return res;
+    var res = { X: X, I: I, V: V, RG: RG, A: A, full: !!full };
+    // one cached analysis per asset: older versions of the same asset (before a data update) are dropped, otherwise every update added a copy
+    Object.keys(CACHE).forEach(function (k) { if (k.indexOf(a.key + '|') === 0 && k.indexOf(ck) !== 0) delete CACHE[k]; });
+    CACHE[ck + (full ? '|F' : '')] = res; return res;
   }
   // date-aligned close lookups for cross-asset work
   function byDate(rows) { var m = {}; (rows || []).forEach(function (r) { m[r.date] = r.close; }); return m; }
@@ -22661,7 +22667,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   // full validation run on the stored data: updates E0.val (database + registry) in place
   function validate(E0, U0, J) {
-    var r = run(E0, U0, { backtest: true }), db = r.valDb; if (!db) return r;
+    var r = run(E0, U0, { backtest: true }), db = r.valDb;
+    // the full per-bar analyses are only needed during the back-test; free them (the live run rebuilds the small version)
+    Object.keys(CACHE).forEach(function (k) { if (/\|F$/.test(k)) delete CACHE[k]; });
+    if (!db) return r;
     var V = E0.val = E0.val || {}; V.db = db; registry(V, db, J, r.E); return r;
   }
 
@@ -24975,10 +24984,15 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     expA: 'حداقل امید ریاضی خارج از نمونه برای A (R)', tA: 'حداقل t برای A', tB: 'حداقل t برای B', foldA: 'سهم بلوک‌های سودده برای A', foldB: 'سهم بلوک‌های سودده برای B', decay: 'حداقل نسبت امید ریاضی خارج به درون نمونه برای A', maxAge: 'حداکثر فاصلهٔ اعتبارسنجی با داده (روز)' };
   function runVal(ctx, btn) {
     var S = ctx.S, E = ensure(S); if (btn) { btn.disabled = true; btn.textContent = 'در حال اعتبارسنجی (چند ثانیه تا دقیقه)…'; }
+    // the attempt is written down before it starts: if the phone closes the page mid-way (memory), the next visit says so instead of silently showing "not run"
+    S.valRun = { at: Date.now(), st: 'running' }; try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ }
     setTimeout(function () {
-      try { var r = TE.validate(E, undefined, S.j || []); BT = r.bt; BTkey = btKey(E); S._sampleBT = r.sample; try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ }
-        U.toast(E.val.db ? 'اعتبارسنجی نسخهٔ ' + fa(E.val.db.ver, 0) + ' ثبت شد (' + fa(E.val.db.nTrades, 0) + ' معاملهٔ شبیه‌سازی‌شده).' : 'داده‌ای برای اعتبارسنجی نبود.', E.val.db ? 'good' : 'warn'); }
-      catch (e) { U.toast('اعتبارسنجی ناموفق: ' + e.message, 'crit'); }
+      var t0 = Date.now();
+      try { var r = TE.validate(E, undefined, S.j || []); BT = r.bt; BTkey = btKey(E); S._sampleBT = r.sample;
+        S.valRun = E.val.db ? { at: Date.now(), st: 'ok', ms: Date.now() - t0, ver: E.val.db.ver } : { at: Date.now(), st: 'nodata', msg: r.sample ? 'همهٔ داده‌ها نمونه‌اند (دادهٔ واقعی دریافت نشده)' : 'هیچ دارایی با تاریخچهٔ کافی پیدا نشد' };
+        U.toast(E.val.db ? 'اعتبارسنجی نسخهٔ ' + fa(E.val.db.ver, 0) + ' ثبت شد (' + fa(E.val.db.nTrades, 0) + ' معاملهٔ شبیه‌سازی‌شده، ' + fa((Date.now() - t0) / 1000, 0) + ' ثانیه).' : 'اعتبارسنجی اجرا شد اما نتیجه‌ای ثبت نشد: ' + S.valRun.msg, E.val.db ? 'good' : 'warn'); }
+      catch (e) { S.valRun = { at: Date.now(), st: 'err', msg: String(e && e.message || e) }; U.toast('اعتبارسنجی ناموفق: ' + S.valRun.msg, 'crit'); }
+      try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ }
       ctx.rerender();
     }, 30);
   }
@@ -25449,7 +25463,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function todayPanel(ctx, X, E) {
     var conf = X.cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.cls !== 'option'; }), xg = (X.markets && X.markets.xtop) || [], st = X.valState, body = [];
     var bySt = conf.filter(function (c) { return c.cls === 'stock' || c.cls === 'fund'; });
-    var head = st !== 'ok' ? (st === 'none' ? 'هنوز اعتبارسنجی اجرا نشده؛ تا آن زمان هیچ خریدی تأییدشده نیست.' : st === 'stale' ? 'تنظیمات بعد از آخرین اعتبارسنجی عوض شده؛ دوباره اعتبارسنجی کنید.' : 'اعتبارسنجی روی دادهٔ نمونه است و اعتبار ندارد.')
+    var VR = ctx.S && ctx.S.valRun, vrNote = st === 'none' && VR ? (VR.st === 'running' ? 'اعتبارسنجی قبلی (' + new Date(VR.at).toLocaleTimeString('fa-IR') + ') نیمه‌کاره ماند؛ احتمالاً مرورگر گوشی صفحه را به‌خاطر کمبود حافظه دوباره بارگذاری کرده است. برنامه‌های دیگر را ببندید و دوباره «اجرای اعتبارسنجی» را بزنید؛ اگر باز تکرار شد، این پیام را برای بررسی بفرستید.' : VR.st === 'err' ? 'آخرین اعتبارسنجی با خطا متوقف شد: ' + VR.msg : VR.st === 'nodata' ? 'آخرین اعتبارسنجی اجرا شد اما نتیجه‌ای ثبت نشد: ' + VR.msg : '') : '';
+    var head = st !== 'ok' ? (st === 'none' ? 'هنوز اعتبارسنجی اجرا نشده؛ تا آن زمان هیچ خریدی تأییدشده نیست.' + (vrNote ? ' ' + vrNote : '') : st === 'stale' ? 'تنظیمات بعد از آخرین اعتبارسنجی عوض شده؛ دوباره اعتبارسنجی کنید.' : 'اعتبارسنجی روی دادهٔ نمونه است و اعتبار ندارد.')
       : conf.length || xg.length ? 'امروز ' + fa(conf.length + xg.length, 0) + ' خرید تأییدشده: ' + conf.slice(0, 6).map(function (c) { return c.sym + ' (' + c.val.grade + ')'; }).concat(xg.map(function (o) { return o.name + ' (' + o.grade + ')'; })).join('، ') + (conf.length > 6 ? ' و…' : '') + '.'
       : 'امروز هیچ خرید تأییدشده‌ای نیست (عدم صدور سیگنال).';
     body.push(h('p', { class: 'today-head', text: head }));
@@ -25877,11 +25892,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611131707) */
+/* PWA: offline cache + app updates (version 202611131920) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611131707';
+  window.HUB_APP_VERSION = '202611131920';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
