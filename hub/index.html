@@ -4276,6 +4276,160 @@ else if (typeof exports === 'object')
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.jalali;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+/* js/core/xlsxlite.js */
+/* =====================================================================
+ * XLSX LITE — values-only Excel reader for financial statements.
+ *
+ * Why: ExcelJS builds a full object model (every cell with its style,
+ * border, font) of the whole workbook before anything can be read.
+ * Measured on Safari's engine (JavaScriptCore): a 1.9 MB statement file
+ * took +182 MB and an 8.4 MB file +715 MB, which is what closed the page
+ * on phones ("Out of Memory").
+ *
+ * This reader opens the .xlsx zip directly, decompresses one part at a time
+ * (DecompressionStream in the browser, zlib in Node), reads only cell values
+ * (shared strings, numbers, cached formula results, dates via the number
+ * format) and handles one sheet at a time, so the memory held is about one
+ * sheet's XML text plus the values.
+ *
+ *   read(arrayBuffer, opts) -> Promise<{ sheets:[{ name, state, grid, stats }], date1904 }>
+ *   sha256(arrayBuffer)     -> Promise<hex>   (file identity for the cache)
+ *
+ * stats per sheet: rows, cols, cells, nums, texts, errors[addr], noCache[addr]
+ * (formula cells with no stored result: the file was saved without
+ * calculation, so the value is NOT taken as zero; it is reported).
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+
+  function u16(b, o) { return b[o] | (b[o + 1] << 8); }
+  function u32(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16)) + b[o + 3] * 16777216; }
+  var dec = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null;
+  function utf8(bytes) { if (dec) return dec.decode(bytes); return Buffer.from(bytes).toString('utf8'); }
+
+  // central directory of the zip: name -> { method, comp, size, data offset }
+  function directory(b) {
+    var e = -1; for (var i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (b[i] === 0x50 && b[i + 1] === 0x4b && b[i + 2] === 5 && b[i + 3] === 6) { e = i; break; }
+    if (e < 0) throw new Error('The file is not a valid .xlsx (zip directory not found).');
+    var n = u16(b, e + 10), off = u32(b, e + 16), out = {};
+    if (off === 0xffffffff || n === 0xffff) throw new Error('ZIP64 workbooks (over 4 GB or 65k parts) are not supported.');
+    for (var k = 0; k < n; k++) {
+      if (u32(b, off) !== 0x02014b50) throw new Error('Corrupt zip directory.');
+      var method = u16(b, off + 10), comp = u32(b, off + 20), size = u32(b, off + 24), nl = u16(b, off + 28), xl = u16(b, off + 30), cl = u16(b, off + 32), lo = u32(b, off + 42);
+      var name = utf8(b.subarray(off + 46, off + 46 + nl)), data = lo + 30 + u16(b, lo + 26) + u16(b, lo + 28);
+      out[name] = { method: method, comp: comp, size: size, at: data }; off += 46 + nl + xl + cl;
+    }
+    return out;
+  }
+  function inflate(bytes) {
+    if (typeof DecompressionStream !== 'undefined') {
+      var ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Response(ds).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+    }
+    if (typeof require === 'function') { var z = require('zlib'); return Promise.resolve(new Uint8Array(z.inflateRawSync(Buffer.from(bytes)))); }
+    return Promise.reject(new Error('This browser cannot decompress .xlsx files (DecompressionStream missing). Update the browser, or paste the rows.'));
+  }
+  function part(b, dir, name) {
+    var e = dir[name]; if (!e) return Promise.resolve(null);
+    var raw = b.subarray(e.at, e.at + e.comp);
+    if (e.method === 0) return Promise.resolve(utf8(raw));
+    if (e.method !== 8) return Promise.reject(new Error('Unsupported compression in ' + name + '.'));
+    return inflate(raw).then(utf8);
+  }
+
+  var ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+  function unesc(s) { return s.indexOf('&') < 0 ? s : s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, function (m, g) { return g[0] === '#' ? String.fromCharCode(g[1] === 'x' || g[1] === 'X' ? parseInt(g.slice(2), 16) : +g.slice(1)) : ENT[g.toLowerCase()]; }); }
+  function attrs(s) { var o = {}, re = /([\w:]+)="([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = unesc(m[2]); return o; }
+  // text of an <si> or <is>: all <t> runs, phonetic runs (<rPh>) excluded
+  function runs(x) { x = x.replace(/<rPh\b[\s\S]*?<\/rPh>/g, ''); var o = '', re = /<t\b[^>]*>([\s\S]*?)<\/t>|<t\b[^>]*\/>/g, m; while ((m = re.exec(x))) o += m[1] ? unesc(m[1]) : ''; return o; }
+  function colIdx(ref) { var c = 0; for (var i = 0; i < ref.length; i++) { var ch = ref.charCodeAt(i); if (ch < 65 || ch > 90) break; c = c * 26 + ch - 64; } return c; }
+  function rowOf(ref) { var m = /\d+$/.exec(ref); return m ? +m[0] : 0; }
+
+  // built-in date formats and custom ones whose code has d / m / y outside quotes and brackets
+  var DATE_IDS = { 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 21: 1, 22: 1, 27: 1, 30: 1, 36: 1, 45: 1, 46: 1, 47: 1, 50: 1, 57: 1 };
+  function dateStyles(xml) {
+    if (!xml) return [];
+    var custom = {}, re = /<numFmt\b([^>]*)\/?>/g, m; while ((m = re.exec(xml))) { var a = attrs(m[1]), code = String(a.formatCode || '').replace(/"[^"]*"|\\.|\[[^\]]*\]/g, ''); custom[a.numFmtId] = (/[dy]/i.test(code) || (/m/i.test(code) && !/[0#?]/.test(code))) && !/^general$/i.test(code); }
+    var xfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml), out = [];
+    if (xfs) { var r2 = /<xf\b([^>]*?)(\/>|>)/g; while ((m = r2.exec(xfs[1]))) { var id = +(attrs(m[1]).numFmtId || 0); out.push(!!(DATE_IDS[id] || custom[id])); } }
+    return out;
+  }
+  function serialDate(v, d1904) { var ms = (v - (d1904 ? -1462 : 25569)) * 864e5; var d = new Date(ms); return isFinite(d.getTime()) ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : null; }
+
+  // one sheet's XML -> rows of values (sparse) + statistics
+  function sheetGrid(xml, shared, dstyle, d1904) {
+    var grid = [], st = { rows: 0, cols: 0, cells: 0, nums: 0, texts: 0, errors: [], noCache: [], dates: 0 };
+    var sd = xml.indexOf('<sheetData'), ed = xml.lastIndexOf('</sheetData>'); if (sd < 0) return { grid: grid, stats: st };
+    var body = ed > sd ? xml.slice(sd, ed) : xml.slice(sd);
+    var rre = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, cre = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, rm, cm, lastR = 0;
+    while ((rm = rre.exec(body))) {
+      var ra = attrs(rm[1]), rn = +ra.r || lastR + 1; lastR = rn; if (!rm[2]) continue;
+      var a = null, lastC = 0; cre.lastIndex = 0;
+      while ((cm = cre.exec(rm[2]))) {
+        var ca = attrs(cm[1]), ref = ca.r || '', ci = ref ? colIdx(ref) : lastC + 1; lastC = ci;
+        var inner = cm[2] || '', t = ca.t || 'n', vm = /<v>([\s\S]*?)<\/v>/.exec(inner); if (vm && vm[1] === '' && t !== 'str') vm = null; var hasF = /<f\b/.test(inner), val = null;
+        if (t === 's') { if (vm) { val = shared[+vm[1]]; if (val == null) val = null; } }
+        else if (t === 'inlineStr') { var is = /<is>([\s\S]*?)<\/is>/.exec(inner); val = is ? runs(is[1]) : null; }
+        else if (t === 'str') val = vm ? unesc(vm[1]) : null;
+        else if (t === 'b') val = vm ? vm[1] === '1' : null;
+        else if (t === 'e') { st.errors.push((ref || ('R' + rn + 'C' + ci)) + (vm ? ' ' + vm[1] : '')); val = null; }
+        else if (vm) { var num = +vm[1]; if (isFinite(num)) { val = num; if (ca.s && dstyle[+ca.s]) { var dd = serialDate(num, d1904); if (dd) { val = dd; st.dates++; } } } }
+        if (hasF && !vm && t !== 'inlineStr') st.noCache.push(ref || ('R' + rn + 'C' + ci));
+        if (val === null || val === '') continue;
+        if (!a) { a = []; grid[rn - 1] = a; st.rows++; }
+        a[ci - 1] = val; st.cells++; if (typeof val === 'number') st.nums++; else if (typeof val === 'string') st.texts++;
+        if (ci > st.cols) st.cols = ci;
+      }
+    }
+    for (var i = 0; i < grid.length; i++) if (!grid[i]) grid[i] = [];
+    return { grid: grid, stats: st };
+  }
+
+  function relTarget(t) { t = String(t || ''); if (t[0] === '/') return t.slice(1); return 'xl/' + t.replace(/^\.\//, ''); }
+
+  /* read the workbook; opts.onSheet(sheet, i, n) is called after each sheet (the caller can parse it and drop the grid),
+     opts.yieldMs lets the browser breathe between sheets */
+  function read(ab, opts) {
+    opts = opts || {}; var b = ab instanceof Uint8Array ? ab : new Uint8Array(ab), dir;
+    try { dir = directory(b); } catch (e) { return Promise.reject(e); }
+    var wbx, rels, shared = [], dstyle = [], d1904 = false;
+    return part(b, dir, 'xl/workbook.xml').then(function (x) {
+      if (!x) throw new Error('No workbook part in the file (is it an .xlsx?).'); wbx = x; d1904 = /date1904="(1|true)"/.test(x);
+      return part(b, dir, 'xl/_rels/workbook.xml.rels');
+    }).then(function (x) { rels = x || ''; return part(b, dir, 'xl/sharedStrings.xml'); })
+      .then(function (x) { if (x) { var re = /<si\b[^>]*>([\s\S]*?)<\/si>|<si\b[^>]*\/>/g, m; while ((m = re.exec(x))) shared.push(m[1] ? runs(m[1]) : ''); } return part(b, dir, 'xl/styles.xml'); })
+      .then(function (x) {
+        dstyle = dateStyles(x);
+        var rid = {}, re = /<Relationship\b([^>]*)\/?>/g, m; while ((m = re.exec(rels))) { var a = attrs(m[1]); rid[a.Id] = relTarget(a.Target); }
+        var sheets = [], r2 = /<sheet\b([^>]*)\/?>/g; while ((m = r2.exec(wbx))) { var s = attrs(m[1]); sheets.push({ name: s.name, state: s.state || 'visible', path: rid[s['r:id']] || ('xl/worksheets/sheet' + (sheets.length + 1) + '.xml') }); }
+        var out = { sheets: [], date1904: d1904, nParts: Object.keys(dir).length }, i = 0;
+        function next() {
+          if (i >= sheets.length) return Promise.resolve(out);
+          var S = sheets[i++];
+          return part(b, dir, S.path).then(function (xml) {
+            var g = xml ? sheetGrid(xml, shared, dstyle, d1904) : { grid: [], stats: { rows: 0, cols: 0, cells: 0, nums: 0, texts: 0, errors: [], noCache: [], dates: 0, missing: true } };
+            xml = null; var sh = { name: S.name, state: S.state, grid: g.grid, stats: g.stats };
+            if (opts.onSheet) { opts.onSheet(sh, i - 1, sheets.length); sh.grid = null; }
+            out.sheets.push(sh);
+            return new Promise(function (res) { setTimeout(res, opts.yieldMs || 0); }).then(next);
+          });
+        }
+        return next();
+      });
+  }
+
+  function sha256(ab) {
+    var c = root.crypto && root.crypto.subtle;
+    if (c) return c.digest('SHA-256', ab).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); });
+    if (typeof require === 'function') return Promise.resolve(require('crypto').createHash('sha256').update(Buffer.from(ab)).digest('hex'));
+    return Promise.resolve(null);
+  }
+
+  Hub.xlsxLite = { read: read, sha256: sha256, _sheetGrid: sheetGrid, _dateStyles: dateStyles };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Hub.xlsxLite;
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* js/core/stmtimport.js */
 /* =====================================================================
  * STATEMENT IMPORT — read the user's own Excel file (up to 3 historical
@@ -4438,22 +4592,93 @@ else if (typeof exports === 'object')
   // reverse the year order of a block (when the file had no year header and the guess was wrong)
   function flip(b) { b.rows.forEach(function (r) { r.all.reverse(); }); b.allYears.reverse(); return setWindow(b, b.end); }
 
-  function readFile(file) {
-    if (!root.ExcelJS) return Promise.reject(new Error('Excel library did not load.'));
+  /* categories of supporting information (notes and schedules) found next to the statements; they are kept with the
+     company file and listed in the extraction report, so the financing analysis can show what the file holds */
+  var CATS = [
+    ['facilities', 'تسهیلات و بدهی‌های مالی', /تسهیلات|وام|اوراق (بدهی|مشارکت|صکوک)|بدهی(‌| )?های مالی|borrowings?|loans?|facilit|bonds?/i],
+    ['related', 'اشخاص وابسته', /اشخاص (وابسته|مرتبط)|related part/i],
+    ['projects', 'طرح‌های توسعه و سرمایه‌گذاری', /طرح(‌| )?های? (توسعه|در جریان)|دارایی(‌| )?های در جریان تکمیل|پیش(‌| )?پرداخت(‌| )?های سرمایه(‌| )?ای|capital (work|projects)|construction in progress/i],
+    ['commit', 'تعهدات و بدهی‌های احتمالی', /تعهدات|بدهی(‌| )?های احتمالی|ضمانت|commitments?|contingen|guarantee/i],
+    ['receivables', 'مطالبات', /دریافتنی|مطالبات|receivable/i],
+    ['equity', 'تغییرات حقوق مالکانه', /تغییرات (در )?حقوق مالکانه|changes in equity/i],
+    ['interim', 'اطلاعات میان‌دوره‌ای', /میان(‌| )?دوره|۶ ?ماهه|شش ?ماهه|interim|half.year/i],
+    ['ppe', 'دارایی‌های ثابت', /دارایی(‌| )?های ثابت|property,? plant|ppe/i]
+  ];
+  function catOf(b, head) { var t = norm(b.sheet + ' ' + (head || '') + ' ' + (b.title || '') + ' ' + b.rows.slice(0, 4).map(function (r) { return r.label; }).join(' ')); for (var i = 0; i < CATS.length; i++) if (CATS[i][2].test(t)) return CATS[i][0]; return null; }
+
+  // balance checks on what was read: total assets = equity + liabilities; revenue − cost = gross profit
+  function reconcile(blocks) {
+    var out = [], rows = function (type) { var o = []; blocks.forEach(function (b) { if (b.type === type && !b.hidden) b.rows.forEach(function (r) { o.push({ r: r, years: b.allYears }); }); }); return o; };
+    var find = function (list, re) { for (var i = 0; i < list.length; i++) if (re.test(list[i].r.label)) return list[i]; return null; };
+    var BS = rows('BS'), IS = rows('IS'), tol = function (a, b) { return Math.abs(a - b) <= Math.max(2, Math.abs(a) * 0.001); };
+    var ta = find(BS, /^جمع دارایی ?ها$|^total assets$/i), tle = find(BS, /^جمع (حقوق مالکانه و بدهی ?ها|بدهی ?ها و حقوق مالکانه)$|^total (equity and liabilities|liabilities and equity)$/i);
+    if (ta && tle && ta.r.all.length === tle.r.all.length) ta.r.all.forEach(function (v, k) { out.push({ c: 'ترازنامه ' + (ta.years[k] || ''), ok: tol(v, tle.r.all[k]), t: 'جمع دارایی‌ها ' + v + ' / جمع حقوق مالکانه و بدهی‌ها ' + tle.r.all[k] }); });
+    else out.push({ c: 'ترازنامه', ok: null, t: 'سطر «جمع دارایی‌ها» یا «جمع حقوق مالکانه و بدهی‌ها» با همین نام پیدا نشد؛ کنترل تراز انجام نشد' });
+    var rv = find(IS, /^درآمدهای? عملیاتی$|^فروش( خالص)?$|^revenue$|^sales$/i), cg = find(IS, /^بهای تمام شده/i), gp = find(IS, /^سود( \(زیان\))? ناخالص$|^gross profit$/i);
+    if (rv && cg && gp) rv.r.all.forEach(function (v, k) { var c = cg.r.all[k], g = gp.r.all[k]; if (!v && !g) return; out.push({ c: 'سود ناخالص ' + (rv.years[k] || ''), ok: tol(v - Math.abs(c), g), t: 'درآمد ' + v + ' − بهای تمام‌شده ' + Math.abs(c) + ' = ' + (v - Math.abs(c)) + '؛ در فایل ' + g }); });
+    return out;
+  }
+
+  /* reads the file with the values-only reader (memory ≈ one sheet at a time); a file read before (same SHA-256) comes from the cache.
+     prog(i, n, sheetName) reports progress. The result carries a full extraction report. */
+  var CKEY = 'hub.xlcache.v1';
+  function readFile(file, prog) {
     return file.arrayBuffer().then(function (buf) {
-      var wb = new root.ExcelJS.Workbook();
-      return wb.xlsx.load(buf).then(function () {
-        var out = { blocks: [], unit: null, currency: null, file: file.name };
-        wb.eachSheet(function (ws) {
-          if (ws.state && ws.state !== 'visible') return;
-          var grid = [];
-          ws.eachRow({ includeEmpty: true }, function (row, rn) { var a = []; row.eachCell({ includeEmpty: true }, function (cell, cn) { a[cn - 1] = cell.value; }); grid[rn - 1] = a; });
-          for (var i = 0; i < grid.length; i++) if (!grid[i]) grid[i] = [];
-          var p = parseGrid(grid, ws.name);
+      var L = Hub.xlsxLite, St = Hub.util && Hub.util.store;
+      if (!L) return readFileExcelJS(file, buf);
+      return L.sha256(buf).then(function (hash) {
+        var C = St && hash ? St.get(CKEY, {}) || {} : {}, hit = hash && C[hash];
+        if (hit) { var r0 = JSON.parse(JSON.stringify(hit.r)); r0.file = file.name; r0.report.cached = true; r0.report.file = file.name; return r0; }
+        var t0 = Date.now(), out = { blocks: [], unit: null, currency: null, file: file.name },
+          rep = { file: file.name, size: buf.byteLength, hash: hash, sheets: [], at: new Date().toISOString(), reader: 'xlsx-lite (values only)' };
+        return L.read(buf, { onSheet: function (sh, i, n) {
+          if (prog) prog(i + 1, n, sh.name);
+          var p = parseGrid(sh.grid, sh.name), hid = sh.state !== 'visible', st = sh.stats;
+          var head = sh.grid.slice(0, 5).map(function (r) { return (r || []).filter(function (v) { return typeof v === 'string'; }).join(' '); }).join(' ');
+          p.blocks.forEach(function (b) { b.hidden = hid; if (hid) b.pref = false; b.cat = catOf(b, head); if (!b.cat && b.type === 'skip') b.cat = 'other'; b.head = head.slice(0, 120); });
           out.blocks = out.blocks.concat(p.blocks); out.unit = out.unit || p.unit; out.currency = out.currency || p.currency;
+          var why = p.blocks.length ? '' : !st.cells ? 'برگه خالی است' : !st.nums ? 'عدد ندارد (فقط متن)' : 'ستون سال (مثل ۱۴۰۳ یا 2024) یا سطرهای «عنوان + ارقام» پیدا نشد';
+          rep.sheets.push({ name: sh.name, state: sh.state, rows: st.rows, cols: st.cols, cells: st.cells, nums: st.nums, texts: st.texts, dates: st.dates,
+            errors: st.errors.length, errorAt: st.errors.slice(0, 12), noCache: st.noCache.length, noCacheAt: st.noCache.slice(0, 12),
+            blocks: p.blocks.length, lines: p.blocks.reduce(function (a, b) { return a + b.rows.length; }, 0), types: p.blocks.map(function (b) { return b.type; }),
+            years: p.blocks.length ? p.blocks[0].allYears : [], cats: p.blocks.map(function (b) { return b.cat; }).filter(Boolean), why: why });
+        } }).then(function () {
+          rep.ms = Date.now() - t0; rep.nSheets = rep.sheets.length; rep.nBlocks = out.blocks.length; rep.unit = out.unit; rep.currency = out.currency;
+          rep.rows = rep.sheets.reduce(function (a, s) { return a + s.rows; }, 0); rep.cells = rep.sheets.reduce(function (a, s) { return a + s.cells; }, 0);
+          rep.errors = rep.sheets.reduce(function (a, s) { return a + s.errors; }, 0); rep.noCache = rep.sheets.reduce(function (a, s) { return a + s.noCache; }, 0);
+          rep.unused = rep.sheets.filter(function (s) { return !s.blocks; }).map(function (s) { return { name: s.name, why: s.why, state: s.state }; });
+          var types = {}; out.blocks.forEach(function (b) { if (!b.hidden) types[b.type] = (types[b.type] || 0) + 1; }); rep.types = types;
+          var cats = {}; out.blocks.forEach(function (b) { if (b.cat) cats[b.cat] = (cats[b.cat] || 0) + 1; }); rep.cats = cats;
+          rep.periods = {}; out.blocks.forEach(function (b) { b.allYears.forEach(function (y) { rep.periods[y] = 1; }); }); rep.periods = Object.keys(rep.periods);
+          rep.recon = reconcile(out.blocks);
+          var noCacheUsed = rep.sheets.some(function (s) { return s.noCache && s.blocks; });
+          rep.status = !out.blocks.length ? 'fail' : (!types.IS || !types.BS || noCacheUsed || rep.recon.some(function (x) { return x.ok === false; })) ? 'partial' : 'ok';
+          rep.statusFa = { ok: 'موفق', partial: 'ناقص — موارد زیر را بررسی کنید', fail: 'ناموفق' }[rep.status];
+          out.report = rep;
+          if (St && hash) { try { C[hash] = { at: Date.now(), r: out }; var ks = Object.keys(C).sort(function (a, b) { return C[b].at - C[a].at; }); ks.slice(4).forEach(function (k) { delete C[k]; }); St.set(CKEY, C); } catch (e) { /* cache is optional */ } }
+          return out;
         });
-        return out;
+      }).catch(function (e) {
+        // the values-only reader failed (unusual zip): the full reader is tried only for small files, it needs ≈ 90× the file size in memory
+        if (buf.byteLength < 3e6 && root.ExcelJS) return readFileExcelJS(file, buf).then(function (r) { r.report = { file: file.name, size: buf.byteLength, reader: 'ExcelJS (پشتیبان)', note: 'خواننده سبک خطا داد: ' + e.message, sheets: [], status: 'partial', statusFa: 'ناقص — گزارش کامل کنترل برای این روش در دسترس نیست', recon: reconcile(r.blocks) }; return r; });
+        throw new Error('خواندن فایل ممکن نشد: ' + e.message + (buf.byteLength >= 3e6 ? ' (برای جلوگیری از کمبود حافظه، روش جایگزین سنگین روی فایل‌های بالای ۳ مگابایت اجرا نمی‌شود)' : ''));
       });
+    });
+  }
+  function readFileExcelJS(file, buf) {
+    if (!root.ExcelJS) return Promise.reject(new Error('Excel library did not load.'));
+    var wb = new root.ExcelJS.Workbook();
+    return wb.xlsx.load(buf).then(function () {
+      var out = { blocks: [], unit: null, currency: null, file: file.name };
+      wb.eachSheet(function (ws) {
+        if (ws.state && ws.state !== 'visible') return;
+        var grid = [];
+        ws.eachRow({ includeEmpty: true }, function (row, rn) { var a = []; row.eachCell({ includeEmpty: true }, function (cell, cn) { a[cn - 1] = cell.value; }); grid[rn - 1] = a; });
+        for (var i = 0; i < grid.length; i++) if (!grid[i]) grid[i] = [];
+        var p = parseGrid(grid, ws.name);
+        out.blocks = out.blocks.concat(p.blocks); out.unit = out.unit || p.unit; out.currency = out.currency || p.currency;
+      });
+      return out;
     });
   }
 
@@ -4477,6 +4702,26 @@ else if (typeof exports === 'object')
     return o;
   }
 
+  var CATFA = {}; CATS.forEach(function (c) { CATFA[c[0]] = c[1]; }); CATFA.other = 'سایر جداول';
+  // extraction control report (Persian): file, sheets, rows, errors, formulas without stored values, periods, reconciliation
+  function reportDom(rep) {
+    var U = Hub.util, h = U.h, f = function (v) { return U.fmtNum ? U.fmtNum(v) : String(v); };
+    if (!rep) return h('p', { class: 'muted', text: 'گزارش کنترل استخراج برای این فایل موجود نیست (فایل پیش از این نسخه وارد شده است؛ برای گزارش، دوباره وارد کنید).' });
+    var tbl = function (head, rows) { var t = h('table', { class: 'grid' }); t.appendChild(h('thead', null, [h('tr', null, head.map(function (x) { return h('th', { text: x }); }))])); var b = h('tbody'); rows.forEach(function (r) { b.appendChild(h('tr', null, r.map(function (x) { return h('td', { text: x == null ? '—' : String(x) }); }))); }); t.appendChild(b); return h('div', { class: 'grid-wrap' }, [t]); };
+    var ty = rep.types || {}, cats = rep.cats || {};
+    var sum = [['وضعیت پردازش', rep.statusFa || rep.status], ['فایل', rep.file + ' · ' + f(Math.round((rep.size || 0) / 1024)) + ' KB' + (rep.cached ? ' · از حافظهٔ پنهان (همان فایل قبلاً خوانده شده)' : '')], ['روش خواندن', rep.reader + (rep.ms != null ? ' · ' + f(rep.ms) + ' ms' : '') + (rep.note ? ' · ' + rep.note : '')],
+      ['برگه‌ها (شناسایی / دارای داده‌ی استخراج‌شده)', f(rep.nSheets || 0) + ' / ' + f((rep.sheets || []).filter(function (s) { return s.blocks; }).length)], ['سطرها و سلول‌های دارای مقدار', f(rep.rows || 0) + ' سطر · ' + f(rep.cells || 0) + ' سلول'],
+      ['صورت‌های اصلی پیدا‌شده', 'سود و زیان ' + (ty.IS || 0) + ' · وضعیت مالی ' + (ty.BS || 0) + ' · جریان نقد ' + (ty.CF || 0)],
+      ['جداول تکمیلی (یادداشت‌ها)', Object.keys(cats).map(function (k) { return (CATFA[k] || k) + ' ' + cats[k]; }).join(' · ') || 'پیدا نشد'],
+      ['دوره‌های مالی', (rep.periods || []).join(' · ') || '—'], ['واحد', (rep.unit || 'تشخیص داده نشد') + ' ' + (rep.currency || '')],
+      ['سلول‌های خطادار', f(rep.errors || 0)], ['فرمول‌های بدون مقدار ذخیره‌شده', f(rep.noCache || 0) + (rep.noCache ? ' — فایل بدون محاسبه ذخیره شده؛ این سلول‌ها صفر حساب نمی‌شوند و باید فایل را در Excel باز، محاسبه و دوباره ذخیره کنید' : '')]];
+    var out = [h('h4', { text: 'گزارش کنترل استخراج' }), tbl(['کنترل', 'نتیجه'], sum)];
+    if (rep.recon && rep.recon.length) out.push(h('h4', { text: 'تطبیق جمع‌ها' }), tbl(['کنترل', 'نتیجه', 'جزئیات'], rep.recon.map(function (x) { return [x.c, x.ok === true ? '✓ منطبق' : x.ok === false ? '✗ نامنطبق' : 'انجام نشد', x.t]; })));
+    if (rep.sheets && rep.sheets.length) out.push(h('details', null, [h('summary', { text: 'جزئیات برگه‌به‌برگه (' + rep.sheets.length + ')' }), tbl(['برگه', 'وضعیت', 'سطر', 'ستون', 'عدد / متن', 'بلوک / سطر استخراج', 'نوع', 'خطا', 'فرمول بدون مقدار', 'علت استخراج‌نشدن'],
+      rep.sheets.map(function (s) { return [s.name, s.state === 'visible' ? 'نمایان' : 'پنهان', s.rows, s.cols, s.nums + ' / ' + s.texts, s.blocks + ' / ' + s.lines, s.types.concat(s.cats.map(function (c) { return CATFA[c] || c; })).join('، '), s.errors ? s.errors + ' (' + s.errorAt.join('، ') + ')' : 0, s.noCache ? s.noCache + ' (' + s.noCacheAt.join('، ') + ')' : 0, s.why || '']; }))]));
+    return h('div', { class: 'stack' }, out);
+  }
+
   /* ---------- shared UI: choose a file, review the blocks, apply ----------
    * opts.onApply(blocks, info) receives the included blocks (type set, oldest year first). */
   function widget(opts) {
@@ -4485,6 +4730,7 @@ else if (typeof exports === 'object')
     var file = h('input', { type: 'file', accept: '.xlsx,.xlsm,.pdf', class: 'f-file', 'aria-label': 'Excel file with up to 3 years of statements' });
     var status = h('p', { class: 'muted fetch-status', 'aria-live': 'polite' });
     var list = h('div', { class: 'imp-list' });
+    var repBox = h('div', { class: 'imp-rep' });
     var apply = h('button', { class: 'btn', type: 'button', text: 'Build the model from these lines', disabled: true });
     function paint() {
       list.innerHTML = '';
@@ -4530,10 +4776,10 @@ else if (typeof exports === 'object')
       var f = file.files && file.files[0]; if (!f) return;
       status.textContent = T('Reading ', 'در حال خواندن ') + f.name + '…'; status.classList.remove('err'); apply.disabled = true;
       var isPdf = /\.pdf$/i.test(f.name) || f.type === 'application/pdf';
-      (isPdf ? (Hub.pdfread ? Hub.pdfread.readStatements(f, function (m) { status.textContent = m; }) : Promise.reject(new Error('PDF reader not loaded.'))) : readFile(f)).then(function (r) {
+      (isPdf ? (Hub.pdfread ? Hub.pdfread.readStatements(f, function (m) { status.textContent = m; }) : Promise.reject(new Error('PDF reader not loaded.'))) : readFile(f, function (i, n, nm) { status.textContent = T('Reading sheet ', 'در حال خواندن برگهٔ ') + i + T(' of ', ' از ') + n + ' (' + nm + ')…'; })).then(function (r) {
         var anyTitled = r.blocks.some(function (b) { return b.titled && b.type !== 'skip'; });
         r.blocks.forEach(function (b) { b.use = b.type !== 'skip' && (!anyTitled || b.titled) && b.pref !== false; });
-        info = r; paint(); apply.disabled = !r.blocks.length;
+        info = r; paint(); apply.disabled = !r.blocks.length; repBox.innerHTML = ''; if (r.report) repBox.appendChild(reportDom(r.report));
         status.textContent = r.blocks.length ? T(r.blocks.length + ' blocks found in ' + f.name + (r.unit ? ' · unit: ' + r.unit + ' ' + (r.currency || '') : '') + '. Tick the statements to use, check the type and the year order, then build.',
           r.blocks.length + ' بلوک در ' + f.name + ' پیدا شد' + (r.unit ? ' · واحد: ' + r.unit + ' ' + (r.currency || '') : '') + '. صورت‌های موردنظر را تیک بزنید، نوع و ترتیب سال‌ها را بررسی کنید و مدل را بسازید.')
           : T('No statement lines found. Each line needs a label and up to 3 yearly figures.', 'سطری پیدا نشد. هر سطر به یک عنوان و حداکثر ۳ رقم سالانه نیاز دارد.');
@@ -4561,7 +4807,7 @@ else if (typeof exports === 'object')
       h('p', { class: 'muted', text: opts.help || 'Choose your Excel file (.xlsx) or PDF with up to 3 years of statements: one sheet per statement or all on one sheet. Every line is read with its own name; Persian digits, (negatives) and formulas are handled. If the file also has forecast years, pick the last actual year. Excel files never leave your browser. A PDF is read by Claude when Claude is connected (inside the claude.ai artifact or with your API key); otherwise it is read on this device — from the text layer, or with offline OCR for scanned PDFs (slower; check the figures).' }),
       h('div', { class: 'row-ctl' }, [file, unitSel, curIn, apply]),
       h('details', { class: 'imp-paste' }, [h('summary', { text: 'Or paste rows copied from Excel / Codal' }), ta, h('div', { class: 'row-ctl' }, [pasteBtn])]),
-      status, list]);
+      status, list, repBox]);
   }
 
   // Iranian companies: shares = paid-in capital ÷ 1,000 rials nominal per share (only when the unit and currency are known)
@@ -4575,7 +4821,7 @@ else if (typeof exports === 'object')
     return cap > 0 ? cap * UNITV[unit] / 1000 / 1e6 : null;
   }
 
-  Hub.stmtImport = { widget: widget, sharesFromCapital: sharesFromCapital, setWindow: setWindow, parseGrid: parseGrid, readFile: readFile, toNum: toNum, yearOf: yearOf, flip: flip, pickCF: pickCF, guessType: guessType };
+  Hub.stmtImport = { reportDom: reportDom, CATFA: CATFA, reconcile: reconcile, CATS: CATS, widget: widget, sharesFromCapital: sharesFromCapital, setWindow: setWindow, parseGrid: parseGrid, readFile: readFile, toNum: toNum, yearOf: yearOf, flip: flip, pickCF: pickCF, guessType: guessType };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.stmtImport;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -4783,11 +5029,17 @@ else if (typeof exports === 'object')
   var Hub = root.Hub = root.Hub || {};
   var KEY = 'hub.companyData.v1';
   var UNIT = { units: 1, thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12 };
-  function get() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
+  var NKEY = 'hub.companyNotes.v1', MEM = null;
+  function get() { try { return JSON.parse(localStorage.getItem(KEY)) || MEM; } catch (e) { return MEM; } }
+  function notes() { var St = Hub.util && Hub.util.store, r = St ? St.get(NKEY, null) : null, c = get(); return r && c && r.file === c.file ? r : null; }
   function save(blocks, info) {
     var rec = { file: info.file || 'pasted data', savedAt: new Date().toISOString().slice(0, 10), unit: info.unit || null, currency: info.currency || null, sharesMn: info.sharesMn || null,
       company: info.company || '', blocks: blocks.map(function (b) { return { type: b.type, title: b.title, sheet: b.sheet, years: b.years, rows: b.rows.map(function (r) { return { label: r.label, grp: r.grp, vals: r.vals }; }) }; }) };
-    try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch (e) { /* storage full or blocked */ }
+    try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch (e) { rec.saveErr = 'ذخیره در حافظهٔ مرورگر ممکن نشد (' + e.name + ')؛ داده فقط تا بستن صفحه در دسترس است.'; MEM = rec; if (Hub.util && Hub.util.toast) Hub.util.toast(rec.saveErr, 'warn'); }
+    // supporting schedules (notes: facilities, related parties, projects …) and the extraction report: kept in the larger store, compacted
+    try { var St = Hub.util && Hub.util.store; if (St) { var nb = (info.blocks || []).filter(function (b) { return b.cat && b.cat !== 'other' && !b.hidden; }), cap = 4000, used = 0;
+      var notes = nb.map(function (b) { var rows = b.rows.slice(0, Math.max(0, Math.min(300, cap - used))); used += rows.length; return { cat: b.cat, sheet: b.sheet, title: b.title, head: b.head || '', years: b.allYears, n: b.rows.length, rows: rows.map(function (r) { return { label: r.label, all: r.all }; }) }; });
+      St.set(NKEY, { file: rec.file, at: rec.savedAt, notes: notes, cut: nb.reduce(function (a, b) { return a + b.rows.length; }, 0) - used, report: info.report || null }); } } catch (e) { /* optional */ }
     document.dispatchEvent(new CustomEvent('hub:companydata'));
     return rec;
   }
@@ -4854,7 +5106,7 @@ else if (typeof exports === 'object')
         box.appendChild(h('p', { class: 'muted cd-sum', text: T('Last year ', 'آخرین سال ') + M.years[M.years.length - 1] + ': ' + T('revenue ', 'درآمد ') + f(M.revenue) + ' · EBITDA ' + f(M.ebitda) + ' · ' + T('net income ', 'سود خالص ') + f(M.ni) + ' · ' + T('net debt ', 'بدهی خالص ') + f(M.netDebt) + ' · ' + T('growth ', 'رشد ') + p(M.growth) + ' · EBITDA ' + p(M.ebitdaMargin) + (M.sharesMn ? ' · ' + T('shares ', 'سهام ') + f(M.sharesMn) + ' mn' : '') }));
       }
       if (open && Hub.stmtImport) box.appendChild(Hub.stmtImport.widget({ onApply: function (blocks, info) {
-        var r = save(blocks, info); open = false; paint();
+        var r = save(blocks, info); open = false; paint(); if (r.saveErr) box.appendChild(h('p', { class: 'warn-t', text: r.saveErr }));
         if (opts.full) opts.full(r); else useIt(get());
       } }));
     }
@@ -4902,7 +5154,7 @@ else if (typeof exports === 'object')
     return o;
   }
 
-  Hub.companyData = { get: get, save: save, clear: clear, metrics: metrics, inUnit: inUnit, bar: bar, series: series };
+  Hub.companyData = { notes: notes, get: get, save: save, clear: clear, metrics: metrics, inUnit: inUnit, bar: bar, series: series };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/ai.js */
@@ -18657,7 +18909,27 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         h('div', { class: 'row-ctl' }, [preset, apply])]),
       ctx.panel('سه اولویت اول', top.length ? [h('div', { class: 'pulse-grid' }, top)] : [h('p', { class: 'small', 'data-notr': '1', text: 'گزینه‌ای از غربال عبور نکرد.' })]),
       ctx.panel('گزارش کامل (ساختار هشت‌بخشی)', [Hub.report.buttons(function () { return blocks(r); }, 'financing-report'), Hub.report.dom(blocks(r))]),
-      casePanel(ctx, S, M, r, F), learnPanel(ctx, S, r, F)]);
+      filePanel(ctx), casePanel(ctx, S, M, r, F), learnPanel(ctx, S, r, F)]);
+  }
+
+  /* what was extracted from the company's Excel file and where it is used: main statements feed the diagnosis and every
+     engine (through the company series); supporting schedules are listed for review (not yet used in calculations) */
+  function filePanel(ctx) {
+    var CD = Hub.companyData, SI = Hub.stmtImport, rec = CD && CD.get(), N = CD && CD.notes ? CD.notes() : null, kids = [];
+    if (!rec) return ctx.panel('دادهٔ استخراج‌شده از فایل شرکت', [h('p', { class: 'small', 'data-notr': '1', text: 'هنوز فایلی وارد نشده است. صورت‌های مالی را از نوار «Company data» بالای همین ابزار وارد کنید (Excel یا PDF)؛ پس از ورود، گزارش کنترل استخراج و جداول تکمیلی اینجا نشان داده می‌شود.' })]);
+    var used = rec.blocks.map(function (b) { return ({ IS: 'سود و زیان', BS: 'وضعیت مالی', CF: 'جریان نقد' })[b.type] + ' (' + b.rows.length + ' سطر، ' + b.years.join('، ') + ')'; }).join(' · ');
+    kids.push(h('p', { class: 'small', 'data-notr': '1', text: 'فایل: ' + rec.file + ' · ' + (rec.unit || '') + ' ' + (rec.currency || '') + '. صورت‌های به‌کاررفته در محاسبات (تشخیص، ظرفیت بدهی، جریان نقد، شرایط احراز اوراق و موتور راهکار): ' + used + '.' }));
+    if (rec.saveErr) kids.push(h('p', { class: 'warn-t', 'data-notr': '1', text: rec.saveErr }));
+    kids.push(SI && SI.reportDom ? SI.reportDom(N && N.report) : h('p', { text: '—' }));
+    if (N && N.notes && N.notes.length) {
+      var byCat = {}; N.notes.forEach(function (b) { (byCat[b.cat] = byCat[b.cat] || []).push(b); });
+      kids.push(h('h4', { 'data-notr': '1', text: 'جداول تکمیلی استخراج‌شده (یادداشت‌ها)' }), h('p', { class: 'small muted', 'data-notr': '1', text: 'این جداول برای بررسی شما نمایش داده و در Excel خروجی گرفته می‌شوند؛ در محاسبات خودکار موتور تأمین مالی هنوز استفاده نمی‌شوند (ارقام تسهیلات و بدهی در محاسبه از صورت وضعیت مالی می‌آیند).' + (N.cut > 0 ? ' برای حجم حافظه، ' + fa(N.cut) + ' سطر از جداول بزرگ ذخیره نشد (در گزارش برگه‌ها شمارش شده‌اند).' : '') }));
+      Object.keys(byCat).forEach(function (c) { kids.push(h('details', null, [h('summary', { 'data-notr': '1', text: (SI.CATFA[c] || c) + ' — ' + byCat[c].length + ' جدول' }),
+        h('div', null, byCat[c].slice(0, 12).map(function (b) { var t = h('table', { class: 'grid' }); t.appendChild(h('thead', null, [h('tr', null, ['شرح'].concat(b.years).map(function (x) { return h('th', { 'data-notr': '1', text: x }); }))]));
+          var tb = h('tbody'); b.rows.slice(0, 40).forEach(function (r) { tb.appendChild(h('tr', null, [h('td', { 'data-notr': '1', text: r.label })].concat(r.all.map(function (v) { return h('td', { text: Hub.util.fmtNum ? Hub.util.fmtNum(v) : String(v) }); })))); });
+          t.appendChild(tb); return h('div', null, [h('p', { class: 'small', 'data-notr': '1', text: b.sheet + (b.head ? ' — ' + b.head.slice(0, 80) : '') + ' (' + b.n + ' سطر' + (b.n > 40 ? '؛ ۴۰ سطر اول' : '') + ')' }), h('div', { class: 'grid-wrap' }, [t])]); }))])); });
+    }
+    return ctx.panel('دادهٔ استخراج‌شده از فایل شرکت', kids);
   }
 
   function casePanel(ctx, S, M, r, F) {
@@ -25953,11 +26225,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611141903) */
+/* PWA: offline cache + app updates (version 202611141913) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611141903';
+  window.HUB_APP_VERSION = '202611141913';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
