@@ -22031,7 +22031,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   /* full per-bar model votes for one asset (back-test window), built from its light analysis on demand and dropped after use:
      the back-test walks the assets one at a time, so a phone holds one asset's votes at a time instead of all 80 (the page used to run out of memory) */
   function fullOf(z) {
-    var R = z.R, X = R.X, I = R.I, n = X.n, t0 = Math.max(25, n - BTWIN), V = Object.assign({}, R.V);
+    var R = z.R, X = R.X, I = R.I, n = X.n, t0 = Math.max(25, n - BTWIN), V = Object.assign({}, z.Vs || R.V);
     Object.keys(VOTE).forEach(function (m) { V[m] = new Array(n).fill(null); });
     for (var t = t0; t < n; t++) { var keepWhy = t >= n - TAIL, rg = R.RG[t]; Object.keys(VOTE).forEach(function (m) { try { var o = VOTE[m](X, I, t, rg, R.A); if (o && !keepWhy) o.why = ''; V[m][t] = o; } catch (e) { V[m][t] = null; } }); }
     var LV = Hub.longView; V.channel = new Array(n).fill(null); V.wdiv = new Array(n).fill(null);
@@ -22065,10 +22065,18 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var info = X.d.map(function (d) { var g = String(d), jd = J.g2d(+g.slice(0, 4), +g.slice(4, 6), +g.slice(6, 8)); return { m: J.d2j(jd).jm, w: J.dow(jd) }; });
       for (var t = full ? 200 : Math.max(200, X.n - TAIL); t < X.n; t++) { var nx = info[Math.min(t + 1, X.n - 1)], rm = [], rw = []; for (var i = 1; i <= t; i++) { var r = X.c[i] / X.c[i - 1] - 1; if (info[i].m === nx.m) rm.push(r); if (info[i].w === nx.w) rw.push(r); }
         var ts = function (a) { var s = sd(a); return a.length > 8 && s > 0 ? mean(a) / (s / Math.sqrt(a.length)) : 0; }, tm = ts(rm), tw = ts(rw), v = (Math.abs(tm) >= 2 ? sgn(tm) * 0.5 : 0) + (Math.abs(tw) >= 2 ? sgn(tw) * 0.5 : 0);
-        z.R.V.temporal[t] = { v: v, why: 'اثر ماه شمسی t=' + fa(tm, 1) + '، اثر روز هفته t=' + fa(tw, 1) + (v ? '' : ' — معنادار نیست') }; } });
+        z.R.V.temporal[t] = { v: v, why: t < X.n - TAIL ? '' : 'اثر ماه شمسی t=' + fa(tm, 1) + '، اثر روز هفته t=' + fa(tw, 1) + (v ? '' : ' — معنادار نیست') }; } });
   }
   // walk-forward logistic regression ranking (stocks); active only if out-of-sample AUC ≥ 0.55
-  function mlRank(list) {
+  /* mlRank (a logistic model trained on every stock and day) and pairs depend only on the price data; they were refitted on every
+     screen refresh and twice per validation. Same data → reuse the last result (and the per-bar ML votes it wrote). */
+  var MEMO = {};
+  function dataSig(list) { return list.map(function (z) { var X = z.R.X; return z.a.key + ':' + X.n + ':' + X.d[X.n - 1] + ':' + X.c[X.n - 1]; }).join('|'); }
+  function mlRank(list) { var sg = dataSig(list), m = MEMO.ml;
+    if (m && m.sig === sg) { list.forEach(function (z) { if (m.v[z.a.key]) z.R.V.mlrank = m.v[z.a.key]; }); return m.r; }
+    var r = mlRank0(list), v = {}; list.forEach(function (z) { if (z.R.V.mlrank) v[z.a.key] = z.R.V.mlrank; }); MEMO.ml = { sig: sg, r: r, v: v }; return r; }
+  function pairs(list) { var sg = dataSig(list); if (MEMO.pr && MEMO.pr.sig === sg) return MEMO.pr.r; var r = pairs0(list); MEMO.pr = { sig: sg, r: r }; return r; }
+  function mlRank0(list) {
     var st = list.filter(function (z) { return z.a.cls === 'stock' || z.a.cls === 'fund'; }), S = [];
     var feat = function (z, t) { var X = z.R.X, I = z.R.I, c = X.c; if (t < 65 || !isF(I.adx[t]) || !isF(I.vol20[t])) return null; var F = z.R.A.flowAt ? z.R.A.flowAt(t) : null;
       return [c[t] / c[t - 20] - 1, c[t] / c[t - 60] - 1, I.rsi[t] / 100 - 0.5, c[t] / I.s50[t] - 1, I.vol20[t], F ? F.r5 : 0, I.adx[t] / 50, (c[t] - I.bbL[t]) / (I.bbU[t] - I.bbL[t]) - 0.5].map(function (x) { return isF(x) ? x : 0; }); };
@@ -22097,7 +22105,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { active: active, auc: A1, hit: hit, nTrain: train.length, nTest: test.length, split: split, why: active ? 'فعال: AUC خارج از نمونه ' + fa(A1, 2) + '، دقت ' + pct(hit, 0) : 'غیرفعال: AUC خارج از نمونه ' + fa(A1, 2) + ' کمتر از ۰٫۵۵ (قدرت پیش‌بینی کافی نیست)' };
   }
   // pairs inside a sector: z-score of the log price ratio (hedge ratio by OLS), latest bar only
-  function pairs(list) {
+  function pairs0(list) {
     var out = [], by = {}; list.filter(function (z) { return z.a.cls === 'stock' || z.a.cls === 'fund' || z.a.cls === 'gold'; }).forEach(function (z) { var k = z.a.cls === 'gold' ? 'طلا' : z.a.sector; (by[k] = by[k] || []).push(z); });
     Object.keys(by).forEach(function (sec) { var g = by[sec]; for (var i = 0; i < g.length; i++) for (var j = i + 1; j < g.length; j++) {
       var A = g[i].R.X, B = g[j].R.X, bm = {}; B.d.forEach(function (d, k) { bm[d] = B.c[k]; }); var x = [], y = [];
@@ -22492,13 +22500,27 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return out;
   }
 
-  function backtest(list, E) {
-    var all = [], dset = []; list.forEach(function (z) { dset = dset.concat(z.R.X.d); }); dset.sort(function (a, b) { return a - b; }); var split = dset[Math.floor(dset.length * 0.6)];
-    var per = {}, rules = {};
-    list.forEach(function (z0) { if (z0.a.cls === 'option') return; var z = z0.R.full ? z0 : fullOf(z0);
+  function btSplit(list) { var dset = []; list.forEach(function (z) { dset = dset.concat(z.R.X.d); }); dset.sort(function (a, b) { return a - b; }); return dset[Math.floor(dset.length * 0.6)]; }
+  // one asset: full per-bar votes are built, simulated and dropped (only the trades are kept)
+  function btAsset(z0, E, all, rules) { if (z0.a.cls === 'option') return all; var z = z0.R.full ? z0 : fullOf(z0);
       var tr = simTrades(z, E, function (t) { if (t < 60) return null; var en = ensemble(z, t, E, {}), conf = confidence(en, t + 1, 0); if (en.S < 0.2 || conf < E.minConf || en.rg === 'crisis') return null; var hz = horizonOf(en.votes, en.S), vv = {}; en.votes.forEach(function (x) { if (x.v) vv[x.m] = Math.round(x.v * 100) / 100; }); return { conf: conf, days: hz.days, hz: hz.k, rg: en.rg, v: vv, agree: en.agree }; }, 60);
       tr.forEach(function (x) { x.asset = z.a.sym; x.cls = z.a.cls; }); all = all.concat(tr);
-      Object.keys(BASEW).forEach(function (m) { if (!z.R.V[m]) return; var rt = simTrades(z, E, function (t) { var o = z.R.V[m][t]; return o && o.v >= 0.5 ? { conf: 0, days: 20, hz: 'm' } : null; }, 60); rt.forEach(function (x) { x.asset = z.a.sym; }); (rules[m] = rules[m] || []).push.apply(rules[m], rt); }); });
+      Object.keys(BASEW).forEach(function (m) { if (!z.R.V[m]) return; var rt = simTrades(z, E, function (t) { var o = z.R.V[m][t]; return o && o.v >= 0.5 ? { conf: 0, days: 20, hz: 'm' } : null; }, 60); rt.forEach(function (x) { x.asset = z.a.sym; }); (rules[m] = rules[m] || []).push.apply(rules[m], rt); }); return all; }
+  function backtest(list, E) {
+    var split = btSplit(list), all = [], rules = {};
+    list.forEach(function (z0) { all = btAsset(z0, E, all, rules); });
+    return btFinish(list, E, split, all, rules);
+  }
+  /* the same back-test without freezing the page: one asset per step, the browser gets control back between steps
+     (a phone's browser closes a page that holds the main thread or too much memory for too long) */
+  function backtestAsync(list, E, prog) {
+    var split = btSplit(list), all = [], rules = {}, i = 0, N = list.length;
+    return new Promise(function (res, rej) {
+      (function step() { try { var t0 = Date.now(); while (i < N && Date.now() - t0 < 120) { all = btAsset(list[i], E, all, rules); i++; }
+        if (prog) prog(i, N); if (i < N) return setTimeout(step, 0); setTimeout(function () { try { res(btFinish(list, E, split, all, rules)); } catch (e) { rej(e); } }, 0); } catch (e) { rej(e); } })();
+    });
+  }
+  function btFinish(list, E, split, all, rules) {
     var audit = lookahead(list);
     var strat = {}; Object.keys(STRATS).forEach(function (k) { var h = STRATS[k].h; stratTrades(list, E, k, STRATS[k].p[0]).forEach(function (x) { var key = x.cls + '|' + h, o = (strat[key] = strat[key] || {}); (o[k] = o[k] || []).push(x); }); });
     all.forEach(function (x) { var key = x.cls + '|' + (x.hk || 'm'), o = (strat[key] = strat[key] || {}); (o.ens = o.ens || []).push(x); });
@@ -22517,7 +22539,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
    * A card gets grade A–D from explicit, adjustable thresholds (VTH). C and D entry signals are NOT issued ("no signal").
    * Protective exits (stop, invalidation, close advice) are graded but never suppressed.
    * The evidence is stored (Strategy & Signal Database) and expires when weights, costs, thresholds or the engine change. */
-  var ENG_VER = '2026.11-val3';
+  var ENG_VER = '2026.11-val4';
   var VTH = { costX: 2, nA: 60, nB: 30, nC: 15, oosA: 20, oosB: 10, pfA: 1.3, pfB: 1.1, expA: 0.1, tA: 2, tB: 1, foldA: 0.75, foldB: 0.5, decay: 0.5, maxAge: 30 };
   var VLIM = [
     'بک‌تست فقط هستهٔ تاریخی‌پذیر موتور را می‌آزماید (مدل‌های قیمت، حجم و جریان پول حقیقی). امتیاز کاربرگ سهام/طلا/ارز، خبر، جفت‌ها و رتبه‌بندی مقطعی در تاریخچه ذخیره نشده‌اند و در بک‌تست نیستند.',
@@ -22678,6 +22700,22 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     V.selHist = V.selHist.slice(-200);
   }
   // full validation run on the stored data: updates E0.val (database + registry) in place
+  /* full validation without freezing or exhausting a phone's browser:
+     1) each asset's analysis built in short slices; 2) cross-sectional models; 3) back-test one asset per slice; 4) database.
+     opt.lite: models back-tested on the last 760 sessions only (fallback after a run that did not finish; the long horizon then lacks data and says so).
+     prog(i, n, phase) reports progress so the caller can checkpoint it. */
+  function validateAsync(E0, U0, J, prog, opt) {
+    var E = merge(defaults(), JSON.parse(JSON.stringify(E0 || {}))), U = U0 || universe(E), lite = !!(opt && opt.lite);
+    if (lite) U = Object.assign({}, U, { assets: (U.assets || []).map(function (a) { return a.rows && a.rows.length > BTWIN ? Object.assign({}, a, { rows: a.rows.slice(-BTWIN) }) : a; }) });
+    var A = (U.assets || []).filter(function (a) { return a.rows && a.rows.length >= 30; }), k = 0, tick = function (f) { return new Promise(function (res, rej) { setTimeout(function () { try { res(f()); } catch (e) { rej(e); } }, 0); }); };
+    var slices = function () { return new Promise(function (res, rej) { (function step() { try { var t0 = Date.now(); while (k < A.length && Date.now() - t0 < 120) { try { analyse(A[k], false); } catch (e) { /* skipped later as in run() */ } k++; }
+      if (prog) prog(k, A.length, 'prep'); if (k < A.length) return setTimeout(step, 0); res(); } catch (e) { rej(e); } })(); }); };
+    return slices().then(function () { if (prog) prog(0, 0, 'cross'); return tick(function () { return run(E0, U, { prep: true }); }); })
+      .then(function (P) { return backtestAsync(P.blist, P.E, prog ? function (i, n) { prog(i, n, 'bt'); } : null); })
+      .then(function (bt) { if (prog) prog(0, 0, 'db'); return tick(function () {
+        var r = run(E0, U, { bt: bt }), db = r.valDb; Object.keys(CACHE).forEach(function (q) { if (/\|F$/.test(q)) delete CACHE[q]; });
+        if (db) { db.lite = lite; var V = E0.val = E0.val || {}; V.db = db; registry(V, db, J, r.E); } r.lite = lite; return r; }); });
+  }
   function validate(E0, U0, J) {
     var r = run(E0, U0, { backtest: true }), db = r.valDb;
     // the full per-bar analyses are only needed during the back-test; free them (the live run rebuilds the small version)
@@ -23363,7 +23401,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function merge(d, e) { Object.keys(e || {}).forEach(function (k) { if (d[k] && typeof d[k] === 'object' && !Array.isArray(d[k]) && e[k] && typeof e[k] === 'object' && !Array.isArray(e[k])) d[k] = merge(d[k], e[k]); else d[k] = e[k]; }); return d; }
   function run(E0, U0, opts) {
     var E = merge(defaults(), JSON.parse(JSON.stringify(E0 || {}))), U = U0 || universe(E), list = [];
-    var full = !!(opts && opts.backtest);
+    var full = !!(opts && (opts.backtest || opts.prep));
     (U.assets || []).forEach(function (a) { if (!a.rows || a.rows.length < 30) return; try { list.push({ a: a, R: analyse(a, false) }); } catch (e) { /* skip bad series */ } });
     crossModels(list, U, E, full); var ml = mlRank(list), pr = pairs(list);
     var zmap = {}; list.forEach(function (z) { zmap[z.a.key] = z; });
@@ -23377,8 +23415,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var a = { key: 'x:' + q[0].slice(2), sym: q[3], name: o.name, cls: q[2], sector: q[2] === 'crypto' ? 'رمزارز' : 'کالا و انرژی', rows: rr.map(function (r) { return { date: r.date, open: r.open || r.close, high: r.high || r.close, low: r.low || r.close, close: r.close, vol: 0, val: 0, yclose: 0 }; }), sample: false, asOf: lastD, age: age, unit: o.unit, global: true, src: o.src };
         try { var z = { a: a, R: analyse(a, false) }, cg = card(z, E); if (!cg) return; cg.global = true; cg.src = o.src; cg.notes.unshift('بازار جهانی (' + o.src + ')؛ سری پایانی روزانه؛ دسترسی و محدودیت‌های قانونی و عملیاتی کاربر ایرانی جداگانه بررسی شود'); zmap0[a.key] = z; cards.push(cg); } catch (e) { /* skip */ } }); } catch (e) { /* global data optional */ } }
     var real = list.filter(function (z) { return !z.a.sample; }), blist = real.length ? real : list;
-    if (opts && opts.backtest) Object.keys(zmap0).forEach(function (k) { var z = zmap0[k]; if (z.a.global) blist = blist.concat([z]); });   // sample series never enter the evidence when real series exist
-    var btF = opts && opts.backtest ? backtest(blist, E) : null, db = btF ? makeDB(btF, blist, E) : (E.val && E.val.db) || null;
+    if (opts && (opts.backtest || opts.prep || opts.bt)) Object.keys(zmap0).forEach(function (k) { var z = zmap0[k]; if (z.a.global) blist = blist.concat([z]); });
+    // snapshot the full-history cross-model votes: a screen refresh during the async back-test rebuilds them for the last bars only
+    if (opts && opts.prep) return { E: E, blist: blist.map(function (z) { return Object.assign({}, z, { Vs: Object.assign({}, z.R.V) }); }), sample: list.every(function (z) { return z.a.sample; }) };   // sample series never enter the evidence when real series exist
+    var btF = opts && opts.bt ? opts.bt : opts && opts.backtest ? backtest(blist, E) : null, db = btF ? makeDB(btF, blist, E) : (E.val && E.val.db) || null;
     if (btF && db) db.ver = ((E0 && E0.val && E0.val.db && E0.val.db.ver) || 0) + 1;
     var todayD = 0; blist.forEach(function (z) { todayD = Math.max(todayD, z.R.X.d[z.R.X.n - 1]); });   // real series only: sample dates must not age the evidence
     var gated = gateCards(cards, db, E, todayD);
@@ -23440,7 +23480,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -24908,8 +24948,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     }).then(function () { q = q.concat([{}, {}]);
       if (Hub.dataSync) Hub.dataSync.notify(); TE.clearCache();
       say(q.length, 'اعتبارسنجی روی دادهٔ تازه …');
-      return new Promise(function (res) { setTimeout(function () { try { var S0 = TS() || sample(), E = ensure(S0), r = TE.validate(E, undefined, S0.j || []); BT = r.bt; BTkey = btKey(E); try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ }
-        say(q.length, 'اعتبارسنجی نسخهٔ ' + fa(E.val.db ? E.val.db.ver : 0, 0) + ' انجام شد.', 'good-t'); } catch (e) { say(q.length, 'اعتبارسنجی ناموفق: ' + e.message, 'crit-t'); } res(); }, 50); });
+      var S0 = TS() || sample(), E = ensure(S0), lite = !!(S0.valRun && (S0.valRun.st === 'running' || (S0.valRun.lite && S0.valRun.st === 'ok'))); S0.valRun = { at: Date.now(), st: 'running', lite: lite }; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ }
+      return TE.validateAsync(E, undefined, S0.j || [], function (i, n, ph) { S0.valRun.i = i; S0.valRun.n = n; if (S0.valRun.ph !== ph) { S0.valRun.ph = ph; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ } } }, { lite: lite }).then(function (r) { BT = r.bt; BTkey = btKey(E); S0.valRun = { at: Date.now(), st: E.val.db ? 'ok' : 'nodata', msg: 'نتیجه‌ای ثبت نشد', lite: lite };
+        try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ } say(q.length, 'اعتبارسنجی نسخهٔ ' + fa(E.val.db ? E.val.db.ver : 0, 0) + ' انجام شد.', 'good-t'); },
+        function (e) { S0.valRun = { at: Date.now(), st: 'err', msg: String(e && e.message || e) }; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e2) { /* full */ } say(q.length, 'اعتبارسنجی ناموفق: ' + e.message, 'crit-t'); });
     }).then(function () {
       var DS = Hub.dataSync, c = DS ? DS.cfg() : {}; if (!DS || !c.token || !c.widgetAuto) return;
       say(q.length + 1, 'انتشار دادهٔ ویجت …'); TE.clearCache();
@@ -24997,16 +25039,20 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function runVal(ctx, btn) {
     var S = ctx.S, E = ensure(S); if (btn) { btn.disabled = true; btn.textContent = 'در حال اعتبارسنجی (چند ثانیه تا دقیقه)…'; }
     // the attempt is written down before it starts: if the phone closes the page mid-way (memory), the next visit says so instead of silently showing "not run"
-    S.valRun = { at: Date.now(), st: 'running' }; try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ }
-    setTimeout(function () {
-      var t0 = Date.now();
-      try { var r = TE.validate(E, undefined, S.j || []); BT = r.bt; BTkey = btKey(E); S._sampleBT = r.sample;
-        S.valRun = E.val.db ? { at: Date.now(), st: 'ok', ms: Date.now() - t0, ver: E.val.db.ver } : { at: Date.now(), st: 'nodata', msg: r.sample ? 'همهٔ داده‌ها نمونه‌اند (دادهٔ واقعی دریافت نشده)' : 'هیچ دارایی با تاریخچهٔ کافی پیدا نشد' };
-        U.toast(E.val.db ? 'اعتبارسنجی نسخهٔ ' + fa(E.val.db.ver, 0) + ' ثبت شد (' + fa(E.val.db.nTrades, 0) + ' معاملهٔ شبیه‌سازی‌شده، ' + fa((Date.now() - t0) / 1000, 0) + ' ثانیه).' : 'اعتبارسنجی اجرا شد اما نتیجه‌ای ثبت نشد: ' + S.valRun.msg, E.val.db ? 'good' : 'warn'); }
-      catch (e) { S.valRun = { at: Date.now(), st: 'err', msg: String(e && e.message || e) }; U.toast('اعتبارسنجی ناموفق: ' + S.valRun.msg, 'crit'); }
+    // a run that did not finish last time → this time the lighter mode (models on the last 760 sessions), so the phone can complete it
+    var lite = !!(S.valRun && S.valRun.st === 'running') || !!(S.valRun && S.valRun.lite && S.valRun.st === 'ok');
+    S.valRun = { at: Date.now(), st: 'running', lite: lite }; try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ }
+    var t0 = Date.now(), done = function (r) { try { BT = r.bt; BTkey = btKey(E); S._sampleBT = r.sample;
+        S.valRun = E.val.db ? { at: Date.now(), st: 'ok', ms: Date.now() - t0, ver: E.val.db.ver, lite: lite } : { at: Date.now(), st: 'nodata', msg: r.sample ? 'همهٔ داده‌ها نمونه‌اند (دادهٔ واقعی دریافت نشده)' : 'هیچ دارایی با تاریخچهٔ کافی پیدا نشد' };
+        U.toast(E.val.db ? 'اعتبارسنجی نسخهٔ ' + fa(E.val.db.ver, 0) + ' ثبت شد (' + fa(E.val.db.nTrades, 0) + ' معاملهٔ شبیه‌سازی‌شده، ' + fa((Date.now() - t0) / 1000, 0) + ' ثانیه' + (lite ? '؛ حالت سبک: مدل‌ها روی ۷۶۰ جلسهٔ آخر، افق بلندمدت بدون داده' : '') + ').' : 'اعتبارسنجی اجرا شد اما نتیجه‌ای ثبت نشد: ' + S.valRun.msg, E.val.db ? 'good' : 'warn'); }
+      catch (e) { fail(e); return; }
       try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ }
-      ctx.rerender();
-    }, 30);
+      ctx.rerender(); }, fail = function (e) { S.valRun = { at: Date.now(), st: 'err', msg: String(e && e.message || e) }; U.toast('اعتبارسنجی ناموفق: ' + S.valRun.msg, 'crit'); try { U.store.set('hub.tradingEngine.v1', S); } catch (e2) { /* storage full */ } ctx.rerender(); };
+    // runs in small steps so the phone's browser keeps control (it closes a page that freezes or holds too much memory)
+    setTimeout(function () { var saved = -1, PH = { prep: 'تحلیل نمادها', cross: 'مدل‌های بین‌نمادی', bt: 'بک‌تست', db: 'ثبت نتایج' };
+      TE.validateAsync(E, undefined, S.j || [], function (i, n, ph) { if (btn) btn.textContent = 'در حال اعتبارسنجی — ' + PH[ph] + (n ? ': ' + fa(i, 0) + ' از ' + fa(n, 0) : '') + '…';
+        // checkpoint: if the page is closed mid-way, the next visit says where it stopped
+        var chg = S.valRun.ph !== ph; S.valRun.i = i; S.valRun.n = n; S.valRun.ph = ph; if (chg || i - saved >= 10 || i === n) { saved = i; try { U.store.set('hub.tradingEngine.v1', S); } catch (e) { /* storage full */ } } }, { lite: lite }).then(done, fail); }, 30);
   }
   function valPoolFa(v, c) { return (CLS[c.cls] || c.cls) + (v.matched ? ' در رژیم «' + (TE.REG[c.regime] || c.regime) + '»' : ' در همهٔ رژیم‌ها (نمونهٔ رژیم فعلی کافی نیست)'); }
   function valBlock(c) {
@@ -25475,8 +25521,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function todayPanel(ctx, X, E) {
     var conf = X.cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.cls !== 'option'; }), xg = (X.markets && X.markets.xtop) || [], st = X.valState, body = [];
     var bySt = conf.filter(function (c) { return c.cls === 'stock' || c.cls === 'fund'; });
-    var VR = ctx.S && ctx.S.valRun, vrNote = st === 'none' && VR ? (VR.st === 'running' ? 'اعتبارسنجی قبلی (' + new Date(VR.at).toLocaleTimeString('fa-IR') + ') نیمه‌کاره ماند؛ احتمالاً مرورگر گوشی صفحه را به‌خاطر کمبود حافظه دوباره بارگذاری کرده است. برنامه‌های دیگر را ببندید و دوباره «اجرای اعتبارسنجی» را بزنید؛ اگر باز تکرار شد، این پیام را برای بررسی بفرستید.' : VR.st === 'err' ? 'آخرین اعتبارسنجی با خطا متوقف شد: ' + VR.msg : VR.st === 'nodata' ? 'آخرین اعتبارسنجی اجرا شد اما نتیجه‌ای ثبت نشد: ' + VR.msg : '') : '';
-    var head = st !== 'ok' ? (st === 'none' ? 'هنوز اعتبارسنجی اجرا نشده؛ تا آن زمان هیچ خریدی تأییدشده نیست.' + (vrNote ? ' ' + vrNote : '') : st === 'stale' ? 'تنظیمات بعد از آخرین اعتبارسنجی عوض شده؛ دوباره اعتبارسنجی کنید.' : 'اعتبارسنجی روی دادهٔ نمونه است و اعتبار ندارد.')
+    var VR = ctx.S && ctx.S.valRun, engV = ' (موتور ' + TE.ENG_VER + ')', vrNote = st === 'none' && VR ? (VR.st === 'running' ? 'اعتبارسنجی قبلی (' + new Date(VR.at).toLocaleTimeString('fa-IR') + ') ' + (({ prep: 'در مرحلهٔ تحلیل نمادها', cross: 'در مرحلهٔ مدل‌های بین‌نمادی', bt: 'در بک‌تست', db: 'در ثبت نتایج' })[VR.ph] || 'پیش از شروع') + (VR.n ? ' (' + fa(VR.i, 0) + ' از ' + fa(VR.n, 0) + ')' : '') + (VR.lite ? ' — حتی در حالت سبک' : '') + ' نیمه‌کاره ماند؛ احتمالاً مرورگر گوشی صفحه را به‌خاطر کمبود حافظه دوباره بارگذاری کرده است. اجرای بعدی خودکار در «حالت سبک» انجام می‌شود (مدل‌ها روی ۷۶۰ جلسهٔ آخر؛ حافظهٔ کمتر). «اجرای اعتبارسنجی» را بزنید و تا پایان شمارش صبر کنید؛ اگر باز تکرار شد، همین پیام را بفرستید.' : VR.st === 'err' ? 'آخرین اعتبارسنجی با خطا متوقف شد: ' + VR.msg : VR.st === 'nodata' ? 'آخرین اعتبارسنجی اجرا شد اما نتیجه‌ای ثبت نشد: ' + VR.msg : '') : '';
+    var head = st !== 'ok' ? (st === 'none' ? 'هنوز اعتبارسنجی اجرا نشده؛ تا آن زمان هیچ خریدی تأییدشده نیست.' + (vrNote ? ' ' + vrNote : '') + engV : st === 'stale' ? 'تنظیمات بعد از آخرین اعتبارسنجی عوض شده؛ دوباره اعتبارسنجی کنید.' : 'اعتبارسنجی روی دادهٔ نمونه است و اعتبار ندارد.')
       : conf.length || xg.length ? 'امروز ' + fa(conf.length + xg.length, 0) + ' خرید تأییدشده: ' + conf.slice(0, 6).map(function (c) { return c.sym + ' (' + c.val.grade + ')'; }).concat(xg.map(function (o) { return o.name + ' (' + o.grade + ')'; })).join('، ') + (conf.length > 6 ? ' و…' : '') + '.'
       : 'امروز هیچ خرید تأییدشده‌ای نیست (عدم صدور سیگنال).';
     body.push(h('p', { class: 'today-head', text: head }));
@@ -25495,7 +25541,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         body.push(h('p', { class: 'f-help', text: 'این تصمیم شماست: سخت‌گیری را می‌توانید در «تنظیمات اعتبارسنجی» پایین همین صفحه تغییر دهید (مثلاً آزمون فشار هزینه، یا حالت «فقط هشدار»). پایین آوردن آستانه شواهد را قوی‌تر نمی‌کند؛ فقط سیگنال بیشتری نشان می‌دهد.' }));
       }
     }
-    var vb = h('button', { class: st === 'ok' ? 'btn' : 'btn primary', type: 'button', text: st === 'ok' ? 'اعتبارسنجی دوباره (پس از به‌روزرسانی داده)' : 'اجرای اعتبارسنجی', onclick: function () { runVal(ctx, vb); } }); body.push(h('div', { class: 'row-ctl' }, [vb]));
+    var vb = h('button', { class: st === 'ok' ? 'btn' : 'btn primary', type: 'button', text: st === 'ok' ? 'اعتبارسنجی دوباره (پس از به‌روزرسانی داده)' : 'اجرای اعتبارسنجی', onclick: function () { runVal(ctx, vb); } });
+    var VR2 = ctx.S && ctx.S.valRun, fullB = VR2 && VR2.lite && VR2.st === 'ok' ? h('button', { class: 'btn', type: 'button', text: 'تلاش برای اعتبارسنجی کامل (۱٬۲۵۰ جلسه)', onclick: function () { VR2.lite = false; runVal(ctx, fullB); } }) : null;
+    if (VR2 && VR2.lite && VR2.st === 'ok') body.push(h('p', { class: 'small muted', text: 'آخرین اعتبارسنجی در حالت سبک انجام شد: مدل‌ها روی ۷۶۰ جلسهٔ آخر آزموده شده‌اند و افق بلندمدت داده ندارد.' }));
+    body.push(h('div', { class: 'row-ctl' }, [vb, fullB]));
     return ctx.panel('امروز در یک نگاه', body);
   }
   function sigTab(ctx) {
@@ -25904,11 +25953,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611140251) */
+/* PWA: offline cache + app updates (version 202611141903) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611140251';
+  window.HUB_APP_VERSION = '202611141903';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
