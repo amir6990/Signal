@@ -10804,6 +10804,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var open = {}; try { open = JSON.parse(localStorage.getItem('hub.nav.open') || '{}') || {}; } catch (e) { open = {}; }
     var q = h('input', { class: 'f-text nav-search', type: 'search', placeholder: 'Find a tool', 'aria-label': 'Find a tool' });
     nav.appendChild(link('home', 'Overview', null, true));
+    if (byId('data-center')) nav.appendChild(link('data-center', 'مرکز به‌روزرسانی داده‌ها', null, true));
     nav.appendChild(q);
     var groups = [];
     SECTIONS.forEach(function (s) {
@@ -25489,18 +25490,24 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   // one action for everything: every feed in turn (a failed feed keeps its last good data and never stops the others),
   // then the engine cache is cleared and the validation is rerun on the new data, so the dashboard, signals, pulse and widget
   // all read the same fresh state.
-  var UPD = { busy: false, lines: [] };
+  var UPD = { busy: false, lines: [], st: {} }, FRESH_MIN = 10;
+  function seriesN(St) { return Object.keys((St && St.data) || {}).filter(function (k) { return k[0] !== '_'; }).length; }
   function updateEverything(ctx, onDone) {
-    if (UPD.busy) return; var TS = function () { return ctx.S || U.store.get('hub.tradingEngine.v1', null); }; UPD.busy = true; UPD.lines = []; UPD.at = Date.now();
+    if (UPD.busy) return; var TS = function () { return ctx.S || U.store.get('hub.tradingEngine.v1', null); }; UPD.busy = true; UPD.lines = []; UPD.st = {}; UPD.at = Date.now(); UPD.phase = 'fetch'; UPD.calcOk = undefined;
     var say = function (i, t, k) { UPD.lines[i] = { t: t, k: k || '' }; var el = document.getElementById('upd-log'); if (el) { U.clear(el); UPD.lines.forEach(function (l) { if (l) el.appendChild(h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t })); }); } };
     // every data feed of the hub: trading feeds first, then the Iran-economy series, the temporal tool and anything else registered
     var seen = {}, q = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || seen[f.id]) return false; seen[f.id] = 1; return true; }), fails = 0;
     var NAME = function (f) { return FAT[f.id] || ({ 'sig-temporal': 'تحلیل زمانی (چرخه‌ها و پنجره‌ها)', 'long-view': 'تحلیل مالی اقتصاد ایران (سری‌ها)', 'sig-global': 'بازارهای جهانی و رمزارز (CoinGecko، نوبیتکس، OKX، Alpha Vantage)' })[f.id] || f.title; };
     q.reduce(function (p, f, i) { return p.then(function () {
-      var St = loadFeed(f); say(i, NAME(f) + ' …');
-      return SG.safeFetch(f.fetch, St, function (a, b, k) { say(i, NAME(f) + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + k); })
-        .then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : ''); say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
-          function (e) { fails++; flog(f.id, false, e.message); say(i, NAME(f) + ': ناموفق، دادهٔ قبلی حفظ شد — ' + e.message, 'crit-t'); });
+      var St = loadFeed(f), st0 = feedState(f), lg0 = (U.store.get(FLOG, {}) || {})[f.id];
+      // fetched in the last 10 minutes with no error: still valid, not fetched again (the time it was fetched is shown)
+      if (st0.live && isFinite(st0.age) && st0.age * 60 < FRESH_MIN && lg0 && lg0.ok && !lg0.msg) { UPD.st[f.id] = 'fresh'; say(i, NAME(f) + ': ' + fa(st0.age * 60, 0) + ' دقیقه پیش دریافت شده و معتبر است؛ دوباره دریافت نشد', 'good-t'); return; }
+      UPD.st[f.id] = 'fetch'; say(i, NAME(f) + ' …');
+      var tryOnce = function (k) { return SG.safeFetch(f.fetch, St, function (a, b, q) { say(i, NAME(f) + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + q); })
+        .catch(function (e) { if (k > 0) throw e; say(i, NAME(f) + ': خطا (' + e.message + ')؛ تلاش دوباره …', 'warn-t'); return new Promise(function (r) { setTimeout(r, 2000); }).then(function () { St = loadFeed(f); return tryOnce(1); }); }); };
+      return tryOnce(0)
+        .then(function (errs) { U.store.set(f.storeKey, St); var n = seriesN(St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : '', { n: Math.max(0, n - errs.length), fail: errs.length }); UPD.st[f.id] = 'proc'; say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
+          function (e) { fails++; flog(f.id, false, e.message, { n: 0, fail: seriesN(St) }); UPD.st[f.id] = 'err'; say(i, NAME(f) + ': ناموفق، دادهٔ قبلی حفظ شد (جدید معرفی نمی‌شود) — ' + e.message, 'crit-t'); });
     }); }, Promise.resolve()).then(function () {
       // news feeds (economy section) and the live market inputs of the valuation models that were used before
       var k = q.length, jobs = [];
@@ -25512,16 +25519,23 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       return Promise.all(jobs);
     }).then(function () { q = q.concat([{}, {}]);
       if (Hub.dataSync) Hub.dataSync.notify(); TE.clearCache();
-      say(q.length, 'اعتبارسنجی روی دادهٔ تازه …');
+      UPD.phase = 'calc';
+      if (!Object.keys(UPD.st).some(function (k) { return UPD.st[k] === 'proc'; })) { UPD.calcOk = null; say(q.length, 'هیچ دادهٔ تازه‌ای دریافت نشد؛ محاسبات وابسته دوباره اجرا نشد و نتایج قبلی با تاریخ خودشان باقی ماندند.', 'warn-t'); return; }
+      say(q.length, 'محاسبات وابسته: بک‌تست و اعتبارسنجی روی دادهٔ تازه …');
       var S0 = TS() || sample(), E = ensure(S0), lite = !!(S0.valRun && (S0.valRun.st === 'running' || (S0.valRun.lite && S0.valRun.st === 'ok'))); S0.valRun = { at: Date.now(), st: 'running', lite: lite }; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ }
       return TE.validateAsync(E, undefined, S0.j || [], function (i, n, ph) { S0.valRun.i = i; S0.valRun.n = n; if (S0.valRun.ph !== ph) { S0.valRun.ph = ph; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ } } }, { lite: lite }).then(function (r) { BT = r.bt; BTkey = btKey(E); S0.valRun = { at: Date.now(), st: E.val.db ? 'ok' : 'nodata', msg: 'نتیجه‌ای ثبت نشد', lite: lite };
-        try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ } say(q.length, 'اعتبارسنجی نسخهٔ ' + fa(E.val.db ? E.val.db.ver : 0, 0) + ' انجام شد.', 'good-t'); },
-        function (e) { S0.valRun = { at: Date.now(), st: 'err', msg: String(e && e.message || e) }; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e2) { /* full */ } say(q.length, 'اعتبارسنجی ناموفق: ' + e.message, 'crit-t'); });
+        try { U.store.set('hub.tradingEngine.v1', S0); } catch (e) { /* full */ } say(q.length, 'اعتبارسنجی نسخهٔ ' + fa(E.val.db ? E.val.db.ver : 0, 0) + ' انجام شد.', 'good-t'); UPD.calcOk = true; },
+        function (e) { S0.valRun = { at: Date.now(), st: 'err', msg: String(e && e.message || e) }; try { U.store.set('hub.tradingEngine.v1', S0); } catch (e2) { /* full */ } say(q.length, 'اعتبارسنجی ناموفق: ' + e.message, 'crit-t'); UPD.calcOk = false; });
     }).then(function () {
       var DS = Hub.dataSync, c = DS ? DS.cfg() : {}; if (!DS || !c.token || !c.widgetAuto) return;
       say(q.length + 1, 'انتشار دادهٔ ویجت …'); TE.clearCache();
       try { var W = TE.run(ensure(TS() || sample())).widget(); return DS.publishWidget(W).then(function () { say(q.length + 1, 'دادهٔ ویجت منتشر شد؛ ویجت در تازه‌سازی بعدی iOS آن را می‌خواند (معمولاً چند تا چند ده دقیقه).', 'good-t'); }, function (e) { say(q.length + 1, 'انتشار ویجت ناموفق: ' + e.message, 'crit-t'); }); } catch (e) { say(q.length + 1, 'انتشار ویجت ناموفق: ' + e.message, 'crit-t'); }
-    }).then(function () { UPD.busy = false; UPD.doneAt = Date.now(); U.toast(fails ? fa(fails, 0) + ' منبع ناموفق بود؛ بقیه به‌روز شد.' : 'همه‌چیز به‌روز شد.', fails ? 'warn' : 'good'); ctx.rerender(); if (onDone) onDone(); });
+    }).then(function () {
+      // dependent calculations: auditor result, caches; then the run summary the data center shows
+      try { if (Hub.auditCore) Hub.auditCore.reset(); TE.clearCache(); } catch (e) { /* optional */ }
+      Object.keys(UPD.st).forEach(function (k) { if (UPD.st[k] === 'proc') UPD.st[k] = UPD.calcOk === false ? 'pend' : 'ok'; });
+      try { U.store.set('hub.updrun.v1', { at: UPD.at, doneAt: Date.now(), st: UPD.st, calcOk: UPD.calcOk === null ? null : UPD.calcOk !== false, fails: fails }); } catch (e) { /* optional */ }
+      UPD.phase = 'done'; UPD.busy = false; UPD.doneAt = Date.now(); U.toast(fails ? fa(fails, 0) + ' منبع ناموفق بود؛ بقیه به‌روز شد.' : 'همه‌چیز به‌روز شد.', fails ? 'warn' : 'good'); ctx.rerender(); if (onDone) onDone(); });
     ctx.rerender();
   }
   function updPanel(ctx, compact) {
@@ -25538,16 +25552,93 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
      every feed with its source, fetch time, market reference time, time zone and price basis, unit, status and last errors;
      group buttons per market; one "update everything"; company statements status. Other sections only link here. */
   var FLOG = 'hub.feedlog.v1';
-  function flog(id, ok, msg) { try { var L = U.store.get(FLOG, {}) || {}; L[id] = { at: Date.now(), ok: ok, msg: msg || '' }; U.store.set(FLOG, L); } catch (e) { /* optional */ } }
+  function flog(id, ok, msg, x) { try { var L = U.store.get(FLOG, {}) || {}; L[id] = Object.assign({ at: Date.now(), ok: ok, msg: msg || '' }, x || {}); U.store.set(FLOG, L); } catch (e) { /* optional */ } }
   var FMETA = { 'sig-stocks': { cal: 'stock', unit: 'ریال؛ شاخص بر حسب واحد شاخص' }, 'sig-gold': { cal: 'gold', unit: 'ریال؛ انس بر حسب دلار' }, 'sig-fx': { cal: 'fx', unit: 'ریال' }, 'sig-options': { cal: 'stock', unit: 'ریال' },
     'sig-global': { cal: 'crypto', unit: 'دلار', note: 'رمزارز: نقطهٔ ۰۰:۰۰ UTC (CoinGecko)؛ کالا و انرژی: روز کاری Alpha Vantage' }, 'long-view': { cal: 'tgju', unit: 'به تفکیک سری' }, 'sig-temporal': { cal: 'tgju', unit: 'به تفکیک سری' } };
   function feedName(f) { return FAT[f.id] || ({ 'sig-temporal': 'تحلیل زمانی (چرخه‌ها و پنجره‌ها)', 'long-view': 'سری‌های اقتصاد ایران', 'sig-global': 'رمزارز و بازارهای جهانی (کالا، انرژی، نرخ)' })[f.id] || f.title || f.id; }
   // latest market date inside a feed's data (yyyymmdd), whatever the layout: arrays of rows or { px: rows }
   function mktDate(S) { var m = 0, walk = function (v) { var rows = Array.isArray(v) ? v : v && Array.isArray(v.px) ? v.px : v && Array.isArray(v.rows) ? v.rows : null; if (rows && rows.length) { var d = +(rows[rows.length - 1].date || (Array.isArray(rows[rows.length - 1]) ? rows[rows.length - 1][0] : 0)); if (d > 19000101 && d < 21000101 && d > m) m = d; } };
     Object.keys((S && S.data) || {}).forEach(function (k) { var v = S.data[k]; walk(v); if (v && typeof v === 'object' && !Array.isArray(v) && !v.px && !v.rows) Object.keys(v).forEach(function (q) { walk(v[q]); }); }); return m; }
-  Hub.goDataCenter = function () { try { U.store.set('hub.tradingEngine.v1.tab', 'dash'); } catch (e) { /* storage */ } if (location.hash !== '#trading-engine') location.hash = '#trading-engine'; else { var b = document.querySelector('nav.tabs .tab[data-tab="dash"]'); if (b) b.click(); }
-    setTimeout(function () { var el = document.getElementById('data-center'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 600); };
+  Hub.goDataCenter = function () { location.hash = '#data-center'; };
   Hub.dataCenterLink = function (why) { return h('div', { class: 'row-ctl' }, [h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی از «مرکز مدیریت داده‌ها»', onclick: function () { Hub.goDataCenter(); } }), h('span', { class: 'small muted', text: why || 'همهٔ داده‌ها فقط از یک مرکز به‌روز می‌شوند و همهٔ بخش‌ها از همان دادهٔ مشترک می‌خوانند.' })]); };
+  /* ===================== DATA UPDATE CENTER (one page, one command) =====================
+     The command fetches every source, checks it, stores it in the shared stores, then re-runs what depends on it
+     (back-test and validation, auditor result, caches) and records the outcome per data group. Every other section reads
+     the same stores and shows only the time and validity of its data. */
+  var DEPS = [
+    { id: 'sig-stocks', data: 'قیمت و معاملات سهام، صندوق‌ها، شاخص‌ها', deps: ['تحلیل تکنیکال و روند', 'سطوح حمایت/مقاومت و تأیید', 'سیگنال و ورود/خروج/حد ضرر', 'رتبه‌بندی فرصت‌ها و سهام', 'بک‌تست و اعتبارسنجی', 'داشبورد و پیش‌بینی شاخص'], calc: true },
+    { id: 'sig-fx', data: 'دلار، ارزها و تتر', deps: ['تحلیل ارز', 'طلا (حباب و ارزش ذاتی)', 'سری دلاری سهام', 'بک‌تست و اعتبارسنجی', 'داشبورد'], calc: true },
+    { id: 'sig-gold', data: 'طلا، سکه و انس', deps: ['تحلیل طلا و سکه', 'استراتژی حباب طلا (XG1)', 'فرصت‌های معاملاتی', 'بک‌تست و اعتبارسنجی'], calc: true },
+    { id: 'sig-global', data: 'بیت‌کوین، اتریوم، نفت، گاز، نرخ بهرهٔ آمریکا', deps: ['تحلیل رمزارز و کالا', 'سیگنال و فرصت‌ها', 'بک‌تست', 'نمای کلی بازارها'], calc: true },
+    { id: 'sig-options', data: 'اختیار معامله', deps: ['سیگنال اختیار', 'داشبورد'], calc: true },
+    { id: 'long-view', data: 'سری‌های اقتصاد ایران', deps: ['تحلیل سه‌افقی بازارهای ایران', 'گزارش اقتصاد ایران (EFI)', 'تاریخ‌های کلیدی و سناریوها'] },
+    { id: 'sig-temporal', data: 'سری تحلیل زمانی', deps: ['چرخه‌ها و پنجره‌های زمانی'] },
+    { id: 'macro', data: 'نرخ بدون ریسک، صرف ریسک، تورم (ورودی ارزش‌گذاری)', deps: ['DCF و WACC', 'هزینهٔ سرمایه', 'تأمین مالی'] },
+    { id: 'news', data: 'خبرها (خوراک RSS)', deps: ['مدل احساسات', 'گزارش اقتصاد ایران'] },
+    { id: 'company', data: 'صورت‌های مالی شرکت (فایل)', deps: ['حسابرس سخت‌گیر', 'ارزش‌گذاری و مدل شرکت', 'تأمین مالی و ظرفیت بدهی'] }];
+  Hub.dataDeps = { list: DEPS, register: function (d) { if (d && d.id && !DEPS.some(function (x) { return x.id === d.id; })) DEPS.push(d); } };
+  // what the directive asks to cover, and whether a source is connected; nothing is estimated where no source exists
+  var COVER = [['سهام، صندوق‌ها و ETF: قیمت، آخرین معامله، پایانی، حجم و ارزش', 'متصل', 'TSETMC'], ['شاخص کل و هم‌وزن', 'متصل', 'TSETMC'], ['سایر شاخص‌های بورس (صنعت، فرابورس)', 'وصل نیست', '—'],
+    ['دلار، ارزهای اصلی و تتر', 'متصل', 'TGJU'], ['طلای داخلی، سکه و انس', 'متصل', 'TGJU'], ['بیت‌کوین و اتریوم (قیمت دلاری، تاریخچه)', 'متصل', 'CoinGecko'], ['حجم و ارزش بازار رمزارز', 'وصل نیست', 'CoinGecko در این نسخه فقط قیمت'],
+    ['نفت، گاز، مس، آلومینیوم، نرخ بهره و اوراق آمریکا', 'متصل (با کلید Alpha Vantage)', 'Alpha Vantage'], ['شاخص‌های سهام بین‌المللی', 'وصل نیست', '—'], ['دادهٔ کلان (تورم و…)', 'بخشی (ورودی‌های ارزش‌گذاری)', 'منابع تنظیم‌شده در «منابع داده و کلیدها»'],
+    ['صورت‌های مالی و گزارش‌های کدال، ماهانه، تولید و فروش، اطلاعیه‌ها، مجامع', 'وصل نیست', 'فقط از فایل Excel/PDF شما'], ['سود تقسیمی و افزایش سرمایه', 'وصل نیست', 'تعدیل قیمت از قیمت دیروز TSETMC انجام می‌شود'],
+    ['مقررات و ابزارهای تأمین مالی، نرخ‌ها', 'نسخهٔ ذخیره‌شده در برنامه', 'تاریخ هر قاعده در موتور انطباق ذکر شده؛ به‌روزرسانی خودکار ندارد']];
+  var ST8D = { none: ['به‌روزرسانی نشده', 'none'], fetch: ['در حال دریافت', 'stale'], proc: ['در حال پردازش', 'stale'], ok: ['به‌روزرسانی موفق', 'fresh'], part: ['به‌روزرسانی ناقص', 'stale'], err: ['خطا در دریافت', 'none'], old: ['داده قدیمی یا نامعتبر', 'none'], pend: ['در انتظار تکمیل محاسبات', 'stale'], fresh: ['معتبر (دوباره دریافت نشد)', 'fresh'] };
+  function valAt() { var T = U.store.get('hub.tradingEngine.v1', null), db = T && T.e && T.e.val && T.e.val.db; return db && !db.sample ? db.at : 0; }
+  function groupState(f, lg) {
+    var st = feedState(f), cur = UPD.busy ? UPD.st[f.id] : null, dep = DEPS.filter(function (d) { return d.id === f.id; })[0];
+    if (cur === 'fetch' || cur === 'proc') return cur;
+    if (lg && !lg.ok) return 'err'; if (!st.live) return 'none'; if (st.k === 'stale') return 'old';
+    if (dep && dep.calc && st.S.meta.asOfTs && valAt() < st.S.meta.asOfTs) return 'pend';
+    if (lg && lg.msg) return 'part'; return 'ok';
+  }
+  function centerPage(ctx) {
+    var uctx = { S: null, rerender: ctx.rerender }, LG = U.store.get(FLOG, {}) || {}, RUN = U.store.get('hub.updrun.v1', null), MC = Hub.mktCal;
+    var sn = {}, all = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn[f.id]) return false; sn[f.id] = 1; return true; });
+    var states = all.map(function (f) { return groupState(f, LG[f.id]); }), cnt = {}; states.forEach(function (k) { cnt[k] = (cnt[k] || 0) + 1; });
+    var big = h('button', { class: 'btn primary', type: 'button', style: 'font-size:1.05rem;padding:.7rem 1.2rem', text: UPD.busy ? 'در حال به‌روزرسانی…' : 'به‌روزرسانی کامل تمام اطلاعات', disabled: UPD.busy, onclick: function () { updateEverything(uctx); } });
+    var nL = UPD.lines.filter(Boolean).length, tot = all.length + 3, pr = UPD.busy ? Math.min(99, Math.round(100 * nL / tot)) : RUN ? 100 : 0;
+    var bar = h('div', { style: 'height:8px;border-radius:4px;background:var(--line);overflow:hidden' }, [h('div', { style: 'height:100%;width:' + pr + '%;background:var(--accent, #d9a441)' })]);
+    var phase = UPD.busy ? ({ fetch: 'مرحلهٔ ۱ از ۳: دریافت و بررسی داده‌ها', calc: 'مرحلهٔ ۲ از ۳: محاسبات وابسته (بک‌تست، اعتبارسنجی، حسابرس)', done: 'پایان' })[UPD.phase] || '' : RUN ? 'آخرین اجرای کامل: ' + new Date(RUN.at).toLocaleString('fa-IR') + ' تا ' + new Date(RUN.doneAt).toLocaleString('fa-IR') + (RUN.fails ? ' · ' + fa(RUN.fails, 0) + ' منبع ناموفق' : ' · همهٔ منابع موفق') + (RUN.calcOk === null ? ' · دادهٔ تازه‌ای نیامد؛ محاسبات دوباره اجرا نشد' : RUN.calcOk ? ' · محاسبات وابسته کامل' : ' · محاسبات وابسته ناقص (دادهٔ تازه دریافت شد ولی اعتبارسنجی کامل نشد)') : 'هنوز به‌روزرسانی کاملی اجرا نشده است';
+    var sumTxt = Object.keys(cnt).map(function (k) { return ST8D[k][0] + ': ' + fa(cnt[k], 0); }).join(' · ');
+    var p1 = ctx.panel('مرکز دریافت و به‌روزرسانی داده‌ها', [h('p', { class: 'f-help', text: 'یک فرمان: همهٔ منابع دریافت و بررسی می‌شوند، دادهٔ معتبر در مخزن مشترک ثبت می‌شود و همهٔ محاسبات وابسته (سیگنال‌ها، سطوح، رتبه‌بندی، بک‌تست و اعتبارسنجی، حسابرس، داشبورد و گزارش‌ها) با دادهٔ تازه دوباره اجرا می‌شوند. هیچ بخش دیگری دکمهٔ دریافت جداگانه ندارد.' }),
+      h('div', { class: 'row-ctl' }, [big]), bar, h('p', { class: 'small', 'data-notr': '1', text: phase }), h('p', { class: 'small', 'data-notr': '1', text: 'وضعیت گروه‌ها: ' + sumTxt }),
+      h('div', { id: 'upd-log', 'aria-live': 'polite' }, UPD.lines.filter(Boolean).map(function (l) { return h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t }); })),
+      h('p', { class: 'small muted', text: 'منبعی که در ۱۰ دقیقهٔ اخیر بی‌خطا دریافت شده دوباره دریافت نمی‌شود (زمان دریافتش نمایش داده می‌شود). منبع ناموفق یک بار دیگر آزموده می‌شود؛ اگر باز ناموفق بود، آخرین دادهٔ معتبر با تاریخ خودش حفظ می‌شود و جدید معرفی نمی‌شود؛ دادهٔ ساختگی جایگزین نمی‌شود.' })]);
+    // status of every data group
+    var rows = all.map(function (f, i) { var st = feedState(f), lg = LG[f.id], k = states[i], dep = DEPS.filter(function (d) { return d.id === f.id; })[0], md = st.live ? mktDate(st.S) : 0, va = valAt();
+      return [feedName(f), f.src || '—', st.live ? (st.S.meta.asOf || '—') + ' (' + SG.ageText(st.age) + ')' : '—', md ? (MC ? MC.faDate(md) : md) : '—', h('span', { class: 'data-age ' + ST8D[k][1], text: ST8D[k][0] }),
+        lg && lg.n != null ? fa(lg.n, 0) + ' / ' + fa(lg.fail || 0, 0) : '—', !st.live ? 'نمونه — برای تصمیم معتبر نیست' : st.k === 'stale' ? 'کهنه (بیش از ' + fa(SG.maxAgeH(), 0) + ' ساعت)' : 'تازه',
+        dep && dep.calc ? (va && st.S.meta.asOfTs && va >= st.S.meta.asOfTs ? 'بک‌تست/اعتبارسنجی به‌روز (' + new Date(va).toLocaleString('fa-IR') + ')' : 'بک‌تست/اعتبارسنجی هنوز روی این داده اجرا نشده') + '؛ بقیه هنگام نمایش از همین داده' : 'هنگام نمایش از همین داده محاسبه می‌شود',
+        lg ? new Date(lg.at).toLocaleString('fa-IR') + (lg.ok ? '' : ' — ' + lg.msg) : '—']; });
+    var NS = Hub.news && Hub.news.store ? Hub.news.store() : null, nAt = NS && NS.meta && NS.meta.asOfTs;
+    rows.push(['خبرها (خوراک RSS)', 'خوراک‌های تنظیم‌شده', nAt ? new Date(nAt).toLocaleString('fa-IR') : '—', '—', h('span', { class: 'data-age ' + (nAt ? ((Date.now() - nAt) / 36e5 > SG.maxAgeH() ? 'stale' : 'fresh') : 'none'), text: nAt ? ((Date.now() - nAt) / 36e5 > SG.maxAgeH() ? 'داده قدیمی' : 'به‌روزرسانی موفق') : 'به‌روزرسانی نشده' }), '—', '—', 'مدل احساسات و گزارش اقتصاد هنگام نمایش', '—']);
+    var rec = Hub.companyData && Hub.companyData.get(), AR = rec && Hub.auditCore ? Hub.auditCore.result() : null;
+    rows.push(['صورت‌های مالی شرکت', 'فایل Excel/PDF', rec ? rec.savedAt : '—', rec && rec.blocks[0] ? rec.blocks[0].years.join('، ') : '—', h('span', { class: 'data-age ' + (rec ? 'fresh' : 'none'), text: rec ? 'واردشده' : 'به‌روزرسانی نشده' }), rec ? fa(rec.blocks.length, 0) + ' صورت' : '—', rec ? 'از فایل' : '—', AR ? 'حسابرس ' + AR.id + ' (خودکار با هر فایل)' : '—', rec ? rec.savedAt : '—']);
+    var p2 = ctx.panel('وضعیت هر گروه داده', [table(['گروه داده', 'منبع', 'آخرین دریافت', 'زمان مرجع داده (آخرین تاریخ بازار)', 'وضعیت', 'دریافت‌شده / ناموفق', 'اعتبار داده', 'محاسبات وابسته', 'زمان آخرین تکمیل'], rows)]);
+    var p3 = ctx.panel('نقشهٔ وابستگی داده‌ها', [table(['داده', 'بخش‌های وابسته (پس از به‌روزرسانی دوباره محاسبه می‌شوند)'], DEPS.map(function (d) { return [d.data, d.deps.join('، ')]; })), h('p', { class: 'small muted', text: 'بخش تازه با Hub.dataDeps.register به این نقشه و به فرمان به‌روزرسانی کامل وصل می‌شود؛ هر منبعی که در فهرست منابع ثبت شود خودکار در فرمان کامل قرار می‌گیرد.' })]);
+    var p4 = ctx.panel('پوشش منابع', [table(['اطلاعات', 'وضعیت منبع', 'منبع / توضیح'], COVER), h('p', { class: 'small muted', text: 'برای اطلاعاتی که منبع ماشین‌خوان وصل نیست، داده‌ای ساخته یا تخمین زده نمی‌شود.' })]);
+    // automatic refresh while the page is open
+    var A = U.store.get(AKEY, { on: false, min: 60, calc: false }), on = h('input', { type: 'checkbox', 'aria-label': 'auto' }), calc = h('input', { type: 'checkbox', 'aria-label': 'calc' }), mins = h('select', { class: 'f-sel', 'aria-label': 'فاصله' }, [[30, '۳۰ دقیقه'], [60, '۱ ساعت'], [180, '۳ ساعت'], [360, '۶ ساعت']].map(function (o) { return h('option', { value: String(o[0]), text: o[1] }); }));
+    on.checked = !!A.on; calc.checked = !!A.calc; mins.value = String(A.min || 60); var saveA = function () { U.store.set(AKEY, { on: on.checked, min: +mins.value, calc: calc.checked }); U.toast('تنظیم به‌روزرسانی خودکار ذخیره شد.', 'good'); };
+    [on, calc, mins].forEach(function (el) { el.addEventListener('change', saveA); });
+    var p5 = ctx.panel('به‌روزرسانی خودکار (فقط وقتی برنامه باز است)', [h('label', { class: 'small' }, [on, ' فعال']), h('label', { class: 'small' }, [' هر ', mins]), h('label', { class: 'small' }, [calc, ' همراه با بک‌تست و اعتبارسنجی (سنگین؛ روی گوشی توصیه نمی‌شود)']),
+      h('p', { class: 'small muted', text: 'در هر نوبت فقط منابعی که از آستانهٔ تازگی گذشته‌اند دریافت می‌شوند. بازارهای ۲۴ ساعته (رمزارز) و بورس ایران با همین فاصله بررسی می‌شوند؛ دادهٔ بورس فقط پس از ثبت جلسهٔ تازه در TSETMC تغییر می‌کند. وقتی برنامه بسته است، مرورگر اجازهٔ اجرا نمی‌دهد. فرمان دستی همیشه در دسترس است.' })]);
+    var det = h('details', { class: 'fold' }, [h('summary', { text: 'جزئیات منابع، دریافت یک گروه و ابزار نمادها (برای بررسی خطا؛ لازم نیست)' }), dataPanel(ctx)]);
+    return ctx.group([p1, p2, p3, p4, p5, det]);
+  }
+  var AKEY = 'hub.autoupd.v1';
+  // automatic refresh while the hub is open: stale feeds only, never while an update is running
+  if (root.document) setInterval(function () { try {
+    var A = U.store.get(AKEY, null); if (!A || !A.on || UPD.busy) return; var last = U.store.get('hub.autoupd.last', 0); if (Date.now() - last < (A.min || 60) * 60e3) return;
+    U.store.set('hub.autoupd.last', Date.now()); var sn = {}, stale = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn[f.id]) return false; sn[f.id] = 1; var st = feedState(f); return st.live && isFinite(st.age) && st.age * 60 >= (A.min || 60); });
+    if (!stale.length) return; if (A.calc) { updateEverything({ S: null, rerender: function () {} }); return; }
+    stale.reduce(function (p, f) { return p.then(function () { var St = loadFeed(f); return SG.safeFetch(f.fetch, St, function () {}).then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : '', { n: Math.max(0, seriesN(St) - errs.length), fail: errs.length, auto: true }); }, function (e) { flog(f.id, false, e.message, { auto: true }); }); }); }, Promise.resolve()).then(function () { TE.clearCache(); });
+  } catch (e) { /* the timer must never break the page */ } }, 5 * 60e3);
+  TK.define({ id: 'data-center', title: 'Data update center', sections: ['data'], priority: -100, version: 1, storeKey: 'hub.dataCenter.v1', noFile: true,
+    summary: 'One command updates every data source and re-runs everything that depends on it.', sample: function () { return { version: 1 }; }, run: function () { return { checks: [] }; },
+    eyebrow: function () { return 'Data · one command for the whole hub'; }, heading: function () { return 'مرکز دریافت و به‌روزرسانی داده‌ها'; },
+    tabs: [{ group: 'Data', items: [['center', 'مرکز به‌روزرسانی', centerPage]] }] });
   function dataPanel(ctx) {
     var wrap = h('div'), log = h('div', { 'aria-live': 'polite' }), busy = false, symIn = h('input', { class: 'f-in', type: 'text', placeholder: 'مثلاً: فولاد، شپنا، طلا', 'aria-label': 'نمادهای انتخابی', style: 'min-width:260px' });
     function doFetch(f, only, label) {
@@ -25583,7 +25674,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var St = loadFeed(fs), smp = !feedState(fs).live, n = smp ? (St = SG.stocks.sample(), St.watch.length) : SG.stocks.mergeWatch(St); U.store.set(fs.storeKey, St);
         U.toast(smp ? 'دیده‌بان با ' + fa(n, 0) + ' نماد ساخته شد (دادهٔ نمونه تا دریافت دادهٔ واقعی).' : fa(n, 0) + ' نماد جدید اضافه شد. برای دریافت داده «فقط نمادهای بدون داده» را بزنید.', 'good'); ctx.rerender(); } });
       wrap.appendChild(h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, [
-        h('button', { class: 'btn primary', type: 'button', text: 'به‌روزرسانی همه‌چیز (+ اعتبارسنجی)', disabled: busy || UPD.busy, onclick: function () { updateEverything(ctx); } }),
+        h('button', { class: 'btn primary', type: 'button', text: 'به‌روزرسانی همه‌چیز (+ اعتبارسنجی)', disabled: busy || UPD.busy, onclick: function () { updateEverything(ctx.S && ctx.S.e ? ctx : { S: null, rerender: ctx.rerender }); } }),
         h('button', { class: 'btn', type: 'button', text: 'فقط نمادهای بدون داده (' + fa(miss.length, 0) + ')', disabled: busy || !miss.length || !fs, onclick: function () { doFetch(fs, miss, 'نمادهای بدون داده'); } }),
         symIn, h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی نمادهای انتخابی', disabled: busy || !fs, onclick: function () { var only = symIn.value.split(/[،,\s]+/).map(function (x) { return x.trim(); }).filter(Boolean); if (!only.length) { U.toast('نماد را وارد کنید.', 'warn'); return; } doFetch(fs, only, 'نمادهای انتخابی'); } }), merge]));
     }
@@ -26050,7 +26141,11 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var maxD = 0; X.list.forEach(function (z) { if (!z.a.sample) maxD = Math.max(maxD, z.R.X.d[z.R.X.n - 1]); });
     var top = P[0], head = !top ? 'داده‌ای نیست.' : top.kind === 'none' ? 'بهترین اقدام فعلی: اقدام نکردن (نگه‌داری نقد). ' + top.why : top.kind === 'urgent' ? 'اول: ' + top.action + ' ' + top.asset + ' — ' + top.why : 'بهترین اقدام فعلی: ' + top.action + ' ' + top.asset + ' (درجه ' + top.grade + '، ' + top.horizon + ').';
     try { ps = ps.concat(deskPanels(ctx)); } catch (e) { ps.push(h('p', { class: 'warn-t', text: 'خطا در مرکز تصمیم: ' + e.message })); }
-    try { var dcp = dataPanel(ctx); ps.splice(ps.length ? 1 : 0, 0, dcp); } catch (e) { ps.push(h('p', { class: 'warn-t', text: 'خطا در مرکز داده: ' + e.message })); }
+    try { var LGd = U.store.get(FLOG, {}) || {}, sn2 = {}, fl = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn2[f.id]) return false; sn2[f.id] = 1; return true; }), c2 = {};
+      fl.forEach(function (f) { var k = groupState(f, LGd[f.id]); c2[k] = (c2[k] || 0) + 1; }); var RUN2 = U.store.get('hub.updrun.v1', null);
+      var dcp = ctx.panel('وضعیت داده‌ها', [h('p', { class: 'small', 'data-notr': '1', text: Object.keys(c2).map(function (k) { return ST8D[k][0] + ': ' + fa(c2[k], 0); }).join(' · ') + (RUN2 ? ' · آخرین به‌روزرسانی کامل: ' + new Date(RUN2.doneAt).toLocaleString('fa-IR') : '') }),
+        h('div', { class: 'row-ctl' }, [h('button', { class: 'btn primary', type: 'button', text: 'رفتن به مرکز به‌روزرسانی داده‌ها', onclick: function () { location.hash = '#data-center'; } })])]);
+      ps.splice(ps.length ? 1 : 0, 0, dcp); } catch (e) { ps.push(h('p', { class: 'warn-t', text: 'خطا در وضعیت داده: ' + e.message })); }
     ps = ps.concat(decisionPanels(ctx));
     ps.push(h('details', { class: 'fold' }, [h('summary', { text: 'فهرست اقدامات (حفاظت از موقعیت‌ها، سیگنال‌ها، انتظار)' }), ctx.panel('فهرست اقدامات', [prioCards(P.slice(0, S.dashN || 5)), h('div', { class: 'wide-only' }, [prioTable(P.slice(0, 10))])])]));
     ps.push(ctx.panel('پیش‌بینی شاخص کل', [ixfBlock(X)]));
@@ -26590,11 +26685,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611141944) */
+/* PWA: offline cache + app updates (version 202611141956) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611141944';
+  window.HUB_APP_VERSION = '202611141956';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
