@@ -555,6 +555,8 @@ details.fold { margin: .6rem 0; } details.fold > summary { cursor: pointer; padd
 .wide-only { display: block; } @media (max-width: 860px) { .wide-only { display: none; } }
 .pt-x { font-size: .75rem; opacity: .85; line-height: 1.6; overflow-wrap: anywhere; }
 .upd-box { border-bottom: 1px solid var(--line, #2a3440); padding-bottom: .5rem; margin-bottom: .6rem; }
+[dir="rtl"] #back-btn svg { transform: scaleX(-1); }
+#back-btn { display: inline-flex; align-items: center; justify-content: center; }
 
 </style>
 
@@ -582,6 +584,7 @@ details.fold { margin: .6rem 0; } details.fold > summary { cursor: pointer; padd
 <a class="skip" href="#view">Skip to content</a>
 <header class="topbar">
   <button id="menu-btn" class="icon-btn only-narrow" type="button" aria-label="Open navigation"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></button>
+  <button id="back-btn" class="icon-btn" type="button" aria-label="Back · بازگشت" title="بازگشت"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <a class="brand" href="#home"><span class="brand-mark" aria-hidden="true">Σ</span><span>Models Hub</span></a>
   <span class="topbar-note">Inputs → Calculations → Outputs → Excel</span>
   <div id="lang-switch" class="lang-switch" role="radiogroup" aria-label="Language / زبان" data-notr><span class="ls-lbl">Language · زبان</span><button type="button" role="radio" data-lang="en">English</button><button type="button" role="radio" data-lang="fa">فارسی</button></div>
@@ -5184,6 +5187,8 @@ else if (typeof exports === 'object')
         var f = function (v) { return U.fmtNum(v); }, p = function (v) { return U.fmtPct(v, 1); };
         box.appendChild(h('p', { class: 'muted cd-sum', text: T('Last year ', 'آخرین سال ') + M.years[M.years.length - 1] + ': ' + T('revenue ', 'درآمد ') + f(M.revenue) + ' · EBITDA ' + f(M.ebitda) + ' · ' + T('net income ', 'سود خالص ') + f(M.ni) + ' · ' + T('net debt ', 'بدهی خالص ') + f(M.netDebt) + ' · ' + T('growth ', 'رشد ') + p(M.growth) + ' · EBITDA ' + p(M.ebitdaMargin) + (M.sharesMn ? ' · ' + T('shares ', 'سهام ') + f(M.sharesMn) + ' mn' : '') }));
       }
+      // the one audit result every model shares (same file, same calculation ID)
+      if (M && Hub.auditCore) { try { var AR = Hub.auditCore.result(); if (AR) box.appendChild(h('p', { class: 'small', 'data-notr': '1' }, [document.createTextNode('حسابرس سخت‌گیر (محلی): ' + AR.id + ' · بحرانی ' + AR.count.critical + ' · زیاد ' + AR.count.high + ' · متوسط ' + AR.count.medium + ' — همهٔ بخش‌ها از همین نتیجه استفاده می‌کنند. '), h('a', { href: '#auditor', text: 'مشاهدهٔ حسابرس' })])); } catch (e) { /* optional */ } }
       if (open && Hub.stmtImport) box.appendChild(Hub.stmtImport.widget({ onApply: function (blocks, info) {
         var r = save(blocks, info); open = false; paint(); if (r.saveErr) box.appendChild(h('p', { class: 'warn-t', text: r.saveErr }));
         if (opts.full) opts.full(r); else useIt(get());
@@ -5234,6 +5239,97 @@ else if (typeof exports === 'object')
   }
 
   Hub.companyData = { notes: notes, get: get, save: save, clear: clear, metrics: metrics, inUnit: inUnit, bar: bar, series: series };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* js/core/auditcore.js */
+/* =====================================================================
+ * AUDIT CORE — the single engine behind the Strict Auditor.
+ *
+ * One analysis per imported statement file, computed locally (no cloud,
+ * no language model): the rule engine of the Strict Auditor run on the
+ * company series. Every other section (financing, valuation, company
+ * model) reads the same result through Hub.auditCore.result(), so a figure
+ * such as operating cash flow has one value, one definition and one
+ * calculation ID across the hub.
+ *
+ *   result()          -> { id, ver, at, file, years, unit, currency, key, ratios, findings, count, defs } | null
+ *   caseFile()        -> the company case file: every imported version with its key figures, findings and the diff to the previous one
+ *   compare(label, theirs, ours, kind) -> one consistency line (used by other sections to report a mismatch)
+ *   CAPS              -> what runs offline / needs a local model / needs an online source
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var RULES_VER = 'audit-rules 2026.11.1';
+  var CKEY = 'hub.coFile.v1';
+  // one definition per ratio, shown wherever the ratio is shown
+  var DEFS = {
+    currentRatio: 'دارایی‌های جاری ÷ بدهی‌های جاری (پایان سال)',
+    quickRatio: '(دارایی‌های جاری − موجودی کالا) ÷ بدهی‌های جاری',
+    debtRatio: 'جمع بدهی‌ها ÷ جمع دارایی‌ها',
+    netDebtEbitda: '(بدهی مالی − وجه نقد) ÷ EBITDA',
+    interestCover: 'سود عملیاتی ÷ هزینهٔ مالی',
+    cfoNi: 'جریان نقد عملیاتی ÷ سود خالص',
+    z: 'Altman Z″ (۲۰۰۰): ۶٫۵۶·X1 + ۳٫۲۶·X2 + ۶٫۷۲·X3 + ۱٫۰۵·X4',
+    gm: 'سود ناخالص ÷ درآمد', ebitdaM: 'EBITDA ÷ درآمد', roe: 'سود خالص ÷ حقوق مالکانه', dso: 'مطالبات تجاری ÷ درآمد × ۳۶۵', dio: 'موجودی کالا ÷ بهای تمام‌شده × ۳۶۵', etr: 'مالیات ÷ سود قبل از مالیات'
+  };
+  // what the auditor does without any connection
+  var CAPS = [
+    ['خواندن Excel', 'کامل', '—', 'خوانندهٔ محلی فقط‌مقدار؛ حافظهٔ کم'],
+    ['خواندن PDF (لایهٔ متنی)', 'کامل', '—', 'pdf.js محلی'],
+    ['خواندن PDF اسکن‌شده', 'کامل (OCR محلی)', '—', 'Tesseract محلی؛ دقت کمتر — جمع‌ها را تطبیق دهید'],
+    ['استخراج و گزارش کنترل استخراج', 'کامل', '—', 'تطبیق جمع‌ها، فرمول‌های بی‌مقدار، علت استخراج‌نشدن'],
+    ['کنترل‌های حسابداری و مغایرت‌ها', 'کامل', '—', 'موتور قواعد ' + RULES_VER],
+    ['نسبت‌ها، سرمایه در گردش، بدهی و توان بازپرداخت', 'کامل', '—', 'تعاریف یکسان در همهٔ بخش‌ها'],
+    ['کیفیت سود و جریان نقد، تداوم فعالیت (Altman، ماده ۱۴۱)', 'کامل', '—', ''],
+    ['بررسی یادداشت‌ها و متن گزارش حسابرس', 'قاعده‌محور (کلیدواژه و عدد)', 'تفسیر عمیق متن: مدل محلی یا ابری', 'بدون مدل، تناقض‌های ظریف متنی تشخیص داده نمی‌شوند'],
+    ['گزارش نهایی و ذخیره در پرونده', 'کامل', '—', ''],
+    ['آخرین مقررات و اطلاعات تازهٔ کدال', 'با آخرین نسخهٔ ذخیره‌شده در برنامه', 'منبع آنلاین', 'تاریخ مقررات به‌کاررفته در هر یافته ذکر شده است']];
+
+  function hashStr(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16); }
+  var MEMO = null;
+  function result() {
+    var CD = Hub.companyData, A = Hub.tools && Hub.tools.auditor, rec = CD && CD.get(); if (!rec || !A) return null;
+    var S0 = (Hub.util && Hub.util.store && Hub.util.store.get('hub.auditor.v1', null)) || A.sample(), st = S0.settings || A.sample().settings;
+    var sig = hashStr(JSON.stringify([rec.file, rec.savedAt, rec.unit, rec.blocks.map(function (b) { return [b.type, b.years, b.rows.length, b.rows.map(function (r) { return r.vals; })]; }), st.materiality, st.inflation, RULES_VER]));
+    if (MEMO && MEMO.sig === sig) return MEMO.r;
+    var D = CD.series(rec); if (!D) return null;
+    var X = A.analyse(D, { settings: st }), l = D.n - 1, c = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }; X.findings.forEach(function (f) { c[f.sev]++; });
+    var key = { revenue: D.revenue[l], ni: D.ni[l], ebitda: D.ebitda[l], ebit: D.ebit[l], cfo: D.cfo ? D.cfo[l] : NaN, cfoPrev: D.cfo && l > 0 ? D.cfo[l - 1] : NaN, ta: D.ta[l], tl: D.tl ? D.tl[l] : NaN, equity: D.equity[l], debt: D.debt[l], cash: D.cash[l] };
+    key.debtRatio = key.ta ? key.tl / key.ta : NaN;
+    var r = { id: 'AUD-' + sig.slice(0, 8), ver: RULES_VER, at: new Date().toISOString(), file: rec.file, savedAt: rec.savedAt, years: D.years, year: D.years[l], unit: D.unit, currency: D.currency,
+      key: key, ratios: Object.assign({ debtRatio: key.debtRatio }, X.ratios), findings: X.findings, count: c, defs: DEFS, src: 'فایل ' + rec.file + ' (واردشده ' + rec.savedAt + ')' };
+    MEMO = { sig: sig, r: r }; record(r, rec); return r;
+  }
+
+  // company case file: one entry per imported version; the diff to the previous version is kept with it
+  function caseFile() { var St = Hub.util && Hub.util.store; return (St && St.get(CKEY, null)) || { companies: {} }; }
+  function record(r, rec) {
+    try {
+      var St = Hub.util && Hub.util.store; if (!St) return; var C = caseFile(), name = rec.company || rec.file, co = C.companies[name] = C.companies[name] || { name: name, versions: [] };
+      var last = co.versions[co.versions.length - 1]; if (last && last.id === r.id) return;
+      var N = Hub.companyData.notes ? Hub.companyData.notes() : null, titles = r.findings.map(function (f) { return f.sev + '|' + (f.title.fa || f.title); });
+      var v = { id: r.id, ver: r.ver, at: r.at, file: r.file, savedAt: r.savedAt, years: r.years, unit: r.unit, currency: r.currency, key: r.key, ratios: r.ratios, count: r.count, titles: titles,
+        report: N && N.report ? { status: N.report.status, statusFa: N.report.statusFa, hash: N.report.hash, sheets: N.report.nSheets, recon: N.report.recon } : null };
+      if (last) v.diff = diff(last, v);
+      co.versions.push(v); if (co.versions.length > 20) co.versions = co.versions.slice(-20); St.set(CKEY, C);
+    } catch (e) { /* the case file is optional; the analysis still stands */ }
+  }
+  function diff(a, b) {
+    var keys = Object.keys(b.key).filter(function (k) { return isFinite(a.key[k]) || isFinite(b.key[k]); }), ch = [];
+    keys.forEach(function (k) { var x = a.key[k], y = b.key[k]; if (!(isFinite(x) && isFinite(y) && Math.abs(x - y) <= Math.max(1, Math.abs(x) * 1e-6))) ch.push({ k: k, from: x, to: y }); });
+    var added = b.titles.filter(function (t) { return a.titles.indexOf(t) < 0; }), gone = a.titles.filter(function (t) { return b.titles.indexOf(t) < 0; });
+    return { sameYears: JSON.stringify(a.years) === JSON.stringify(b.years), years: [a.years, b.years], changed: ch, added: added, cleared: gone, count: [a.count, b.count] };
+  }
+  /* one consistency line: another section's figure against the auditor's. kind 'sign' compares the sign, 'ratio' the value within 0.5 point */
+  function compare(label, theirs, ours, kind, why) {
+    var ok = !isFinite(theirs) || !isFinite(ours) ? null : kind === 'sign' ? (theirs > 0) === (ours > 0) : Math.abs(theirs - ours) <= 0.005;
+    return { label: label, theirs: theirs, ours: ours, ok: ok, why: ok === false ? (why || 'اختلاف بی‌توضیح: منبع یا ورودی دستی این بخش با فایل حسابرسی‌شده یکی نیست') : '' };
+  }
+  var KEYFA = { revenue: 'درآمد', ni: 'سود خالص', ebitda: 'EBITDA', ebit: 'سود عملیاتی', cfo: 'جریان نقد عملیاتی', cfoPrev: 'جریان نقد عملیاتی سال قبل', ta: 'جمع دارایی‌ها', tl: 'جمع بدهی‌ها', equity: 'حقوق مالکانه', debt: 'بدهی مالی', cash: 'وجه نقد', debtRatio: 'نسبت بدهی' };
+
+  Hub.auditCore = { RULES_VER: RULES_VER, DEFS: DEFS, CAPS: CAPS, KEYFA: KEYFA, result: result, caseFile: caseFile, compare: compare, reset: function () { MEMO = null; } };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Hub.auditCore;
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/ai.js */
@@ -6475,6 +6571,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
 
   /* statements from a PDF: Claude reads page images (or the text layer); offline falls back to the text layer */
+  // offline first: statements are read on this device unless the user turned on cloud reading (Strict Auditor → files tab)
+  function offlineFirst() { try { return localStorage.getItem('hub.cloudPdf') !== '1'; } catch (e) { return true; } }
   function readStatements(file, say) {
     say = say || function () {};
     return open(file).then(function (doc) {
@@ -6483,7 +6581,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       return statementPages(doc).then(function (sp) {
         last.statementPages = sp.hits;
         return sampler().then(function (sample) {
-          if (!sample || sample.manual) return local(doc, file.name, say);
+          if (!sample || sample.manual || offlineFirst()) return local(doc, file.name, say);   // local reading is the default; the cloud is an opt-in extra
           return sample.limits().catch(function () { return {}; }).then(function (lim) {
             var maxImg = lim && lim.images ? lim.images.maxCount || 5 : 0;
             var pages = sp.hits.length ? sp.hits : []; for (var i = 1; pages.length < Math.min(6, doc.numPages) && i <= doc.numPages; i++) if (pages.indexOf(i) < 0) pages.push(i);
@@ -6528,7 +6626,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (!last) return Promise.resolve('');
     return Promise.all(list.filter(function (p) { return p >= 1 && p <= last.numPages; }).map(function (p) { return pageText(last.doc, p).then(function (t) { return '--- page ' + p + ' ---\n' + t; }); })).then(function (a) { return a.join('\n'); });
   }
-  Hub.pdfread = { readStatements: readStatements, last: function () { return last; }, pagesAsImages: pagesAsImages, textOf: textOf, sampler: sampler };
+  Hub.pdfread = { offlineFirst: offlineFirst, readStatements: readStatements, last: function () { return last; }, pagesAsImages: pagesAsImages, textOf: textOf, sampler: sampler };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/sukukrules.js */
@@ -10651,6 +10749,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   // one place per tool: the sidebar and the home page list every tool once
   var SECTIONS = [
+    { id: 'trading', label: 'Trading' },
+    { id: 'iran', label: 'Iran Economy: Financial Analysis' },
     { id: 'strategy', label: 'Business Strategy & Solutions' },
     { id: 'statements', label: 'Financial Statements & Audit' },
     { id: 'valuation', label: 'Valuation' },
@@ -10658,9 +10758,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     { id: 'bonds', label: 'Bond Issuance' },
     { id: 'ipo', label: 'IPO' },
     { id: 'ib', label: 'Investment Banking & M&A' },
-    { id: 'pe', label: 'Private Equity' },
-    { id: 'trading', label: 'Trading' },
-    { id: 'iran', label: 'Iran Economy: Financial Analysis' }
+    { id: 'pe', label: 'Private Equity' }
   ];
   // primary home of each tool (a tool may declare several sections; it is listed only here)
   var PLACE = { 'strategy-engine': 'strategy', company: 'statements', auditor: 'statements', valsummary: 'valuation', dcf: 'valuation', comps: 'valuation', precedents: 'valuation', wacc: 'valuation', 'rm-valuation': 'valuation',
@@ -10961,6 +11059,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   Hub.register = register; Hub.toolById = byId;
   Hub.SECTIONS = SECTIONS;
+  // back button: previous page in this session, or the overview when there is none
+  (function () { var b = root.document && document.getElementById('back-btn'); if (!b) return; var depth = 0;
+    root.addEventListener('hashchange', function () { depth++; b.disabled = false; });
+    b.addEventListener('click', function () { if (depth > 0 && root.history.length > 1) { depth = Math.max(0, depth - 2); root.history.back(); } else if (location.hash && location.hash !== '#home') location.hash = '#home'; }); })();
   Hub.start = function () { var st = Hub.util.store; if (st && st.ready) st.ready().then(start, start); else start(); };
   Hub.rerenderAll = rerenderAll;
   Hub.secLabel = secLabel;
@@ -18325,8 +18427,40 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   Hub.copyPrompt = copyText;
   function lang(S) { return S.settings.lang === 'auto' ? (fa() ? 'fa' : 'en') : S.settings.lang; }
+  /* ---------- the ten-part strict-auditor report, built only from local results (Excel/PDF extraction, rule engine, notes) ---------- */
+  var SECMAP = { 3: /^(Arithmetic|Completeness|Cash)$/, 4: /^(Tax|Fixed assets|Inventory|Legal|Dividends|Margins|Unusual movement|Finance cost)$/, 7: /^(Related parties)$/, 8: /^(Earnings quality|Revenue \/ receivables|Receivables|Revenue)$/, 9: /^(Going concern|Going concern \/ legal|Leverage)$/ };
+  var SEVFA = { critical: 'بحرانی', high: 'زیاد', medium: 'متوسط', low: 'کم', info: 'اطلاعات' };
+  function fN(v) { return isFinite(v) ? Math.round(v).toLocaleString('en-US') : '—'; }
+  function reportBlocks(S) {
+    var AC = Hub.auditCore, R = AC && AC.result(), B = [], CD = Hub.companyData, N = CD && CD.notes ? CD.notes() : null, rep = N && N.report;
+    B.push({ t: 'h1', x: 'گزارش حسابرس سخت‌گیر' });
+    if (!R) { B.push({ t: 'warn', x: 'صورت‌های مالی وارد نشده است. از نوار «Company data» فایل Excel یا PDF را وارد کنید.' }); return B; }
+    var F = R.findings, ff = function (re) { return F.filter(function (f) { return re.test(f.area.en || f.area); }); };
+    var rows = function (list) { return list.map(function (f) { return [SEVFA[f.sev], tx(f.area), tx(f.title) + (tx(f.evidence) ? ' — ' + tx(f.evidence) : ''), tx(f.q), tx(f.act)]; }); };
+    var tbl = function (list, empty) { return list.length ? { t: 'table', head: ['شدت', 'حوزه', 'یافته و شواهد', 'پرسش از مدیریت', 'اقدام / روش رسیدگی'], rows: rows(list) } : { t: 'p', x: empty || 'یافته‌ای در این بخش نیست.' }; };
+    B.push({ t: 'small', x: 'شناسهٔ تحلیل ' + R.id + ' · ' + R.ver + ' · ' + R.src + ' · سال آخر ' + R.year + ' · واحد ' + (R.unit || '؟') + ' ' + (R.currency || '') + ' · اجرا روی همین دستگاه، بدون اتصال' });
+    B.push({ t: 'h2', x: '۱. فایل‌ها و پرونده' }, { t: 'p', x: 'فایل: ' + R.file + ' · سال‌ها: ' + R.years.join('، ') + (rep ? ' · وضعیت استخراج: ' + rep.statusFa : '') });
+    var co = AC.caseFile().companies[CD.get().company || R.file], vv = co ? co.versions : [];
+    if (vv.length > 1) { var d = vv[vv.length - 1].diff; if (d) B.push({ t: 'ul', x: ['تغییر نسبت به نسخهٔ قبلی (' + vv[vv.length - 2].savedAt + '): ' + (d.changed.length ? d.changed.map(function (c) { return (AC.KEYFA[c.k] || c.k) + ' ' + fN(c.from) + ' → ' + fN(c.to); }).join('؛ ') : 'ارقام کلیدی بدون تغییر'), 'یافته‌های تازه: ' + (d.added.length || 0) + ' · رفع‌شده: ' + (d.cleared.length || 0)] }); }
+    B.push({ t: 'h2', x: '۲. استخراج و کنترل کامل اطلاعات' });
+    B.push(rep ? { t: 'ul', x: ['برگه‌ها: ' + rep.nSheets + ' · سطرها ' + rep.rows + ' · سلول‌ها ' + rep.cells, 'سلول‌های خطادار: ' + rep.errors + ' · فرمول‌های بدون مقدار: ' + rep.noCache, 'برگه‌های استخراج‌نشده: ' + ((rep.unused || []).map(function (u) { return u.name + ' (' + u.why + ')'; }).join('؛ ') || 'هیچ')].concat((rep.recon || []).map(function (x) { return 'تطبیق ' + x.c + ': ' + (x.ok === true ? 'منطبق' : x.ok === false ? 'نامنطبق' : 'انجام نشد') + ' — ' + x.t; })) } : { t: 'p', x: 'گزارش کنترل استخراج برای این فایل نیست (پیش از این نسخه وارد شده یا از PDF/متن چسبانده آمده است).' });
+    B.push({ t: 'h2', x: '۳. صحت و یکپارچگی صورت‌های مالی' }, tbl(ff(SECMAP[3])));
+    B.push({ t: 'h2', x: '۴. تحلیل تخصصی حسابرسی و حسابداری' }, tbl(ff(SECMAP[4])));
+    var r = R.ratios, fx = function (v, d) { return isFinite(v) ? v.toFixed(d == null ? 2 : d) : '—'; }, pc = function (v) { return isFinite(v) ? (v * 100).toFixed(1) + '٪' : '—'; };
+    B.push({ t: 'h2', x: '۵. نسبت‌ها و شاخص‌های مالی (تعاریف واحد در همهٔ بخش‌ها)' }, { t: 'table', head: ['نسبت', 'مقدار', 'تعریف'], rows: [['جاری', fx(r.currentRatio), R.defs.currentRatio], ['آنی', fx(r.quickRatio), R.defs.quickRatio], ['بدهی', pc(r.debtRatio), R.defs.debtRatio], ['بدهی خالص ÷ EBITDA', fx(r.netDebtEbitda, 1), R.defs.netDebtEbitda], ['پوشش هزینهٔ مالی', fx(r.interestCover, 1), R.defs.interestCover], ['جریان نقد ÷ سود', fx(r.cfoNi), R.defs.cfoNi], ['حاشیهٔ ناخالص', pc(r.gm), R.defs.gm], ['حاشیهٔ EBITDA', pc(r.ebitdaM), R.defs.ebitdaM], ['بازده حقوق مالکانه', pc(r.roe), R.defs.roe], ['دورهٔ وصول (روز)', fx(r.dso, 0), R.defs.dso], ['دورهٔ موجودی (روز)', fx(r.dio, 0), R.defs.dio], ['نرخ مؤثر مالیات', pc(r.etr), R.defs.etr], ['Altman Z″', fx(r.z), R.defs.z]] });
+    B.push({ t: 'h2', x: '۶. مغایرت‌ها و ریسک‌های اصلی' }, tbl(F.filter(function (f) { return f.sev === 'critical' || f.sev === 'high'; }), 'یافتهٔ بحرانی یا زیاد نیست.'));
+    B.push({ t: 'h2', x: '۷. یادداشت‌های توضیحی و گزارش حسابرس' }, tbl(ff(SECMAP[7]), 'یافته‌ای دربارهٔ اشخاص وابسته نیست.'));
+    if (N && N.notes && N.notes.length) { var cats = {}; N.notes.forEach(function (b) { cats[b.cat] = (cats[b.cat] || 0) + 1; }); B.push({ t: 'p', x: 'جداول یادداشت استخراج‌شده: ' + Object.keys(cats).map(function (k) { return ((Hub.stmtImport && Hub.stmtImport.CATFA[k]) || k) + ' ' + cats[k]; }).join('، ') + '. بررسی متنی محلی قاعده‌محور است؛ تفسیر عمیق متن به مدل زبانی نیاز دارد (اختیاری).' }); }
+    if (S.review && S.review.json && S.review.local) B.push({ t: 'p', x: 'بررسی محلی متن (بدون هوش مصنوعی) در ' + S.review.at + ' انجام شده؛ نتیجه در زبانهٔ «بررسی عمیق» است.' });
+    B.push({ t: 'h2', x: '۸. کیفیت سود و جریان نقد' }, { t: 'p', x: 'سود خالص ' + fN(R.key.ni) + ' · جریان نقد عملیاتی ' + fN(R.key.cfo) + (isFinite(R.key.cfoPrev) ? ' (سال قبل ' + fN(R.key.cfoPrev) + ')' : '') + ' · نسبت جریان نقد به سود ' + fx(r.cfoNi) }, tbl(ff(SECMAP[8])));
+    B.push({ t: 'h2', x: '۹. ریسک مالی و تداوم فعالیت' }, { t: 'p', x: 'Altman Z″ ' + fx(r.z) + ' (بحران < ۱٫۱ · امن > ۲٫۶) · نسبت بدهی ' + pc(r.debtRatio) }, tbl(ff(SECMAP[9])));
+    var c = R.count, top = F.filter(function (f) { return f.sev === 'critical' || f.sev === 'high'; }).slice(0, 5);
+    B.push({ t: 'h2', x: '۱۰. نتیجه‌گیری حسابرس سخت‌گیر' }, { t: 'p', x: 'بحرانی ' + c.critical + ' · زیاد ' + c.high + ' · متوسط ' + c.medium + ' · کم ' + c.low + '. ' + (c.critical ? 'تا روشن‌شدن یافته‌های بحرانی، صورت‌های مالی مبنای قابل اتکایی برای تصمیم تأمین مالی یا ارزش‌گذاری نیستند.' : c.high ? 'صورت‌ها با احتیاط و پس از پاسخ مدیریت به یافته‌های زیاد قابل استفاده‌اند.' : 'در آزمون‌های تحلیلی، مانع اصلی دیده نشد.') },
+      { t: 'ul', x: top.map(function (f) { return tx(f.title) + ' — ' + tx(f.q); }) }, { t: 'small', x: 'روش‌های تحلیلی محل بررسی را نشان می‌دهند و اظهارنظر حسابرسی نیستند (ISA 520). محاسبات با کد و قواعد ثابت انجام شده و قابل بازتولید است؛ هیچ مدل زبانی ارقام را تغییر نداده است.' });
+    return B;
+  }
   TK.define({
-    id: 'auditor', title: 'Strict Auditor (statements review)', sections: ['audit', 'finmgmt', 'valuation', 'ib'], priority: -4, version: 1, storeKey: 'hub.auditor.v1',
+    id: 'auditor', title: 'Strict Auditor (statements review)', sections: ['statements'], priority: -4, version: 1, storeKey: 'hub.auditor.v1',
     summary: 'Upload the statements (Excel or PDF): line-by-line analytical review, earnings quality, going concern, legal checks, then questions for management and remedies; Claude adds a strict auditor’s reading.',
     sample: sample, run: run, scenarios: false,
     fromCompany: function (S, M) { S.loaded = { file: M.file, savedAt: M.savedAt }; S.review = null; return fa() ? 'صورت‌های مالی برای بررسی بارگذاری شد.' : 'Statements loaded for review.'; },
@@ -18339,7 +18473,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['Medium / low', function () { return (C().medium || 0) + ' / ' + (C().low || 0); }, function () { return 'findings'; }],
       ['Altman Z″', function () { var z = ctx.R.ratios && ctx.R.ratios.z; return isFinite(z) ? z.toFixed(2) : '–'; }, function () { return 'safe > 2.6 · distress < 1.1'; }],
       ['Deep review', function () { return ctx.S.review && ctx.S.review.json ? (ctx.S.review.json.riskRating || 'Ready') : '–'; }, function () { return ctx.S.review ? ctx.S.review.at : 'not run'; }]]; },
-    tabs: [{ group: 'Review', items: [['findings', 'Findings', function (ctx) {
+    tabs: [{ group: 'Review', items: [['file', 'پرونده، فایل‌ها و حالت آفلاین', function (ctx) { return filesTab(ctx); }], ['findings', 'Findings', function (ctx) {
       var S = ctx.S, R = ctx.R;
       if (R.empty) return ctx.group([ctx.panel('Start', [h('p', { class: 'muted', text: 'Use the Company data bar above: import the Excel file or the PDF of the statements (or paste the rows). The review runs as soon as the statements are loaded.' })])]);
       var sev = h('select', { class: 'f-sel', 'aria-label': 'Minimum severity' }, [['info', 'All'], ['low', 'Low and above'], ['medium', 'Medium and above'], ['high', 'High and above'], ['critical', 'Critical']].map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
@@ -18376,8 +18510,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var n = pdf ? Math.min(pdf.numPages, 80) : 0, all = []; for (var i = 1; i <= n; i++) all.push(i);
         return (n ? Hub.pdfread.textOf(all) : Promise.resolve('')).then(function (txt) { var j = Hub.localAI.audit(S, R, lang(S), txt); j.method = lang(S) === 'fa' ? 'بررسی محلی قاعده‌محور (بدون هوش مصنوعی): از یافته‌های خودکار، نسبت‌ها و متن PDF' : 'Local rule-based review (no AI): automated findings, ratios and the PDF text'; return j; });
       }
-      var loc = h('button', { class: 'btn', type: 'button', text: 'Local review (no AI)', onclick: function () { loc.disabled = true; localReview().then(function (j) { S.review = { json: j, at: new Date().toLocaleString(), local: true }; st.textContent = ''; ctx.rerender(); }, function (e) { loc.disabled = false; st.textContent = String(e && e.message || e); }); } });
-      var go = h('button', { class: 'btn primary', type: 'button', text: 'Run strict review (AI if connected, else local)', onclick: function () {
+      var loc = h('button', { class: 'btn primary', type: 'button', text: 'بررسی کامل محلی (بدون اتصال و بدون هوش مصنوعی)', onclick: function () { loc.disabled = true; localReview().then(function (j) { S.review = { json: j, at: new Date().toLocaleString(), local: true }; st.textContent = ''; ctx.rerender(); }, function (e) { loc.disabled = false; st.textContent = String(e && e.message || e); }); } });
+      var go = h('button', { class: 'btn', type: 'button', text: 'تحلیل تکمیلی ابری با Claude (اختیاری)', onclick: function () {
         go.disabled = true; st.textContent = 'Connecting to Claude…';
         Hub.pdfread.sampler().then(function (sample) {
           if (!sample) return localReview();
@@ -18397,11 +18531,31 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var copy = h('button', { class: 'btn ghost', type: 'button', text: 'Copy prompt', onclick: function () { copyText(reviewPrompt(S, R, lang(S), false), ans); } });
       var imp = h('button', { class: 'btn ghost', type: 'button', text: 'Import answer', onclick: function () { try { S.review = { json: Hub.tools.studio.parseJSON(ans.value), at: new Date().toLocaleString() }; ctx.rerender(); } catch (e) { U.toast(e.message, 'crit'); } } });
       var out = S.review && S.review.json ? Hub.tools.studio.render(S.review.json) : h('p', { class: 'muted', text: 'Not run yet.' });
-      return ctx.group([ctx.panel('Strict auditor’s reading (AI or local)', [h('p', { class: 'muted', text: 'Claude reads every imported line and the automated findings' + (pdf ? ', plus the PDF pages you list (e.g. the notes)' : '') + ', and returns risks, findings with evidence, questions for management, documents to request and adjustments to consider. A draft for your judgement, not an audit opinion.' }),
-        h('div', { class: 'row-ctl' }, [h('label', { class: 'muted', text: 'PDF pages to attach' }), pages, go, loc, copy]), st, h('details', null, [h('summary', { text: 'Offline: import an answer' }), ans, h('div', { class: 'row-ctl' }, [imp])])]),
+      return ctx.group([ctx.panel('Strict auditor’s reading (local first; cloud optional)', [h('p', { class: 'muted', text: 'Claude reads every imported line and the automated findings' + (pdf ? ', plus the PDF pages you list (e.g. the notes)' : '') + ', and returns risks, findings with evidence, questions for management, documents to request and adjustments to consider. A draft for your judgement, not an audit opinion.' }),
+        h('div', { class: 'row-ctl' }, [loc, h('label', { class: 'muted', text: 'PDF pages to attach' }), pages, go, copy]), st, h('details', null, [h('summary', { text: 'Offline: import an answer' }), ans, h('div', { class: 'row-ctl' }, [imp])])]),
         ctx.panel('Review' + (S.review ? ' · ' + S.review.at : ''), [out])]);
-    }]] }]
+    }], ['report', 'گزارش نهایی (۱۰ بخش)', function (ctx) { return ctx.group([ctx.panel('گزارش نهایی حسابرس سخت‌گیر', [Hub.report.buttons(function () { return reportBlocks(ctx.S); }, 'strict-auditor'), Hub.report.dom(reportBlocks(ctx.S))])]); }]] }]
   });
+  /* files, case file and offline status: what was imported, every version with its diff, what runs without a connection */
+  function filesTab(ctx) {
+    var AC = Hub.auditCore, R = AC && AC.result(), CD = Hub.companyData, rec = CD && CD.get(), N = CD && CD.notes ? CD.notes() : null, kids = [];
+    var cloud = h('input', { type: 'checkbox', 'aria-label': 'cloud PDF' }); try { cloud.checked = localStorage.getItem('hub.cloudPdf') === '1'; } catch (e) { /* storage */ }
+    cloud.addEventListener('change', function () { try { localStorage.setItem('hub.cloudPdf', cloud.checked ? '1' : '0'); } catch (e) { /* storage */ } U.toast(cloud.checked ? 'خواندن PDF با Claude (در صورت اتصال) فعال شد؛ بدون اتصال، خواندن محلی ادامه می‌یابد.' : 'خواندن PDF فقط روی همین دستگاه.', 'good'); });
+    kids.push(h('p', { 'data-notr': '1', text: 'حسابرس سخت‌گیر به‌طور کامل روی همین دستگاه اجرا می‌شود: خواندن Excel و PDF، استخراج، کنترل‌ها، نسبت‌ها، کیفیت سود، تداوم فعالیت و گزارش نهایی بدون اینترنت و بدون مدل زبانی انجام می‌شوند. Claude فقط یک تحلیل تکمیلی اختیاری است و جایگزین موتور محلی نمی‌شود.' }));
+    kids.push(h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid' }, [h('thead', null, [h('tr', null, ['قابلیت', 'بدون اتصال (Offline)', 'نیاز به مدل یا منبع بیرونی', 'محدودیت'].map(function (x) { return h('th', { text: x }); }))]), h('tbody', null, AC.CAPS.map(function (c) { return h('tr', null, c.map(function (x) { return h('td', { 'data-notr': '1', text: x }); })); }))])]));
+    kids.push(h('label', { class: 'small', 'data-notr': '1' }, [cloud, ' استفاده از Claude برای خواندن PDF وقتی اتصال هست (پیش‌فرض: خاموش — خواندن محلی)']));
+    var p1 = ctx.panel('حالت اجرا: محلی و مستقل از Cloud', kids), k2 = [];
+    if (!rec) k2.push(h('p', { class: 'muted', text: 'فایلی وارد نشده است. از نوار «Company data» بالای همین صفحه Excel یا PDF صورت‌های مالی را وارد کنید.' }));
+    else {
+      k2.push(h('p', { 'data-notr': '1', text: 'فایل فعلی: ' + rec.file + ' · ذخیره ' + rec.savedAt + (R ? ' · شناسهٔ تحلیل ' + R.id + ' (' + R.ver + ')' : '') }));
+      k2.push(Hub.stmtImport && Hub.stmtImport.reportDom ? Hub.stmtImport.reportDom(N && N.report) : h('span'));
+      var co = AC.caseFile().companies[rec.company || rec.file];
+      if (co && co.versions.length) k2.push(h('h4', { 'data-notr': '1', text: 'پروندهٔ مالی شرکت — نسخه‌ها' }), h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid' }, [h('thead', null, [h('tr', null, ['نسخه', 'فایل', 'سال‌ها', 'بحرانی / زیاد / متوسط', 'جریان نقد عملیاتی', 'سود خالص', 'تغییر نسبت به نسخهٔ قبل'].map(function (x) { return h('th', { text: x }); }))]),
+        h('tbody', null, co.versions.slice().reverse().map(function (v) { var d = v.diff; return h('tr', null, [v.id + ' · ' + v.savedAt, v.file, v.years.join('، '), v.count.critical + ' / ' + v.count.high + ' / ' + v.count.medium, fN(v.key.cfo), fN(v.key.ni),
+          !d ? 'اولین نسخه' : (d.sameYears ? '' : 'سال‌ها تغییر کرده؛ ') + (d.changed.length ? d.changed.slice(0, 5).map(function (c) { return (AC.KEYFA[c.k] || c.k) + ' ' + fN(c.from) + '→' + fN(c.to); }).join('، ') : 'ارقام کلیدی بدون تغییر') + ' · یافتهٔ تازه ' + d.added.length + '، رفع‌شده ' + d.cleared.length].map(function (x) { return h('td', { 'data-notr': '1', text: String(x) }); })); }))])]));
+    }
+    return ctx.group([p1, ctx.panel('پرونده و فایل‌های مالی', k2)]);
+  }
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/models/financing-engine.js */
@@ -18918,8 +19072,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function derive(ctx, M) {
     var v = {}, list = [], X0 = ctx && ctx.R && ctx.R.X; if (!X0) return { v: v, list: list };
     var G0 = X0.G, E0 = X0.E, src = X0.F && X0.F.src || {};
-    if (M.cfo === 'unk' && isFinite(G0.cfoSum) && src.cfo1 !== 'unknown') { v.cfo = G0.cfoSum > 0 ? 'pos' : 'neg'; list.push('جریان نقد عملیاتی دو سال ' + (v.cfo === 'pos' ? 'مثبت' : 'منفی') + ' (' + (src.cfo1 === 'statements' ? 'صورت مالی' : 'فرم') + ')'); }
-    if (M.la === 'unk' && isFinite(G0.la) && src.ta !== 'unknown') { v.la = G0.la <= 0.9 ? 'ok' : 'high'; list.push('نسبت بدهی ' + fa(Math.round(G0.la * 100)) + '٪'); }
+    // one source: the Strict Auditor's result on the imported file comes first, so the sign of operating cash flow and the debt ratio match the auditor's
+    var AR = Hub.auditCore && Hub.auditCore.result();
+    if (AR && M.cfo === 'unk' && isFinite(AR.key.cfo)) { var cs = AR.key.cfo + (isFinite(AR.key.cfoPrev) ? AR.key.cfoPrev : 0); v.cfo = cs > 0 ? 'pos' : 'neg'; list.push('جریان نقد عملیاتی ' + (isFinite(AR.key.cfoPrev) ? 'دو سال ' : 'سال آخر ') + (v.cfo === 'pos' ? 'مثبت' : 'منفی') + ' (حسابرس سخت‌گیر ' + AR.id + ')'); }
+    if (AR && M.la === 'unk' && isFinite(AR.key.debtRatio)) { v.la = AR.key.debtRatio <= 0.9 ? 'ok' : 'high'; list.push('نسبت بدهی ' + fa(Math.round(AR.key.debtRatio * 100)) + '٪ (حسابرس سخت‌گیر ' + AR.id + ')'); }
+    if (M.cfo === 'unk' && v.cfo == null && isFinite(G0.cfoSum) && src.cfo1 !== 'unknown') { v.cfo = G0.cfoSum > 0 ? 'pos' : 'neg'; list.push('جریان نقد عملیاتی دو سال ' + (v.cfo === 'pos' ? 'مثبت' : 'منفی') + ' (' + (src.cfo1 === 'statements' ? 'صورت مالی' : 'فرم') + ')'); }
+    if (M.la === 'unk' && v.la == null && isFinite(G0.la) && src.ta !== 'unknown') { v.la = G0.la <= 0.9 ? 'ok' : 'high'; list.push('نسبت بدهی ' + fa(Math.round(G0.la * 100)) + '٪'); }
     if (M.opinion === 'unk' && E0.fin.opinion && E0.fin.opinion !== 'unk') { v.opinion = E0.fin.opinion; list.push('اظهارنظر حسابرس از فرم'); }
     if (M.form === 'unk' && /^(pjs|prjs|other)$/.test(E0.co.form)) { v.form = E0.co.form; list.push('شخصیت حقوقی از فرم'); }
     if (M.listed === 'unk' && /^(none|ifb|tse)$/.test(E0.co.listing)) { v.listed = E0.co.listing; list.push('وضعیت بورسی از فرم'); }
@@ -19000,6 +19158,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     kids.push(h('p', { class: 'small', 'data-notr': '1', text: 'فایل: ' + rec.file + ' · ' + (rec.unit || '') + ' ' + (rec.currency || '') + '. صورت‌های به‌کاررفته در محاسبات (تشخیص، ظرفیت بدهی، جریان نقد، شرایط احراز اوراق و موتور راهکار): ' + used + '.' }));
     if (rec.saveErr) kids.push(h('p', { class: 'warn-t', 'data-notr': '1', text: rec.saveErr }));
     kids.push(SI && SI.reportDom ? SI.reportDom(N && N.report) : h('p', { text: '—' }));
+    // the same company in the financing forms and in the auditor: shared figures must agree, or the difference is named
+    var AR = Hub.auditCore && Hub.auditCore.result(), X0 = ctx.R && ctx.R.X, E0 = X0 && X0.E, G0 = X0 && X0.G;
+    if (AR) { var AC = Hub.auditCore, nn = function (v) { return v === '' || v == null ? NaN : Number(v); }, cl = [AC.compare('جریان نقد عملیاتی سال آخر (علامت)', E0 && E0.fin ? nn(E0.fin.cfo1) : NaN, AR.key.cfo, 'sign'), AC.compare('سود خالص سال آخر (علامت)', E0 && E0.fin ? nn(E0.fin.ni) : NaN, AR.key.ni, 'sign'), AC.compare('نسبت بدهی (جمع بدهی ÷ جمع دارایی)', G0 ? G0.la : NaN, AR.key.debtRatio, 'ratio')];
+      kids.push(h('h4', { 'data-notr': '1', text: 'یکپارچگی با حسابرس سخت‌گیر (' + AR.id + ')' }), h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid' }, [h('thead', null, [h('tr', null, ['رقم مشترک', 'فرم تأمین مالی', 'حسابرس سخت‌گیر (فایل)', 'نتیجه'].map(function (x) { return h('th', { text: x }); }))]),
+        h('tbody', null, cl.map(function (q) { var f = function (v) { return isFinite(v) ? (/نسبت/.test(q.label) ? fa(Math.round(v * 1000) / 10) + '٪' : fa(Math.round(v))) : 'خالی'; }; return h('tr', null, [q.label, f(q.theirs), f(q.ours), q.ok === null ? 'قابل مقایسه نیست (یک طرف خالی)' : q.ok ? '✓ سازگار' : '✗ ' + q.why].map(function (x) { return h('td', { 'data-notr': '1', text: x }); })); }))])]),
+        h('p', { class: 'small muted', 'data-notr': '1', text: 'کشف فرصت و موتور راهکار علامت جریان نقد و نسبت بدهی را مستقیماً از نتیجهٔ حسابرس سخت‌گیر می‌گیرند. واحد فرم تأمین مالی (میلیارد ریال) با واحد فایل ممکن است فرق کند؛ برای همین مبلغ‌ها با علامت و نسبت‌ها با مقدار مقایسه می‌شوند.' })); }
     if (N && N.notes && N.notes.length) {
       var byCat = {}; N.notes.forEach(function (b) { (byCat[b.cat] = byCat[b.cat] || []).push(b); });
       kids.push(h('h4', { 'data-notr': '1', text: 'جداول تکمیلی استخراج‌شده (یادداشت‌ها)' }), h('p', { class: 'small muted', 'data-notr': '1', text: 'این جداول برای بررسی شما نمایش داده و در Excel خروجی گرفته می‌شوند؛ در محاسبات خودکار موتور تأمین مالی هنوز استفاده نمی‌شوند (ارقام تسهیلات و بدهی در محاسبه از صورت وضعیت مالی می‌آیند).' + (N.cut > 0 ? ' برای حجم حافظه، ' + fa(N.cut) + ' سطر از جداول بزرگ ذخیره نشد (در گزارش برگه‌ها شمارش شده‌اند).' : '') }));
@@ -26426,11 +26590,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611141932) */
+/* PWA: offline cache + app updates (version 202611141944) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611141932';
+  window.HUB_APP_VERSION = '202611141944';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
