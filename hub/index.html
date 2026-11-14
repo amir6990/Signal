@@ -22028,6 +22028,17 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function beta(X, refMap, t, k) { var x = [], y = []; for (var i = Math.max(1, t - k); i <= t; i++) { var a = refMap[X.d[i]], b = refMap[X.d[i - 1]]; if (a > 0 && b > 0) { x.push(Math.log(a / b)); y.push(Math.log(X.c[i] / X.c[i - 1])); } }
     if (x.length < 30) return NaN; var mx = mean(x), my = mean(y), cv = 0, vx = 0; for (var j = 0; j < x.length; j++) { cv += (x[j] - mx) * (y[j] - my); vx += (x[j] - mx) * (x[j] - mx); } return vx > 0 ? cv / vx : NaN; }
 
+  /* full per-bar model votes for one asset (back-test window), built from its light analysis on demand and dropped after use:
+     the back-test walks the assets one at a time, so a phone holds one asset's votes at a time instead of all 80 (the page used to run out of memory) */
+  function fullOf(z) {
+    var R = z.R, X = R.X, I = R.I, n = X.n, t0 = Math.max(25, n - BTWIN), V = Object.assign({}, R.V);
+    Object.keys(VOTE).forEach(function (m) { V[m] = new Array(n).fill(null); });
+    for (var t = t0; t < n; t++) { var keepWhy = t >= n - TAIL, rg = R.RG[t]; Object.keys(VOTE).forEach(function (m) { try { var o = VOTE[m](X, I, t, rg, R.A); if (o && !keepWhy) o.why = ''; V[m][t] = o; } catch (e) { V[m][t] = null; } }); }
+    var LV = Hub.longView; V.channel = new Array(n).fill(null); V.wdiv = new Array(n).fill(null);
+    if (LV) for (t = Math.max(150, t0); t < n; t++) { if (t !== n - 1 && t % 5 && V.channel[t - 1]) { V.channel[t] = V.channel[t - 1]; V.wdiv[t] = V.wdiv[t - 1]; continue; } try { var lv = LV.votesAt(X, t); V.channel[t] = lv.channel; V.wdiv[t] = lv.wdiv; } catch (e) { /* skip */ } }
+    return Object.assign({}, z, { R: { X: X, I: I, V: V, RG: R.RG, A: R.A, full: true } });
+  }
+
   /* ---------------- cross-sectional and engine-level models ---------------- */
   function crossModels(list, U, E, full) {
     // factor ranks per date: momentum 120d excl. 5d, low volatility, liquidity
@@ -22038,7 +22049,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var rows = []; stocks.forEach(function (z) { var i = z.di[d]; if (i == null || i < 125) return; var X = z.X, I = z.R.I, mom = X.c[i - 5] / X.c[i - 125] - 1, vl = I.vol20[i], liq = mean(X.val.slice(i - 19, i + 1)); if (isF(mom) && isF(vl)) rows.push({ z: z, i: i, mom: mom, vl: vl, liq: liq || 0 }); });
       if (rows.length < 6) return; var rk = function (k, inv) { var s = rows.slice().sort(function (p, q) { return inv ? q[k] - p[k] : p[k] - q[k]; }); s.forEach(function (r, j) { r[k + 'R'] = j / (s.length - 1); }); };
       rk('mom'); rk('vl', true); rk('liq');
-      rows.forEach(function (r) { var sc = r.momR * 0.5 + r.vlR * 0.3 + r.liqR * 0.2; r.z.F[r.i] = { v: clamp((sc - 0.5) * 2, -1, 1), why: 'رتبهٔ عاملی ' + pct(sc, 0) + ' (مومنتوم ' + pct(r.momR, 0) + '، نوسان پایین ' + pct(r.vlR, 0) + '، نقدشوندگی ' + pct(r.liqR, 0) + ')' }; });
+      var keepW = dl.indexOf(d) >= dl.length - TAIL; rows.forEach(function (r) { var sc = r.momR * 0.5 + r.vlR * 0.3 + r.liqR * 0.2; r.z.F[r.i] = { v: clamp((sc - 0.5) * 2, -1, 1), why: keepW ? 'رتبهٔ عاملی ' + pct(sc, 0) + ' (مومنتوم ' + pct(r.momR, 0) + '، نوسان پایین ' + pct(r.vlR, 0) + '، نقدشوندگی ' + pct(r.liqR, 0) + ')' : '' }; });
     });
     stocks.forEach(function (z) { z.R.V.factor = z.F; });
     // cross-asset: beta to the free-market dollar when the dollar trends
@@ -22047,7 +22058,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var ui = {}; usdRows.forEach(function (r, i) { ui[r.date] = i; });
       for (var t = full ? 60 : Math.max(60, X.n - TAIL); t < X.n; t++) { var k = ui[X.d[t]]; if (k == null || k < 50) continue; var b = beta(X, usdM, t, 60); if (!isF(b)) continue;
         var m50 = mean(usdC.slice(k - 49, k + 1)), tr = sgn(usdC[k] / m50 - 1) * (usdC[k] > usdC[k - 10] === usdC[k] > m50 ? 1 : 0.5);
-        z.R.V.cross[t] = { v: clamp(b * 2, -1, 1) * tr * 0.8, why: 'بتای دلاری ' + fa(b, 2) + '، روند دلار آزاد ' + (tr > 0 ? 'صعودی' : tr < 0 ? 'نزولی' : 'خنثی') }; } });
+        z.R.V.cross[t] = { v: clamp(b * 2, -1, 1) * tr * 0.8, why: t < X.n - TAIL ? '' : 'بتای دلاری ' + fa(b, 2) + '، روند دلار آزاد ' + (tr > 0 ? 'صعودی' : tr < 0 ? 'نزولی' : 'خنثی') }; } });
     // seasonality: mean return of the next session's Shamsi month and weekday, only when |t| ≥ 2
     var J = Hub.jalali;
     list.forEach(function (z) { var X = z.R.X; z.R.V.temporal = new Array(X.n).fill(null); if (!J || X.n < 200) return;
@@ -22484,17 +22495,18 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function backtest(list, E) {
     var all = [], dset = []; list.forEach(function (z) { dset = dset.concat(z.R.X.d); }); dset.sort(function (a, b) { return a - b; }); var split = dset[Math.floor(dset.length * 0.6)];
     var per = {}, rules = {};
-    list.forEach(function (z) { if (z.a.cls === 'option') return;
+    list.forEach(function (z0) { if (z0.a.cls === 'option') return; var z = z0.R.full ? z0 : fullOf(z0);
       var tr = simTrades(z, E, function (t) { if (t < 60) return null; var en = ensemble(z, t, E, {}), conf = confidence(en, t + 1, 0); if (en.S < 0.2 || conf < E.minConf || en.rg === 'crisis') return null; var hz = horizonOf(en.votes, en.S), vv = {}; en.votes.forEach(function (x) { if (x.v) vv[x.m] = Math.round(x.v * 100) / 100; }); return { conf: conf, days: hz.days, hz: hz.k, rg: en.rg, v: vv, agree: en.agree }; }, 60);
       tr.forEach(function (x) { x.asset = z.a.sym; x.cls = z.a.cls; }); all = all.concat(tr);
       Object.keys(BASEW).forEach(function (m) { if (!z.R.V[m]) return; var rt = simTrades(z, E, function (t) { var o = z.R.V[m][t]; return o && o.v >= 0.5 ? { conf: 0, days: 20, hz: 'm' } : null; }, 60); rt.forEach(function (x) { x.asset = z.a.sym; }); (rules[m] = rules[m] || []).push.apply(rules[m], rt); }); });
+    var audit = lookahead(list);
     var strat = {}; Object.keys(STRATS).forEach(function (k) { var h = STRATS[k].h; stratTrades(list, E, k, STRATS[k].p[0]).forEach(function (x) { var key = x.cls + '|' + h, o = (strat[key] = strat[key] || {}); (o[k] = o[k] || []).push(x); }); });
     all.forEach(function (x) { var key = x.cls + '|' + (x.hk || 'm'), o = (strat[key] = strat[key] || {}); (o.ens = o.ens || []).push(x); });
     Object.keys(strat).forEach(function (key) { var cls = key.split('|')[0]; Object.keys(STRATS).forEach(function (k) { if (STRATS[k].h === key.split('|')[1] && !strat[key][k]) strat[key][k] = []; }); strat[key].ens = strat[key].ens || []; });
     var IS = all.filter(function (x) { return x.d <= split; }), OOS = all.filter(function (x) { return x.d > split; });
     var buckets = [[55, 65], [65, 75], [75, 101]].map(function (b) { var s = stats(OOS.filter(function (x) { return x.conf >= b[0] && x.conf < b[1]; })); s.b = b; return s; });
     var rs = Object.keys(rules).map(function (m) { var o = stats(rules[m].filter(function (x) { return x.d > split; })), i = stats(rules[m].filter(function (x) { return x.d <= split; })); return { m: m, is: i, oos: o, ok: o.n >= 10 && o.avgR > 0 && o.pf > 1.1, v: vstats(rules[m], split, Number(E.acct.riskPct) || 0.01) }; });
-    return { split: split, IS: stats(IS), OOS: stats(OOS), all: stats(all), buckets: buckets, rules: rs, trades: all, strat: strat };
+    return { split: split, IS: stats(IS), OOS: stats(OOS), all: stats(all), buckets: buckets, rules: rs, trades: all, strat: strat, audit: audit };
   }
 
   /* ---------------- 12 · mandatory validation framework ----------------
@@ -22552,7 +22564,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var cand = list.filter(function (z) { return z.a.cls !== 'option' && z.R.X.n >= 140 && z.a.rows && z.a.rows.length >= 140; }), res = { assets: 0, checks: 0, diffs: 0, models: {}, ok: null, note: '' };
     if (!cand.length) { res.note = 'دارایی با تاریخچهٔ کافی برای حسابرسی نبود.'; return res; }
     var pick = [], step = Math.max(1, Math.floor(cand.length / 4)); for (var i = 0; i < cand.length && pick.length < 4; i += step) pick.push(cand[i]);
-    pick.forEach(function (z) {
+    pick.forEach(function (z0) { var z = z0.R.full ? z0 : fullOf(z0);
       var X = z.R.X, n = X.n, ts = [0.55, 0.7, 0.85].map(function (q) { return Math.floor(n * q); }).concat([n - 3]); res.assets++;
       ts.forEach(function (t) {
         var cut = 0; z.a.rows.forEach(function (r, k) { if (r.date <= X.d[t]) cut = k + 1; }); if (cut < 60) return;
@@ -22579,7 +22591,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var ba = {}, ga = {}; tr.forEach(function (x) { (ga[x.asset] = ga[x.asset] || []).push(x); }); Object.keys(ga).forEach(function (k) { var s = stats(ga[k]); ba[k] = [s.n, Math.round(s.hit * 100) / 100, Math.round(s.avgR * 100) / 100]; });
     var rules = {}; bt.rules.forEach(function (r) { rules[r.m] = { is: r.is, oos: r.oos, ok: r.ok, v: r.v ? { t: r.v.t, tc: r.v.tc, nFolds: r.v.nFolds, posFolds: r.v.posFolds, c2: r.v.c2 } : null }; });
     var asOf = 0, from = 1e9; list.forEach(function (z) { asOf = Math.max(asOf, z.R.X.d[z.R.X.n - 1]); from = Math.min(from, z.R.X.d[0]); });
-    return { at: Date.now(), asOf: asOf, from: from, split: split, sig: valSig(E), eng: ENG_VER, sample: list.every(function (z) { return z.a.sample; }), nAssets: list.length, nTrades: tr.length, pools: pools, byAsset: ba, sens: sensitivity(tr, E), audit: lookahead(list), rules: rules, strat: stratSel(bt, E, list), minConf: E.minConf, cost: Number(E.acct.costPct) || 0 };
+    return { at: Date.now(), asOf: asOf, from: from, split: split, sig: valSig(E), eng: ENG_VER, sample: list.every(function (z) { return z.a.sample; }), nAssets: list.length, nTrades: tr.length, pools: pools, byAsset: ba, sens: sensitivity(tr, E), audit: bt.audit || lookahead(list), rules: rules, strat: stratSel(bt, E, list), minConf: E.minConf, cost: Number(E.acct.costPct) || 0 };
   }
   var GRD = { A: 'اعتبار بالا', B: 'اعتبار مناسب', C: 'اعتبار پایین', D: 'فاقد اعتبار کافی' };
   function gradeCard(c, E, db, today) {
@@ -23352,7 +23364,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function run(E0, U0, opts) {
     var E = merge(defaults(), JSON.parse(JSON.stringify(E0 || {}))), U = U0 || universe(E), list = [];
     var full = !!(opts && opts.backtest);
-    (U.assets || []).forEach(function (a) { if (!a.rows || a.rows.length < 30) return; try { list.push({ a: a, R: analyse(a, full) }); } catch (e) { /* skip bad series */ } });
+    (U.assets || []).forEach(function (a) { if (!a.rows || a.rows.length < 30) return; try { list.push({ a: a, R: analyse(a, false) }); } catch (e) { /* skip bad series */ } });
     crossModels(list, U, E, full); var ml = mlRank(list), pr = pairs(list);
     var zmap = {}; list.forEach(function (z) { zmap[z.a.key] = z; });
     var cards = list.map(function (z) { return card(z, E); }).filter(Boolean).concat(E.classes.option !== false ? optionCards(U.opt, E) : []);
@@ -25892,11 +25904,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611131920) */
+/* PWA: offline cache + app updates (version 202611140251) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611131920';
+  window.HUB_APP_VERSION = '202611140251';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
