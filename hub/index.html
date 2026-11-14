@@ -22348,7 +22348,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (cls.gold !== false) addTG('hub.sig-gold.v1', SG.gold.sample, 'gold');
     if (cls.fx !== false) addTG('hub.sig-fx.v1', SG.fx.sample, 'fx');
     var opt = null; if (cls.option !== false) { var os = getStore('hub.sigoptions.v1', SG.options.sample); try { opt = { R: SG.options.run(os), S: os, sample: isSampleSrc(os.meta.source), asOf: os.meta.asOf, age: SG.dataAge ? SG.dataAge(os) : NaN }; } catch (e) { opt = null; } }
-    return { assets: out, usd: usd, idx: idx, opt: opt };
+    return { assets: out, usd: usd, idx: idx, idxAll: st.data && st.data._idx ? { total: st.data._idx.total, ew: st.data._idx.ew } : null, idxSample: smp, opt: opt };
   }
 
   /* ---------------- per-asset analysis (cached) ---------------- */
@@ -23444,6 +23444,40 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return out;
   }
 
+  /* direction per horizon, one rule set for every view (same rules as the validation gate):
+     short: close vs MA20 and MA20 rising over 5 sessions; medium: close > MA50 > MA200 (or the reverse);
+     long: close vs MA200, MA200 rising over 20 sessions and above the close of 250 sessions ago (needs ≥ 270 sessions) */
+  function trendView(X, I, t, h) {
+    var cl = X.c[t];
+    if (h === 's') return cl > I.s20[t] && I.s20[t] > I.s20[t - 5] ? 'up' : cl < I.s20[t] && I.s20[t] < I.s20[t - 5] ? 'down' : 'flat';
+    if (h === 'm') return cl > I.s50[t] && I.s50[t] > I.s200[t] ? 'up' : cl < I.s50[t] && I.s50[t] < I.s200[t] ? 'down' : 'flat';
+    return X.n < 270 ? 'none' : cl > I.s200[t] && I.s200[t] > I.s200[t - 20] && cl > X.c[t - 250] ? 'up' : cl < I.s200[t] && I.s200[t] < I.s200[t - 20] ? 'down' : 'flat';
+  }
+  function maxC(c, a, b) { var m = -Infinity; for (var i = Math.max(0, a); i <= b; i++) if (c[i] > m) m = c[i]; return m; }
+  function minC(c, a, b) { var m = Infinity; for (var i = Math.max(0, a); i <= b; i++) if (c[i] < m) m = c[i]; return m; }
+  function pc(v) { return isF(v) ? (v >= 0 ? '+' : '') + fa(v * 100, 1) + '٪' : '—'; }
+  /* the standard block for an index: value, change, trend per horizon, support / resistance, the two confirmation levels
+     (highest / lowest close of the 20 sessions before the last), state, scenarios with targets, invalidation, timing and action */
+  function indexView(rows, name, E, sample) {
+    if (!rows || rows.length < 60) return { name: name, ok: false, why: 'دادهٔ شاخص دریافت نشده یا کمتر از ۶۰ جلسه است' };
+    var a = { key: 'ix:' + name, sym: name, cls: 'index', rows: rows.map(function (r) { return { date: r.date, open: r.close, high: r.high || r.close, low: r.low || r.close, close: r.close, vol: 0, val: 0 }; }) };
+    var R = analyse(a, false), X = R.X, I = R.I, t = X.n - 1, cl = X.c[t], atr = I.atr[t], dFa = shamsi(X.d[t]);
+    var up = maxC(X.c, t - 20, t - 1), dn = minC(X.c, t - 20, t - 1);
+    var uniq = function (arr) { return arr.filter(function (v, i) { return !i || Math.abs(v / arr[i - 1] - 1) > 0.005; }); };
+    var res = uniq([maxC(X.c, t - 60, t - 1), maxC(X.c, t - 120, t - 1), X.n > 251 ? maxC(X.c, t - 250, t - 1) : NaN].filter(function (v) { return isF(v) && v > up * 1.002; }).sort(function (p, q) { return p - q; }));
+    var sup = uniq([minC(X.c, t - 60, t - 1), minC(X.c, t - 120, t - 1), I.s200[t]].filter(function (v) { return isF(v) && v < dn * 0.998; }).sort(function (p, q) { return q - p; }));
+    var MC = Hub.mktCal, chk = MC ? MC.levels(cl, up, dn, atr, { src: 'بالاترین/پایین‌ترین مقدار پایانی ۲۰ جلسهٔ پیش از ' + dFa, upAt: cl > up ? dFa : null, dnAt: cl < dn ? dFa : null }) : null;
+    var win = MC ? MC.window('index', X.d[t], HZN.m.win, X.d) : null, tr = { s: trendView(X, I, t, 's'), m: trendView(X, I, t, 'm'), l: trendView(X, I, t, 'l') };
+    var dom = tr.m !== 'flat' && tr.m !== 'none' ? tr.m : tr.s;
+    var act = chk && chk.state === 'above' ? (tr.m === 'up' ? 'روند میان‌مدت صعودی و سطح تأیید صعودی شکسته شده: خرید سهام فقط با سیگنال معتبر خود هر سهم؛ مرجع ریسک سبد: بسته‌شدن زیر ' + fa(dn) + '.' : 'سطح تأیید صعودی شکسته شده ولی روند میان‌مدت هنوز صعودی نیست: فقط سیگنال‌های معتبر تک‌سهم، بدون افزایش وزن کلی سهام.')
+      : chk && chk.state === 'below' ? 'سطح تأیید نزولی شکسته شده: خرید تازه نکنید، حد ضرر موقعیت‌های باز را اجرا کنید و وزن سهام را تا بسته‌شدن دوباره بالای ' + fa(dn) + ' کاهش دهید.'
+      : 'بین دو سطح: تا بسته‌شدن بالای ' + fa(up) + ' یا زیر ' + fa(dn) + ' جهت بازار تأیید نشده است؛ تصمیم را به سیگنال‌های معتبر تک‌سهم محدود کنید.';
+    return { name: name, ok: true, sample: !!sample, last: cl, date: X.d[t], dateFa: dFa, chg1: cl / X.c[t - 1] - 1, chg5: X.n > 5 ? cl / X.c[t - 5] - 1 : NaN, chg20: X.n > 20 ? cl / X.c[t - 20] - 1 : NaN, atr: atr,
+      tr: tr, dom: dom, up: up, dn: dn, res: res, sup: sup, chk: chk, win: win, rg: R.RG[t], n: X.n,
+      bull: 'صعودی: تأیید با یک بسته‌شدن بالای ' + fa(up) + (res.length ? '؛ اهداف ' + res.slice(0, 2).map(function (v) { return fa(v) + ' (' + pc(v / cl - 1) + ')'; }).join(' و ') : '؛ مقاومت بالاتری در ۲۵۰ جلسه نیست') + '؛ ابطال: بسته‌شدن دوباره زیر ' + fa(dn) + '.',
+      bear: 'نزولی: تأیید با یک بسته‌شدن زیر ' + fa(dn) + (sup.length ? '؛ اهداف ' + sup.slice(0, 2).map(function (v) { return fa(v) + ' (' + pc(v / cl - 1) + ')'; }).join(' و ') : '؛ حمایت پایین‌تری در ۱۲۰ جلسه و میانگین ۲۰۰ نیست') + '؛ ابطال: بسته‌شدن دوباره بالای ' + fa(up) + '.', act: act };
+  }
+
   function deskBuild(X, E, all, db) {
     var ac = E.acct || {}, minRR = Number(ac.minRR) || 1.5, items = [];
     all.forEach(function (f) {
@@ -23788,10 +23822,11 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     // market regime from the total index
     var mk = null; if (U.idx && U.idx.length > 80) { var ix = { key: 'idx', rows: U.idx.map(function (r) { return { date: r.date, open: r.close, high: r.high || r.close, low: r.low || r.close, close: r.close, vol: 0, val: 0 }; }) }, Ri = analyse(ix); mk = { rg: Ri.RG[Ri.X.n - 1], close: Ri.X.c[Ri.X.n - 1] }; }
     var ixF = null; try { ixF = U.idx && U.idx.length ? indexForecast(U.idx) : null; } catch (e) { ixF = null; }
+    var idxv = []; try { if (U.idxAll) { idxv.push(indexView(U.idxAll.total, 'شاخص کل بورس', E, U.idxSample)); idxv.push(indexView(U.idxAll.ew, 'شاخص کل (هم‌وزن)', E, U.idxSample)); } } catch (e) { idxv = [{ name: 'شاخص‌ها', ok: false, why: 'خطا: ' + e.message }]; }
     var bt = btF, xgS = null; try { xgS = xgStrategy(E); } catch (e) { xgS = { inst: [], note: 'خطا: ' + e.message }; }
     var counts = { long: cards.filter(function (c) { return c.type === 'long'; }).length, strong: cards.filter(function (c) { return c.type === 'long' && c.strength === 'قوی'; }).length, close: cards.filter(function (c) { return c.type === 'close'; }).length, hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
     var sample = (U.assets || []).some(function (a) { return a.sample; });
-    var R0 = { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, ixf: ixF, xg: xgS, markets: rankMarkets(cards, db, list, E, xgS), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
+    var R0 = { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, ixf: ixF, idxv: idxv, xg: xgS, markets: rankMarkets(cards, db, list, E, xgS), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
     R0.pulse = pulse(R0, U); var DC = null; R0.decide = function () { if (!DC) { try { DC = decide(R0, E, U); } catch (e) { DC = { best: { kind: 'error', text: 'خطا در تحلیل', why: e.message }, top: [], markets: [], screened: 0, ranked: 0, all: [] }; } } return DC; };
     R0.prio = priorities(R0, E); R0.widget = function () { return widget(R0, E, U); };
     return R0;
@@ -23836,7 +23871,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { trendView: trendView, validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -25655,9 +25690,40 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     ps.push(ctx.panel('مرکز تصمیم معاملاتی — در یک نگاه', [table(['پرسش', 'پاسخ'], gl), h('p', { class: 'small muted', text: 'منبع همهٔ این پنل‌ها همان تحلیل گزارش و فهرست اقدامات است. ' + fa(D.screened, 0) + ' دارایی در ' + fa(K.over.length, 0) + ' بازار بررسی شد' + (upd ? '؛ آخرین به‌روزرسانی پایش: ' + new Date(upd).toLocaleString('fa-IR') : '') + '.' })]));
     // ---- A · market overview
     var macro = (D.markets || []).filter(function (m) { return /بهره|فلزات/.test(m.name); });
-    ps.push(ctx.panel('نمای کلی بازارها', [table(['بازار', 'دارایی', 'صعودی / نزولی / خنثی', 'جهت غالب', 'فرصت معتبر', 'ریسک (نوسان میانه)', 'جذابیت نسبی', 'یادداشت'], K.over.map(function (o) { return [o.fa, fa(o.n, 0), fa(o.up, 0) + ' / ' + fa(o.down, 0) + ' / ' + fa(o.flat, 0), DIRS[o.dir], fa(o.opp, 0), o.risk, o.att ? pct(o.att, 0) : '—', o.note]; })
-      .concat(macro.map(function (m) { return [m.name, '—', '—', DIRS[m.dir] || m.dir, '—', '—', '—', m.note]; }))),
-      h('p', { class: 'small muted', text: 'بازار کالا و مشتقات ایران (گواهی سپرده، آتی، بورس انرژی): منبع داده ماشین‌خوان وصل نیست؛ اختیار معامله در زبانهٔ «سیگنال‌ها» است. جذابیت نسبی = بهترین فرصت هر بازار نسبت به بهترین فرصت کل.' })]));
+    // ---- A · markets at a glance: one row per key asset, trend on three horizons, change, data time
+    var ARW = { up: '▲ صعودی', down: '▼ نزولی', flat: '◆ خنثی', none: '— دادهٔ کم' }, zOf = function (x) { return X.zmap && X.zmap[x.key]; };
+    var chgOf = function (x, k) { var z = zOf(x); if (!z) return NaN; var c = z.R.X.c, n = z.R.X.n; return n > k ? c[n - 1] / c[n - 1 - k] - 1 : NaN; };
+    var trOf = function (x) { var z = zOf(x); if (!z) return null; var R = z.R, t = R.X.n - 1; return { s: TE.trendView(R.X, R.I, t, 's'), m: TE.trendView(R.X, R.I, t, 'm'), l: TE.trendView(R.X, R.I, t, 'l') }; };
+    var ageTxt = function (h0) { return isFinite(h0) ? (h0 < 1 ? 'کمتر از ۱ ساعت پیش' : h0 < 48 ? fa(h0, 0) + ' ساعت پیش' : fa(h0 / 24, 0) + ' روز پیش' + (h0 > 96 ? ' ⚠ قدیمی' : '')) : '—'; };
+    var trTxt = function (q) { return q ? [q.s, q.m, q.l].map(function (v) { return ARW[v] || '—'; }).join(' / ') : '—'; };
+    var row1 = function (mk, x, note) { var q = trOf(x), dom = q ? (q.m !== 'flat' && q.m !== 'none' ? q.m : q.s) : null; return [mk, x.sym, nd(x, x.last) + ' (' + x.date + ')', pct(chgOf(x, 1), 1) + ' / ' + pct(chgOf(x, 5), 1), trTxt(q), dom ? ARW[dom] : '—', ageTxt(x.age), note || '']; };
+    var byCls = {}; K.items.forEach(function (x) { (byCls[x.cls] = byCls[x.cls] || []).push(x); });
+    var find = function (re) { return K.items.filter(function (x) { return re.test(x.sym + ' ' + (x.name || '')); })[0]; };
+    var ovRows = [];
+    (X.idxv || []).forEach(function (v) { ovRows.push(v.ok ? ['سهام — شاخص', v.name, fa(v.last) + ' (' + v.dateFa + ')', pct(v.chg1, 1) + ' / ' + pct(v.chg5, 1), trTxt(v.tr), ARW[v.dom] || '—', v.sample ? 'دادهٔ نمونه' : '—', v.chk ? v.chk.fa : ''] : ['سهام — شاخص', v.name, '—', '—', '—', '—', '—', v.why]); });
+    K.over.forEach(function (o) { if (o.cls === 'stock' || o.cls === 'fund') ovRows.push([o.fa, fa(o.n, 0) + ' نماد', '—', '—', 'صعودی ' + fa(o.up, 0) + ' · نزولی ' + fa(o.down, 0) + ' · خنثی ' + fa(o.flat, 0), DIRS[o.dir], '—', fa(o.opp, 0) + ' فرصت معتبر']); });
+    ['gold', 'fx', 'crypto', 'commodity'].forEach(function (c) { (byCls[c] || []).slice(0, 6).forEach(function (x) { ovRows.push(row1(TE.MKFA[c] || c, x)); }); });
+    var miss = [];
+    if (!find(/انس|اونس|ounce|\bons\b/i)) miss.push('انس جهانی طلا: در دادهٔ این موتور نیست (در ابزار «تحلیل بازارهای ایران» یا سیگنال طلا اضافه کنید)');
+    if (!find(/تتر|usdt|tether/i)) miss.push('تتر: منبع قیمت تتر به موتور وصل نیست');
+    if (!(byCls.crypto || []).length) miss.push('رمزارز: دادهٔ بیت‌کوین در موتور نیست (زبانهٔ بازارهای جهانی را به‌روز کنید)');
+    var movers = K.items.map(function (x) { return { x: x, c5: chgOf(x, 5) }; }).filter(function (q) { return isFinite(q.c5); }).sort(function (a, b) { return Math.abs(b.c5) - Math.abs(a.c5); }).slice(0, 5);
+    ps.push(ctx.panel('نمای کلی بازارها', [table(['بازار', 'دارایی', 'آخرین قیمت (تاریخ داده)', 'تغییر ۱ / ۵ جلسه', 'روند کوتاه / میان / بلند', 'جهت غالب (میان‌مدت)', 'زمان دریافت داده', 'وضعیت / یادداشت'], ovRows.concat(macro.map(function (m) { return [m.name, '—', '—', '—', '—', DIRS[m.dir] || m.dir, '—', m.note]; }))),
+      h('p', { class: 'small', text: 'بیشترین تغییر ۵ جلسهٔ اخیر: ' + (movers.length ? movers.map(function (q) { return q.x.sym + ' ' + pct(q.c5, 1); }).join('، ') : '—') + '. محرک‌های خبری: منبع خبر ماشین‌خوان به این بخش وصل نیست؛ فقط حرکت قیمت گزارش می‌شود.' }),
+      miss.length ? h('p', { class: 'small warn-t', text: 'پوشش‌داده‌نشده: ' + miss.join('؛ ') + '.' }) : null,
+      h('p', { class: 'small muted', text: 'روند: کوتاه = قیمت و شیب میانگین ۲۰ جلسه؛ میان = قیمت > میانگین ۵۰ > میانگین ۲۰۰؛ بلند = قیمت و شیب میانگین ۲۰۰ و بازده ۲۵۰ جلسه (حداقل ۲۷۰ جلسه داده). همان قواعد دروازهٔ اعتبار سیگنال.' }),
+      h('details', { class: 'fold' }, [h('summary', { text: 'جمع‌بندی هر بازار (تعداد، فرصت، ریسک، جذابیت)' }), table(['بازار', 'دارایی', 'صعودی / نزولی / خنثی', 'جهت غالب', 'فرصت معتبر', 'ریسک (نوسان میانه)', 'جذابیت نسبی', 'یادداشت'], K.over.map(function (o) { return [o.fa, fa(o.n, 0), fa(o.up, 0) + ' / ' + fa(o.down, 0) + ' / ' + fa(o.flat, 0), DIRS[o.dir], fa(o.opp, 0), o.risk, o.att ? pct(o.att, 0) : '—', o.note]; }))])]));
+    // ---- indices: the standard block
+    (function () { var V = (X.idxv || []).filter(function (v) { return v.ok; }); if (!V.length) return;
+      ps.push(ctx.panel('شاخص‌های بورس', V.map(function (v) { var q = v.chk || {};
+        return h('div', null, [h('h4', { text: v.name + (v.sample ? ' (دادهٔ نمونه)' : '') }), table(['مؤلفه', 'مقدار'], [
+          ['مقدار فعلی (تاریخ)', fa(v.last) + ' (' + v.dateFa + ')'], ['تغییر روزانه / ۵ / ۲۰ جلسه', pct(v.chg1, 2) + ' / ' + pct(v.chg5, 1) + ' / ' + pct(v.chg20, 1)],
+          ['روند کوتاه / میان / بلند', trTxt(v.tr)], ['مقاومت‌ها (بالاترین ۶۰ / ۱۲۰ / ۲۵۰ جلسه)', v.res.length ? v.res.map(function (x) { return fa(x) + ' (' + pct(x / v.last - 1, 1) + ')'; }).join(' · ') : 'بالاتر از سطح تأیید مقاومتی نیست'],
+          ['حمایت‌ها (پایین‌ترین ۶۰ / ۱۲۰ جلسه، میانگین ۲۰۰)', v.sup.length ? v.sup.map(function (x) { return fa(x) + ' (' + pct(x / v.last - 1, 1) + ')'; }).join(' · ') : 'پایین‌تر از سطح تأیید حمایتی نیست'],
+          ['سطح تأیید صعودی (فاصله)', fa(v.up) + ' (' + pct(q.dUp, 1) + ') — بالاترین مقدار پایانی ۲۰ جلسهٔ پیش از ' + v.dateFa], ['سطح تأیید نزولی (فاصله)', fa(v.dn) + ' (' + pct(q.dDn, 1) + ') — پایین‌ترین مقدار پایانی ۲۰ جلسهٔ پیش از ' + v.dateFa],
+          ['وضعیت تحقق', (q.fa || '—') + (q.checks && q.checks.length ? ' ⚠ ' + q.checks.join('؛ ') : '')], ['سناریوی صعودی', v.bull], ['سناریوی نزولی', v.bear],
+          ['زمان‌بندی', v.win ? v.win.basis + '؛ بررسی در ' + fa(v.win.n, 0) + ' جلسهٔ ' + v.win.startFa + ' تا ' + v.win.endFa + '؛ ' + v.win.expiry + '. ' + v.win.note : '—'], ['اقدام پیشنهادی', v.act]])]); }).concat([h('p', { class: 'small muted', text: 'سطوح از مقادیر پایانی گذشته محاسبه می‌شوند، نه از قیمت امروز؛ تأیید با یک بسته‌شدن روزانه. این قواعد برای شاخص بک‌تست جداگانه ندارند.' })])));
+    })();
     // ---- B · ten best opportunities and back-test results (fewer when fewer qualify)
     var ST9C = { active: 'fit-rec', retest: 'fit-rec', pos: 'fit-rec', target: 'fit-ok', near: 'fit-cond', nc: 'fit-ok', missed: 'fit-cond', stop: 'fit-no', invalid: 'fit-no', bear: 'fit-no', nosig: 'fit-ok' };
     var ACTC = { now: 'fit-rec', zone: 'fit-rec', hold: 'fit-rec', reduce: 'fit-cond', exit: 'fit-no', waitBrk: 'fit-cond', waitPb: 'fit-cond', wait: 'fit-cond', missed: 'fit-no', badRR: 'fit-no', none: 'fit-ok' };
@@ -25677,6 +25743,19 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       h('p', { class: 'small muted', text: 'رتبه = درجهٔ اعتبار × اطمینان × بازده به ریسک × نقدشوندگی × وضعیت واقعی سیگنال (فعال ۱، بازآزمایی ۰٫۹، آستانه ۰٫۷، تأییدنشده ۰٫۵، ازدست‌رفته ۰٫۳۵) × هم‌سویی با استراتژی منتخب بازار (۱٫۱۵ اگر در افق سیگنال داده، ۰٫۸۵ اگر نداده). بازده و ریسک از قیمت فعلی محاسبه شده‌اند. اقدام ورود فقط با درجهٔ A/B؛ در غیر این صورت «انتظار».' }),
       K.opp.length > 10 ? h('details', { class: 'fold' }, [h('summary', { text: 'بقیهٔ فرصت‌های واجد شرایط (' + fa(K.opp.length - 10, 0) + ')' }), table(['دارایی', 'بازار', 'وضعیت', 'اقدام'], K.opp.slice(10).map(function (x) { return [x.sym, x.mk, x.st9fa, x.act.fa]; }))]) : null,
       K.bear.length ? table(['دید نزولی تأییدشده', 'بازار', 'قیمت', 'تأیید', 'اهداف نزولی', 'دارندگان: محدودهٔ خروج', 'ابطال'], K.bear.slice(0, 10).map(function (x) { var d = x.S.bear; return [x.sym, x.mk, nd(x, x.last), x.path.date ? x.path.date : nd(x, d.confirm), d.tp.map(function (v) { return nd(x, v); }).join(' / '), nd(x, d.exitLo) + '–' + nd(x, d.exitHi), nd(x, d.invalid)]; })) : null]));
+    // ---- stock ranking, separate from the all-market list: every selected stock and fund, same fields
+    (function () {
+      var st = K.items.filter(function (x) { return x.cls === 'stock' || x.cls === 'fund'; }); if (!st.length) return;
+      var bn = function (v) { return isFinite(v) ? fa(v / 1e9, 0) + ' میلیارد ریال' : '—'; };
+      st.sort(function (a, b) { return (b.elig ? 1 : 0) - (a.elig ? 1 : 0) || (b.score || 0) - (a.score || 0) || (b.conf || 0) - (a.conf || 0); });
+      var lim = S.rkAll ? st.length : Math.min(25, st.length), more = h('button', { class: 'btn btn-sm', type: 'button', text: S.rkAll ? 'نمایش ۲۵ نماد اول' : 'نمایش همهٔ ' + fa(st.length, 0) + ' نماد', onclick: function () { S.rkAll = !S.rkAll; ctx.rerender(); } });
+      ps.push(ctx.panel('رتبه‌بندی سهام و صندوق‌های منتخب (' + fa(st.length, 0) + ')', [table(['رتبه', 'نماد', 'آخرین معامله / پایانی', 'ارزش / حجم آخرین جلسه', 'نقدشوندگی', 'روند کوتاه / میان / بلند', 'بنیادی', 'ورود / خروج', 'حد ضرر / اهداف', 'تأیید صعودی / نزولی (فاصله)', 'وضعیت سیگنال', 'بک‌تست (افق نماد)', 'اقدام'],
+        st.slice(0, lim).map(function (x, i) { var z = zOf(x), R = z && z.R, t = R ? R.X.n - 1 : -1, last = z && z.a.rows.length ? z.a.rows[z.a.rows.length - 1] : null, l = LV(x), v20 = R ? R.X.val.slice(-20).reduce(function (a, b) { return a + b; }, 0) / 20 : NaN;
+          return [fa(i + 1, 0) + (x.elig ? '' : ' (غیرواجد)'), x.sym, (last && isFinite(last.last) && last.last > 0 ? nd(x, last.last) : '—') + ' / ' + nd(x, x.last), R ? bn(R.X.val[t]) + ' / ' + fa(R.X.v[t] / 1e6, 1) + ' میلیون سهم' : '—', (x.liqOK === false || (x.c && x.c.liqOK === false) ? 'کم ⚠' : 'کافی') + (isFinite(v20) ? ' (میانگین ارزش ۲۰ جلسه ' + bn(v20) + ')' : ''),
+            trTxt(trOf(x)), 'دادهٔ بنیادی به این بخش وصل نیست', nd(x, l.entry[0]) + '–' + nd(x, l.entry[1]) + ' / ' + nd(x, Math.min(l.tp[0], l.tp[1])) + '–' + nd(x, Math.max(l.tp[0], l.tp[1])), nd(x, l.stop) + ' / ' + l.tp.map(function (v) { return nd(x, v); }).join(' · '), lvTxt(x), chip9(x), btOf(x), chipA(x)]; })),
+        st.length > 25 ? h('div', { class: 'row-ctl' }, [more]) : null,
+        h('p', { class: 'small muted', text: 'ترتیب: نمادهای واجد شرایط به ترتیب امتیاز فرصت، سپس بقیه به ترتیب درجهٔ اطمینان. «آخرین معامله» آخرین قیمت معامله‌شدهٔ روز در TSETMC و «پایانی» قیمت پایانی همان روز است؛ سطوح و تأییدها بر پایهٔ قیمت پایانی‌اند.' })]));
+    })();
     // ---- signal state: was it confirmed, when, is entry still open, missed, invalidated
     var stRows = T10.concat(K.held.filter(function (x) { return T10.indexOf(x) < 0; }));
     if (stRows.length) ps.push(ctx.panel('وضعیت واقعی سیگنال‌ها', [table(['دارایی', 'وضعیت', 'تأیید شده؟', 'زمان تأیید', 'تثبیت', 'ورود هنوز فعال؟', 'حد ضرر یا ابطال فعال شده؟', 'شرح مسیر قیمت'], stRows.map(function (x) { var p = x.path, conf = /^(active|missed|retest|target|invalid)$/.test(p.st) && p.date;
@@ -26320,11 +26399,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611141921) */
+/* PWA: offline cache + app updates (version 202611141926) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611141921';
+  window.HUB_APP_VERSION = '202611141926';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
