@@ -21486,6 +21486,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var age = dataAge(ctx.S), stale = !isFinite(age) || age > maxAgeH(), live = ctx.S.meta.source && !/synthetic|illustrative/i.test(ctx.S.meta.source);
     var F = isFa(), badge = h('span', { class: 'data-age ' + (!live ? 'none' : stale ? 'stale' : 'fresh'), 'data-notr': '1', text: !live ? (F ? 'دادهٔ نمونه (فرضی) — پیش از استفاده از سیگنال‌ها دادهٔ زنده بگیرید' : 'Illustrative data — fetch live data before using the signals') : (stale ? (F ? 'کهنه: ' : 'Out of date: ') : (F ? 'به‌روز: ' : 'Updated ')) + ageText(age) + ' · ' + ctx.S.meta.asOf + ' · ' + ctx.S.meta.source });
     var route = Hub.data && Hub.data.route && Hub.data.route();
+    // one data center: this section shows the state of its data and links there instead of fetching on its own
+    if (Hub.dataCenterLink) btn = Hub.dataCenterLink(isFa() ? 'دادهٔ این بخش در «مرکز مدیریت داده‌ها» (داشبورد معامله‌گری) به‌روز می‌شود؛ همهٔ بخش‌ها از همان دادهٔ مشترک می‌خوانند.' : 'This section is updated from the central data center (trading dashboard).');
     return h('div', null, [h('div', { class: 'row-ctl' }, [btn, badge]), st, route && route.at ? h('p', { class: 'muted small', 'data-notr': '1', text: (F ? 'آخرین مسیر موفق: ' : 'Last route that worked: ') + route.name + ' (' + (route.host || '') + ')' }) : null, h('p', { class: 'muted small', 'data-notr': '1' }, [document.createTextNode(F ? 'همهٔ خوراک‌های داده، عمرشان و به‌روزرسانی یک‌جا: ' : 'All feeds, their age and one-click update: '), h('a', { href: '#market-data', text: F ? 'مرکز دادهٔ بازار' : 'Market data centre' })])]);
   }
   function pasteBox(ctx, apply) {
@@ -24280,8 +24282,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       wrap.appendChild(h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud se' }, [h('thead', null, [h('tr', null, head)]), h('tbody', null, rows)])]));
       var stale = SG.feeds.filter(function (f) { return status(load(f)).k !== 'fresh'; });
       wrap.appendChild(h('div', { class: 'row-ctl' }, [
-        h('button', { class: 'btn primary', type: 'button', text: T('Update every section', 'به‌روزرسانی همهٔ بخش‌ها (+ خبرها و اعتبارسنجی)'), disabled: busy, onclick: function () { if (Hub.updateAll) Hub.updateAll(ctx.rerender); else run(SG.feeds.slice()); } }),
-        h('button', { class: 'btn', type: 'button', text: T('Update out-of-date only', 'فقط داده‌های کهنه') + ' (' + stale.length + ')', disabled: busy || !stale.length, onclick: function () { run(stale); } }),
+        Hub.dataCenterLink ? Hub.dataCenterLink() : h('button', { class: 'btn primary', type: 'button', text: T('Update every section', 'به‌روزرسانی همهٔ بخش‌ها'), disabled: busy, onclick: function () { run(SG.feeds.slice()); } }),
         h('span', { class: 'muted small', text: T('Out of date = older than ', 'کهنه = قدیمی‌تر از ') + SG.maxAgeH() + T(' h (Settings tab).', ' ساعت (زبانهٔ تنظیمات).') })]));
     }
     paint();
@@ -25200,7 +25201,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       { key: 'ti', label: 'عنوان (اختیاری)', type: 'text', get: function () { return S.title || ''; }, set: function (v) { S.title = v; } },
       { key: 'fo', label: 'بازار محور', options: X.rows.map(function (a) { return [a.name, a.name]; }), get: function () { return f ? f.name : ''; }, set: function (v) { S.focal = v; } }, ctx.field('hh', 'افق سناریو (هفته)', 'h', 'int')] });
     var view = h('textarea', { class: 'f-area', rows: 3, dir: 'rtl', 'aria-label': 'نظر تحلیلگر', placeholder: 'نظر، فرضیهٔ مخالف یا راهکار خودتان (اختیاری؛ در بخش ۶ می‌آید)' }); view.value = S.view || ''; view.addEventListener('change', function () { S.view = view.value; ctx.rerender(); });
-    var fresh = h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'به‌روزرسانی همهٔ بخش‌ها و ساخت گزارش تازه', onclick: function () { if (Hub.updateAll) { fresh.disabled = true; st.textContent = 'در حال به‌روزرسانی همهٔ بخش‌ها (معامله‌گری، اقتصاد ایران، خبرها) …'; Hub.updateAll(ctx.rerender); return; } var feed = (Hub.signals.feeds || []).filter(function (q) { return q.id === 'long-view'; })[0]; if (!feed) return; fresh.disabled = true; st.textContent = 'در حال دریافت آخرین داده‌ها…';
+    var fresh = h('button', { class: 'btn primary', type: 'button', 'data-notr': '1', text: 'به‌روزرسانی داده‌ها (مرکز مدیریت داده‌ها)', onclick: function () { if (Hub.goDataCenter) { Hub.goDataCenter(); return; } var feed = (Hub.signals.feeds || []).filter(function (q) { return q.id === 'long-view'; })[0]; if (!feed) return; fresh.disabled = true; st.textContent = 'در حال دریافت آخرین داده‌ها…';
       var MS = U.store.get(IM.KEY, null) || IM.sample(); IM.ensure(MS); feed.fetch(MS, function (i, n, nm) { st.textContent = 'دریافت ' + i + ' از ' + n + ': ' + nm; }).then(function (errs) { U.store.set(IM.KEY, MS); U.toast('داده به‌روز شد' + (errs && errs.length ? ' (' + errs.length + ' سری دریافت نشد)' : '') + '.', 'good'); ctx.rerender(); }, function (e) { fresh.disabled = false; st.className = 'studio-status warn-t'; st.textContent = 'دریافت ناموفق: ' + (e && e.message || e) + ' — گزارش با آخرین دادهٔ موجود (' + (f ? sh(f.date) : '—') + ') ساخته شده است.'; }); } });
     var logB = h('button', { class: 'btn', type: 'button', 'data-notr': '1', text: 'ثبت این گزارش و پیش‌بینی‌اش', onclick: function () { if (!f || !X.live) { U.toast('فقط گزارش با دادهٔ واقعی ثبت می‌شود.', 'warn'); return; } var sc = X.sc || {};
       S.log.push({ at: Date.now(), topic: S.topic, focal: f.name, last: f.last, date: f.date, h: Math.round(S.h), read: f.h.m.ok ? f.h.m.read : null, lean: f.plan && f.plan.lean, hiT: sc.ok ? sc.hiT : null, loT: sc.ok ? sc.loT : null, p: sc.ok ? sc.p : null, base: sc.ok ? f.last * (1 + sc.r.mid) : null }); if (S.log.length > 300) S.log = S.log.slice(-300); U.toast('ثبت شد؛ پس از ' + fa(S.h, 0) + ' هفته با واقعیت سنجیده می‌شود.', 'good'); ctx.rerender(); } });
@@ -25319,7 +25320,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       { key: 'asset', label: 'نماد (* = همه)', kind: 'text' }, { key: 'dir', label: 'جهت (۱− منفی … ۱+ مثبت)', fmt: 'dec' },
       { key: 'impact', label: 'اثر', kind: 'select', options: function () { return [['low', 'کم'], ['med', 'متوسط'], ['high', 'زیاد (شوک)']]; } }, { key: 'note', label: 'خبر', kind: 'text' }, { key: 'fresh', label: 'تازه (امروز)', kind: 'bool' }] });
     return ctx.group([modePanel(ctx), ctx.panel('اجرا و تنظیمات', [h('p', { class: 'f-help', text: 'موتور از دادهٔ ذخیره‌شدهٔ ابزارهای سیگنال (سهام، طلا، ارز، اختیار) می‌خواند، ۲۳ مدل رأی‌دهنده را روی هر دارایی اجرا می‌کند و برای هر کدام یک سیگنال استاندارد با ورود، حد ضرر، اهداف، حجم، اطمینان، دلایل و شرایط ابطال می‌دهد. سیگنال بدون مدیریت ریسک صادر نمی‌شود. این ابزار توصیهٔ سرمایه‌گذاری نیست؛ تصمیم و اجرا با شماست.' }),
-      boxes, f]), dataPanel(ctx), Hub.dataSync && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
+      boxes, f]), ctx.panel('داده‌ها', [Hub.dataCenterLink('دریافت و به‌روزرسانی داده فقط در «مرکز مدیریت داده‌ها» در زبانهٔ داشبورد انجام می‌شود.')]), Hub.dataSync && Hub.mdSyncTab ? Hub.mdSyncTab(ctx) : null, ctx.panel('اخبار و رویدادها (ورودی مدل احساسات)', [h('p', { class: 'f-help', text: 'خبر مهم را اینجا ثبت کنید. خبر «زیاد» و «تازه» سیگنال خرید را مشروط می‌کند (یا اگر منفی است، متوقف). موتور خبر را خودش نمی‌خواند؛ برای تحلیل خودکار متن خبر از پرامپت زبانهٔ گزارش استفاده کنید.' }), news])]);
   }
   // one action for everything: every feed in turn (a failed feed keeps its last good data and never stops the others),
   // then the engine cache is cleared and the validation is rerun on the new data, so the dashboard, signals, pulse and widget
@@ -25334,8 +25335,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     q.reduce(function (p, f, i) { return p.then(function () {
       var St = loadFeed(f); say(i, NAME(f) + ' …');
       return SG.safeFetch(f.fetch, St, function (a, b, k) { say(i, NAME(f) + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + k); })
-        .then(function (errs) { U.store.set(f.storeKey, St); say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
-          function (e) { fails++; say(i, NAME(f) + ': ناموفق، دادهٔ قبلی حفظ شد — ' + e.message, 'crit-t'); });
+        .then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : ''); say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
+          function (e) { fails++; flog(f.id, false, e.message); say(i, NAME(f) + ': ناموفق، دادهٔ قبلی حفظ شد — ' + e.message, 'crit-t'); });
     }); }, Promise.resolve()).then(function () {
       // news feeds (economy section) and the live market inputs of the valuation models that were used before
       var k = q.length, jobs = [];
@@ -25368,7 +25369,21 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   // shared by every section: one button, one update of all feeds, news, valuation inputs, validation and widget
   Hub.updateAll = function (rerender) { updateEverything({ S: null, rerender: rerender || function () {} }); };
-  Hub.updateAllPanel = function (ctx) { return updPanel({ S: null, rerender: ctx && ctx.rerender ? ctx.rerender : function () {} }); };
+  Hub.updateAllPanel = function (ctx) { var p = updPanel({ S: null, rerender: ctx && ctx.rerender ? ctx.rerender : function () {} }), b = p.querySelector('button'); if (b) b.replaceWith(Hub.dataCenterLink()); return p; };
+  /* ---------- central data management: the only place where data is fetched ----------
+     every feed with its source, fetch time, market reference time, time zone and price basis, unit, status and last errors;
+     group buttons per market; one "update everything"; company statements status. Other sections only link here. */
+  var FLOG = 'hub.feedlog.v1';
+  function flog(id, ok, msg) { try { var L = U.store.get(FLOG, {}) || {}; L[id] = { at: Date.now(), ok: ok, msg: msg || '' }; U.store.set(FLOG, L); } catch (e) { /* optional */ } }
+  var FMETA = { 'sig-stocks': { cal: 'stock', unit: 'ریال؛ شاخص بر حسب واحد شاخص' }, 'sig-gold': { cal: 'gold', unit: 'ریال؛ انس بر حسب دلار' }, 'sig-fx': { cal: 'fx', unit: 'ریال' }, 'sig-options': { cal: 'stock', unit: 'ریال' },
+    'sig-global': { cal: 'crypto', unit: 'دلار', note: 'رمزارز: نقطهٔ ۰۰:۰۰ UTC (CoinGecko)؛ کالا و انرژی: روز کاری Alpha Vantage' }, 'long-view': { cal: 'tgju', unit: 'به تفکیک سری' }, 'sig-temporal': { cal: 'tgju', unit: 'به تفکیک سری' } };
+  function feedName(f) { return FAT[f.id] || ({ 'sig-temporal': 'تحلیل زمانی (چرخه‌ها و پنجره‌ها)', 'long-view': 'سری‌های اقتصاد ایران', 'sig-global': 'رمزارز و بازارهای جهانی (کالا، انرژی، نرخ)' })[f.id] || f.title || f.id; }
+  // latest market date inside a feed's data (yyyymmdd), whatever the layout: arrays of rows or { px: rows }
+  function mktDate(S) { var m = 0, walk = function (v) { var rows = Array.isArray(v) ? v : v && Array.isArray(v.px) ? v.px : v && Array.isArray(v.rows) ? v.rows : null; if (rows && rows.length) { var d = +(rows[rows.length - 1].date || (Array.isArray(rows[rows.length - 1]) ? rows[rows.length - 1][0] : 0)); if (d > 19000101 && d < 21000101 && d > m) m = d; } };
+    Object.keys((S && S.data) || {}).forEach(function (k) { var v = S.data[k]; walk(v); if (v && typeof v === 'object' && !Array.isArray(v) && !v.px && !v.rows) Object.keys(v).forEach(function (q) { walk(v[q]); }); }); return m; }
+  Hub.goDataCenter = function () { try { U.store.set('hub.tradingEngine.v1.tab', 'dash'); } catch (e) { /* storage */ } if (location.hash !== '#trading-engine') location.hash = '#trading-engine'; else { var b = document.querySelector('nav.tabs .tab[data-tab="dash"]'); if (b) b.click(); }
+    setTimeout(function () { var el = document.getElementById('data-center'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 600); };
+  Hub.dataCenterLink = function (why) { return h('div', { class: 'row-ctl' }, [h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی از «مرکز مدیریت داده‌ها»', onclick: function () { Hub.goDataCenter(); } }), h('span', { class: 'small muted', text: why || 'همهٔ داده‌ها فقط از یک مرکز به‌روز می‌شوند و همهٔ بخش‌ها از همان دادهٔ مشترک می‌خوانند.' })]); };
   function dataPanel(ctx) {
     var wrap = h('div'), log = h('div', { 'aria-live': 'polite' }), busy = false, symIn = h('input', { class: 'f-in', type: 'text', placeholder: 'مثلاً: فولاد، شپنا، طلا', 'aria-label': 'نمادهای انتخابی', style: 'min-width:260px' });
     function doFetch(f, only, label) {
@@ -25376,16 +25391,26 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var St = loadFeed(f), line = h('p', { class: 'small', 'data-notr': '1', text: label + ' … ' }); log.appendChild(line);
       var fn = only ? function (S2, p) { return SG.stocks.fetch(S2, p, only); } : f.fetch;
       SG.safeFetch(fn, St, function (a, b, k) { line.textContent = label + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + k; })
-        .then(function (errs) { U.store.set(f.storeKey, St); if (Hub.dataSync) Hub.dataSync.notify(); line.className = 'small ' + (errs.length ? 'warn-t' : 'good-t'); line.textContent = label + ': به‌روز شد' + (errs.length ? ' · بخشی ناموفق: ' + SG.summErr(errs) : ''); })
-        .catch(function (e) { line.className = 'small crit-t'; line.textContent = label + ': ناموفق — ' + e.message; })
+        .then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : ''); TE.clearCache(); if (Hub.dataSync) Hub.dataSync.notify(); line.className = 'small ' + (errs.length ? 'warn-t' : 'good-t'); line.textContent = label + ': به‌روز شد' + (errs.length ? ' · بخشی ناموفق: ' + SG.summErr(errs) : ''); })
+        .catch(function (e) { flog(f.id, false, e.message); line.className = 'small crit-t'; line.textContent = label + ': ناموفق — ' + e.message; })
         .then(function () { busy = false; ctx.rerender(); });
     }
     function paint() {
       U.clear(wrap);
-      var rows = FEEDIDS.map(function (id) { var f = feed(id); if (!f) return null; var st = feedState(f);
-        return [FAT[id], f.size(st.S), st.k === 'none' ? '—' : st.S.meta.asOf || '—', st.k === 'none' ? '—' : SG.ageText(st.age), h('span', { class: 'data-age ' + st.k, text: st.k === 'none' ? 'دادهٔ نمونه' : st.k === 'stale' ? 'کهنه' : 'به‌روز' }),
-          h('button', { class: 'btn ghost', type: 'button', text: 'به‌روزرسانی', disabled: busy, onclick: function () { doFetch(f, null, FAT[id]); } })]; }).filter(Boolean);
-      wrap.appendChild(table(['داده', 'دامنه', 'آخرین به‌روزرسانی', 'سن', 'وضعیت', ''], rows)); if (UPD.lines.length) wrap.appendChild(h('div', { id: 'upd-log' }, UPD.lines.filter(Boolean).map(function (l) { return h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t }); })));
+      var sn = {}, LG = U.store.get(FLOG, {}) || {}, MC = Hub.mktCal, all = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn[f.id]) return false; sn[f.id] = 1; return true; });
+      var rows = all.map(function (f) { var st = feedState(f), fm = FMETA[f.id] || { cal: 'tgju', unit: '—' }, sp = MC ? MC.spec(fm.cal) : null, md = st.k === 'none' ? 0 : mktDate(st.S), lg = LG[f.id];
+        return [feedName(f), f.src || (sp && sp.src) || '—', f.size ? f.size(st.S) : '—', st.k === 'none' ? '—' : (st.S.meta.asOf || '—') + ' (' + SG.ageText(st.age) + ')', md ? (MC ? MC.faDate(md) : md) : '—',
+          (fm.note || (sp ? sp.basis + '؛ ' + sp.tz : '—')), fm.unit, h('span', { class: 'data-age ' + st.k, text: st.k === 'none' ? 'دادهٔ نمونه (نامعتبر برای تصمیم)' : st.k === 'stale' ? 'کهنه' : 'به‌روز' }),
+          lg ? (lg.ok ? (lg.msg ? '⚠ ' + lg.msg : '✓ موفق') : '✗ ناموفق — ' + lg.msg) + ' (' + new Date(lg.at).toLocaleString('fa-IR') + ')' : '—',
+          h('button', { class: 'btn ghost', type: 'button', text: 'به‌روزرسانی', disabled: busy || UPD.busy, onclick: function () { doFetch(f, null, feedName(f)); } })]; });
+      var rec = Hub.companyData && Hub.companyData.get(), N = rec && Hub.companyData.notes ? Hub.companyData.notes() : null;
+      rows.push(['داده‌های بنیادی و صورت‌های مالی', 'فایل Excel / PDF شرکت', rec ? rec.blocks.length + ' صورت' : 'وارد نشده', rec ? rec.savedAt : '—', rec && rec.blocks[0] ? rec.blocks[0].years.join('، ') : '—', 'سال مالی شرکت', rec ? (rec.unit || '') + ' ' + (rec.currency || '') : '—',
+        h('span', { class: 'data-age ' + (rec ? 'fresh' : 'none'), text: rec ? (N && N.report ? 'استخراج: ' + N.report.statusFa : 'واردشده') : 'ندارد' }), 'منبع زنده وصل نیست؛ ورود از نوار «Company data» در ابزارهای مالی',
+        h('button', { class: 'btn ghost', type: 'button', text: 'ورود فایل', onclick: function () { location.hash = '#financing'; } })]);
+      wrap.appendChild(table(['داده', 'منبع', 'دامنه', 'زمان دریافت (سن)', 'آخرین تاریخ بازار در داده', 'مبنای قیمت و منطقهٔ زمانی', 'واحد', 'وضعیت', 'آخرین دریافت', ''], rows));
+      wrap.appendChild(h('p', { class: 'small muted', text: 'هر منبع زمان خودش را دارد: «زمان دریافت» لحظه‌ای است که داده از منبع گرفته شد و «آخرین تاریخ بازار» آخرین روزی است که منبع برای آن قیمت ثبت کرده. داده‌های منابع مختلف با زمان‌های متفاوت هم‌زمان فرض نمی‌شوند؛ هر جدول و سیگنال تاریخ دادهٔ خودش را نشان می‌دهد.' }));
+      var grp = function (label, id) { var f = feed(id) || SG.feeds.filter(function (q) { return q.id === id; })[0]; return f ? h('button', { class: 'btn', type: 'button', text: label, disabled: busy || UPD.busy, onclick: function () { doFetch(f, null, label); } }) : null; };
+      wrap.appendChild(h('div', { class: 'row-ctl', style: 'flex-wrap:wrap' }, [grp('سهام، شاخص‌ها و صندوق‌ها', 'sig-stocks'), grp('ارز و تتر', 'sig-fx'), grp('طلا، سکه و انس', 'sig-gold'), grp('رمزارز و بازارهای جهانی', 'sig-global'), grp('اختیار معامله', 'sig-options'), grp('سری‌های اقتصاد ایران', 'long-view')])); if (UPD.lines.length) wrap.appendChild(h('div', { id: 'upd-log' }, UPD.lines.filter(Boolean).map(function (l) { return h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t }); })));
       var fs = feed('sig-stocks'); if (fs && SG.stocks.mergeUniverse) { var St0 = loadFeed(fs), nU = SG.stocks.mergeUniverse(St0); if (nU) { U.store.set(fs.storeKey, St0); U.toast(fa(nU, 0) + ' نماد از فهرست ۱۴۰۵/۰۸/۲۰ به دیده‌بان اضافه شد.', 'good'); } }
       var stS = fs ? feedState(fs) : null, miss = [];
       if (stS) stS.S.watch.forEach(function (w) { if (w.active === false || !w.symbol) return; var d = stS.live && stS.S.data[w.symbol]; if (!d || !d.px || d.px.length < 30) miss.push(w.symbol); });
@@ -25399,8 +25424,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         symIn, h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی نمادهای انتخابی', disabled: busy || !fs, onclick: function () { var only = symIn.value.split(/[،,\s]+/).map(function (x) { return x.trim(); }).filter(Boolean); if (!only.length) { U.toast('نماد را وارد کنید.', 'warn'); return; } doFetch(fs, only, 'نمادهای انتخابی'); } }), merge]));
     }
     paint();
-    return ctx.panel('داده‌ها — به‌روزرسانی فقط با دستور شما', [isArtifact() ? h('p', { class: 'neg', text: 'این نسخهٔ آنلاین درخواست بیرونی را مسدود می‌کند؛ برای دادهٔ زنده فایل HTML را روی کامپیوتر خودتان (با پروکسی محلی، زبانهٔ «مرکز دادهٔ بازار») باز کنید.' }) : null,
+    var P0 = ctx.panel('مرکز مدیریت داده‌ها و به‌روزرسانی', [isArtifact() ? h('p', { class: 'neg', text: 'این نسخهٔ آنلاین درخواست بیرونی را مسدود می‌کند؛ برای دادهٔ زنده فایل HTML را روی کامپیوتر خودتان (با پروکسی محلی، زبانهٔ «مرکز دادهٔ بازار») باز کنید.' }) : null,
       h('p', { class: 'f-help', text: 'هیچ داده‌ای خودکار دریافت نمی‌شود مگر اینکه بخواهید. به‌روزرسانی ناموفق آخرین دادهٔ سالم را حفظ می‌کند؛ به‌روزرسانی نمادهای انتخابی دادهٔ بقیهٔ نمادها را دست نمی‌زند. سیگنال روی دادهٔ نمونه «غیرقابل اجرا» و روی دادهٔ کهنه «مشروط» است. کدهای TSETMC (insCode) فهرست شما در اولین دریافت سنجیده می‌شوند؛ اگر نمادی خطا داد، کد آن را در زبانهٔ «سیگنال سهام» خالی کنید تا از نام نماد پیدا شود.' }), wrap, log]);
+    P0.id = 'data-center'; return P0;
   }
 
   /* ---------- 2 · signals ---------- */
@@ -25860,6 +25886,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var maxD = 0; X.list.forEach(function (z) { if (!z.a.sample) maxD = Math.max(maxD, z.R.X.d[z.R.X.n - 1]); });
     var top = P[0], head = !top ? 'داده‌ای نیست.' : top.kind === 'none' ? 'بهترین اقدام فعلی: اقدام نکردن (نگه‌داری نقد). ' + top.why : top.kind === 'urgent' ? 'اول: ' + top.action + ' ' + top.asset + ' — ' + top.why : 'بهترین اقدام فعلی: ' + top.action + ' ' + top.asset + ' (درجه ' + top.grade + '، ' + top.horizon + ').';
     try { ps = ps.concat(deskPanels(ctx)); } catch (e) { ps.push(h('p', { class: 'warn-t', text: 'خطا در مرکز تصمیم: ' + e.message })); }
+    try { var dcp = dataPanel(ctx); ps.splice(ps.length ? 1 : 0, 0, dcp); } catch (e) { ps.push(h('p', { class: 'warn-t', text: 'خطا در مرکز داده: ' + e.message })); }
     ps = ps.concat(decisionPanels(ctx));
     ps.push(h('details', { class: 'fold' }, [h('summary', { text: 'فهرست اقدامات (حفاظت از موقعیت‌ها، سیگنال‌ها، انتظار)' }), ctx.panel('فهرست اقدامات', [prioCards(P.slice(0, S.dashN || 5)), h('div', { class: 'wide-only' }, [prioTable(P.slice(0, 10))])])]));
     ps.push(ctx.panel('پیش‌بینی شاخص کل', [ixfBlock(X)]));
@@ -26399,11 +26426,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611141926) */
+/* PWA: offline cache + app updates (version 202611141932) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611141926';
+  window.HUB_APP_VERSION = '202611141932';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
