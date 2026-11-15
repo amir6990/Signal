@@ -11108,6 +11108,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     renderNav();
     var mb = document.getElementById('menu-btn');
     if (mb) mb.addEventListener('click', function () { document.body.classList.toggle('nav-open'); });
+    // crash-loop guard (phones): if the last two starts never reached a stable page, open on the home page in safe mode
+    var BK = 'hub.bootFail', bf = 0; try { bf = Number(localStorage.getItem(BK)) || 0; localStorage.setItem(BK, String(bf + 1)); } catch (e) { /* storage blocked */ }
+    if (bf >= 2) { root.HUB_SAFE = true; if (location.hash && location.hash !== '#home') location.replace('#home');
+      var bn = document.createElement('div'); bn.className = 'safe-banner'; bn.setAttribute('role', 'alert');
+      bn.style.cssText = 'position:sticky;top:0;z-index:50;background:#5a3a00;color:#fff;padding:10px 14px;font-size:14px;line-height:1.7';
+      bn.textContent = 'حالت امن: برنامه در دو بار باز شدن قبلی کامل بالا نیامد (احتمالاً کمبود حافظهٔ گوشی). صفحهٔ اصلی باز شد (نه آخرین ابزار). ابزارها را یکی‌یکی باز کنید؛ اگر یک ابزار دوباره برنامه را بست، نام آن را گزارش کنید. ';
+      var bb = document.createElement('button'); bb.className = 'btn btn-sm'; bb.type = 'button'; bb.textContent = 'بستن پیام'; bb.addEventListener('click', function () { bn.remove(); }); bn.appendChild(bb);
+      document.body.insertBefore(bn, document.body.firstChild); }
+    // a page that stayed up for 8 seconds counts as a good start
+    setTimeout(function () { try { localStorage.setItem(BK, '0'); } catch (e) { /* ignore */ } }, 8000);
     root.addEventListener('hashchange', route);
     route();
   }
@@ -27326,11 +27336,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611151837) */
+/* PWA: offline cache + app updates (version 202611151912) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611151837';
+  window.HUB_APP_VERSION = '202611151912';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
