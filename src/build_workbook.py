@@ -1217,8 +1217,9 @@ def build_options(wb):
             18: '=IFERROR(IF($C{r}="Call",MAX(0,$O{r}-$E{r}),MAX(0,$E{r}-$O{r})),"")',
             19: '=IFERROR(MAX(0,$I{r}-$R{r}),"")',
             20: '=IFERROR($G{r}/365,"")',
-            21: '=IF(OR($P{r}="",ABS($P{r}-1)>3*OPT_ATM_BAND),"",'
-                'IFERROR($I{r}/$O{r}*SQRT(2*PI()/$T{r}),""))',
+            # nested IF, not OR(): Excel evaluates every OR() argument, so ABS(""-1) gave #VALUE! when the underlying is missing
+            21: '=IF($P{r}="","",IF(ABS($P{r}-1)>3*OPT_ATM_BAND,"",'
+                'IFERROR($I{r}/$O{r}*SQRT(2*PI()/$T{r}),"")))',
             22: '=IFERROR((LN($O{r}/$E{r})+(OPT_RF+OPT_VOL^2/2)*$T{r})/(OPT_VOL*SQRT($T{r})),"")',
             23: '=IFERROR($V{r}-OPT_VOL*SQRT($T{r}),"")',
             24: '=IFERROR(IF($C{r}="Call",NORMSDIST($V{r}),NORMSDIST($V{r})-1),"")',
