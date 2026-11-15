@@ -34,6 +34,44 @@ def have_soffice():
     return shutil.which("soffice") or shutil.which("libreoffice")
 
 
+def have_excel():
+    """Microsoft Excel روی ویندوز (برای بازمحاسبه از راه COM، وقتی LibreOffice نیست)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Excel.Application\CLSID"):
+            return True
+    except OSError:
+        return False
+
+
+def recalc_excel(path, timeout=300):
+    """بازمحاسبه با خود Excel (COM): باز کردن پنهان، CalculateFull، ذخیره، بستن.
+    یک نمونهٔ جدا از Excel ساخته می‌شود و فایل‌های بازِ کاربر دست نمی‌خورند."""
+    path = os.path.abspath(path)
+    if not os.path.exists(path):
+        print("! فایل یافت نشد: %s" % path)
+        return 1
+    ps = (
+        "$ErrorActionPreference='Stop';"
+        "$x=New-Object -ComObject Excel.Application;$x.Visible=$false;$x.DisplayAlerts=$false;$x.AskToUpdateLinks=$false;"
+        "try{$w=$x.Workbooks.Open('%s',0,$false);$x.CalculateFull();$w.Save();$w.Close($false);Write-Output 'OK'}"
+        "finally{$x.Quit();[void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($x)}"
+    ) % path.replace("'", "''")
+    try:
+        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           timeout=timeout, capture_output=True, text=True, check=False)
+    except subprocess.TimeoutExpired:
+        print("! بازمحاسبه با Excel بیش از %d ثانیه طول کشید: %s" % (timeout, os.path.basename(path)))
+        return 1
+    if r.returncode != 0 or "OK" not in (r.stdout or ""):
+        print("! بازمحاسبه با Excel ناموفق: %s\n%s" % (os.path.basename(path), (r.stderr or r.stdout or "").strip()[-400:]))
+        return 1
+    print("✓ بازمحاسبه با Excel: %s" % os.path.basename(path))
+    return 0
+
+
 def recalc(path, timeout=300):
     """بارگذاری و ذخیره مجدد با LibreOffice تا مقادیر فرمول نوشته شوند.
 
@@ -47,6 +85,8 @@ def recalc(path, timeout=300):
     جز محاسبه ندارد و هنگام ذخیره مقادیر را می‌نویسد.
     """
     exe = have_soffice()
+    if not exe and sys.platform == "win32" and have_excel():
+        return recalc_excel(path, timeout)
     if not exe:
         print("! LibreOffice (soffice) نصب نیست.")
         print("  راه جایگزین: فایل را در اکسل باز کنید، Ctrl+Alt+F9 بزنید و ذخیره کنید.")

@@ -26,6 +26,7 @@ import os
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +46,36 @@ IDX_EQW = "67130298613737946"          # شاخص كل هم وزن
 
 
 # --------------------------------------------------------------- HTTP
+# --- route: direct first, then the system proxy ---------------------------------------------
+# Many PCs in Iran run a VPN as the Windows system proxy. Iranian sources (TSETMC, TGJU) refuse
+# foreign exits, while some foreign sources need the VPN. So each host is tried direct first and
+# then through the system proxy; the route that worked is remembered for that host.
+import urllib.parse as _up
+_ROUTE = {}
+_OPENERS = {"direct": urllib.request.build_opener(urllib.request.ProxyHandler({}))}
+if urllib.request.getproxies():
+    _OPENERS["system"] = urllib.request.build_opener()
+
+
+def urlopen_routed(req, timeout):
+    host = _up.urlparse(req.full_url).hostname or ""
+    order = list(_OPENERS)
+    if _ROUTE.get(host) in order:
+        order.remove(_ROUTE[host]); order.insert(0, _ROUTE[host])
+    last = None
+    for name in order:
+        try:
+            resp = _OPENERS[name].open(req, timeout=timeout)
+            _ROUTE[host] = name
+            return resp
+        except urllib.error.HTTPError:
+            _ROUTE[host] = name          # the server answered: this route reaches it
+            raise
+        except Exception as exc:         # noqa: BLE001  DNS, refused, TLS, timeout -> next route
+            last = exc
+    raise last
+
+
 def fetch(url, timeout=20, retries=4):
     """GET با هدر User-Agent الزامی و backoff نمایی."""
     last = None
@@ -53,7 +84,7 @@ def fetch(url, timeout=20, retries=4):
             req = urllib.request.Request(url, headers={
                 "User-Agent": UA, "Accept": "application/json, text/plain, */*",
                 "Referer": "https://www.tsetmc.com/"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urlopen_routed(req, timeout) as resp:
                 if resp.status == 204:
                     return None
                 return json.loads(resp.read().decode("utf-8", "replace"))
@@ -71,10 +102,18 @@ def pick(obj, *names, default=None):
     lowered = {str(k).lower(): v for k, v in obj.items()}
     for n in names:
         if n in obj:
-            return obj[n]
+            return _unwrap(obj[n], default)
         if str(n).lower() in lowered:
-            return lowered[str(n).lower()]
+            return _unwrap(lowered[str(n).lower()], default)
     return default
+
+
+def _unwrap(v, default=None):
+    """webgw.tse.ir wraps fields as {"value": x, "state": n}; return x (or default when x is empty)."""
+    if isinstance(v, dict) and "value" in v:
+        v = v["value"]
+        return default if v is None else v
+    return v
 
 
 MISSING = set()
@@ -115,13 +154,16 @@ def client_type(ins):
 
 def client_type_history(ins, top=0):
     """تاریخچه حقیقی/حقوقی. برخی نسخه‌ها آرایه برمی‌گردانند و برخی تک‌آبجکت."""
-    d = fetch("%s/ClientType/GetClientTypeHistory/%s/%s" % (CDN, ins, top))
+    # The endpoint answers only without a length suffix (".../{ins}/300" returns HTTP 500 — checked 2026-11-15
+    # from a PC in Iran); the full history comes back and the newest `top` days are kept here.
+    d = fetch("%s/ClientType/GetClientTypeHistory/%s" % (CDN, ins))
     if not d:
         return []
     v = d.get("clientType")
-    if isinstance(v, list):
-        return v
-    return [v] if v else []
+    rows = v if isinstance(v, list) else ([v] if v else [])
+    if top and len(rows) > top:
+        rows = sorted(rows, key=lambda r: r.get("recDate") or 0, reverse=True)[:top]
+    return rows
 
 
 def best_limits(ins):
@@ -359,8 +401,34 @@ def update_options(ws, targets):
         print("  ! قراردادی روی نمادهای Watchlist یافت نشد")
         return 0
     first = 5
-    if ws.max_row >= first:
-        ws.delete_rows(first, ws.max_row - first + 1)
+    nraw = 14                                   # columns A..N are data; O onward are the sheet's formulas
+    # Keep the formula columns: take row 5 as the template, clear only the data columns, and give every
+    # data row its own copy of the formulas (rows are no longer deleted, which used to drop all formulas).
+    from openpyxl.formula.translate import Translator
+    tmpl = {}
+    for c in range(nraw + 1, ws.max_column + 1):
+        v = ws.cell(row=first, column=c).value
+        if isinstance(v, str) and v.startswith("="):
+            tmpl[c] = v
+    from openpyxl.cell.cell import MergedCell
+    k0 = min(tmpl) if tmpl else None           # the table ends where its formula rows end (notes may follow)
+    end = first
+    while k0 and isinstance(ws.cell(row=end + 1, column=k0).value, str) and str(ws.cell(row=end + 1, column=k0).value).startswith("="):
+        end += 1
+    if not tmpl:
+        end = ws.max_row
+    last = max(end, first + len(rows) - 1)
+    for r in range(first, last + 1):
+        for c in range(1, nraw + 1):
+            if not isinstance(ws.cell(row=r, column=c), MergedCell):
+                ws.cell(row=r, column=c).value = None
+        for c, f in tmpl.items():
+            if isinstance(ws.cell(row=r, column=c), MergedCell):
+                continue
+            if r > first or ws.cell(row=r, column=c).value is None:
+                src = ws.cell(row=first, column=c).coordinate
+                dst = ws.cell(row=r, column=c).coordinate
+                ws.cell(row=r, column=c).value = Translator(f, origin=src).translate_formula(dst)
     for n, (it, base, name) in enumerate(rows):
         r = first + n
         is_call = name.startswith("ض")
@@ -374,12 +442,12 @@ def update_options(ws, targets):
         for i, v in enumerate(raw):
             if v is None:
                 continue
+            if isinstance(v, (dict, list, tuple)):   # unexpected shape: keep it readable, never crash the save
+                v = str(v)
             c = ws.cell(row=r, column=i + 1, value=v)
             if BW.OPT_COLS[i][3]:
                 c.number_format = BW.OPT_COLS[i][3]
-    print("  ✓ Options: %d قرارداد" % len(rows))
-    print("  ⓘ فرمول‌های ستون O به بعد شیت Options برای ردیف‌های جدید باید یک‌بار از "
-          "ردیف ۵ به پایین کپی شوند (اکسل خودش با کشیدن انجام می‌دهد).")
+    print("  ✓ Options: %d قرارداد (فرمول‌های %d ستون محاسباتی حفظ شد)" % (len(rows), len(tmpl)))
     return len(rows)
 
 

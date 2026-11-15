@@ -12,6 +12,35 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 class FetchError(Exception):
     pass
 
+# --- route: direct first, then the system proxy ---------------------------------------------
+# Many PCs in Iran run a VPN as the Windows system proxy. Iranian sources (TSETMC, TGJU) refuse
+# foreign exits, while some foreign sources need the VPN. So each host is tried direct first and
+# then through the system proxy; the route that worked is remembered for that host.
+import urllib.parse as _up
+_ROUTE = {}
+_OPENERS = {"direct": urllib.request.build_opener(urllib.request.ProxyHandler({}))}
+if urllib.request.getproxies():
+    _OPENERS["system"] = urllib.request.build_opener()
+
+
+def urlopen_routed(req, timeout):
+    host = _up.urlparse(req.full_url).hostname or ""
+    order = list(_OPENERS)
+    if _ROUTE.get(host) in order:
+        order.remove(_ROUTE[host]); order.insert(0, _ROUTE[host])
+    last = None
+    for name in order:
+        try:
+            resp = _OPENERS[name].open(req, timeout=timeout)
+            _ROUTE[host] = name
+            return resp
+        except urllib.error.HTTPError:
+            _ROUTE[host] = name          # the server answered: this route reaches it
+            raise
+        except Exception as exc:         # noqa: BLE001  DNS, refused, TLS, timeout -> next route
+            last = exc
+    raise last
+
 
 def get(url, timeout=15, retries=3, headers=None, referer=None):
     """GET خام. متن پاسخ را برمی‌گرداند."""
@@ -24,7 +53,7 @@ def get(url, timeout=15, retries=3, headers=None, referer=None):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers=h)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urlopen_routed(req, timeout) as resp:
                 return resp.read().decode("utf-8", "replace")
         except Exception as exc:                       # noqa: BLE001
             last = exc
@@ -52,7 +81,7 @@ def post_json(url, payload, timeout=15, retries=3, headers=None):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, data=data, headers=h, method="POST")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urlopen_routed(req, timeout) as resp:
                 return json.loads(resp.read().decode("utf-8", "replace"))
         except Exception as exc:                       # noqa: BLE001
             last = exc
