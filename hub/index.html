@@ -24044,6 +24044,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     try { DK.track = deskTrack(DK, X, E); } catch (e) { DK.track = null; DK.trackErr = e.message; }
     // again, now with the registry entry (issue price) attached
     DK.items.forEach(function (x) { try { x.v6 = sigView(x, E, X.zmap[x.key]); okOnlyIfElig(x); } catch (e) { /* keep the earlier view */ } });
+    // the registry's issue price can turn a call into «entry missed» or expired: such calls leave the opportunity list here too, so every view agrees
+    var drop = DK.opp.filter(function (x) { var v = x.v6; return v && (v.st === 'exp' || v.st === 'nodata' || v.st === 'rej' || v.en === 'missed'); });
+    if (drop.length) { drop.forEach(function (x) { x.elig = false; x.notWhy.push(x.v6.stFa + ': ' + x.v6.why.split('؛')[0]); });
+      DK.opp = DK.opp.filter(function (x) { return x.elig; }); DK.top10 = DK.opp.slice(0, 10); ranked = DK.opp.map(function (x) { return x.f; }); }
     try { DK.risk = deskRisk(DK, X, E); } catch (e) { DK.risk = null; }
     var top = DK.opp.map(function (x) { var f2 = forecastAsset(x.c, X.zmap[x.key], true, db); f2.score = x.score; f2.desk = x; x.prob = f2.prob || []; return f2; });
     top.forEach(function (f, i) { f.rank = i + 1; f.vs = []; });
@@ -27336,11 +27340,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611151912) */
+/* PWA: offline cache + app updates (version 202611160601) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611151912';
+  window.HUB_APP_VERSION = '202611160601';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
