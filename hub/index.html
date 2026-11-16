@@ -26652,15 +26652,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var A = byC[c], n = A.length, up = 0, dn = 0, st3 = 0, ob = 0, os = 0, rs = [], stale = A.filter(function (x) { return isFinite(x.age) && x.age > 96; }), nearR = [], nearS = [];
       A.forEach(function (x) { var q = Q[x.key], s = strOf(q); if (s.v > 0) up++; else if (s.v < 0) dn++; if (Math.abs(s.v) === 3) st3++; if (q && isFinite(q.rsi)) { rs.push(q.rsi); if (q.rsi >= 70) ob++; if (q.rsi <= 30) os++; }
         var k = x.S && x.S.chk; if (k && isFinite(k.dUp) && k.dUp >= 0 && k.dUp <= 0.02) nearR.push(x); if (k && isFinite(k.dDn) && k.dDn <= 0 && k.dDn >= -0.02) nearS.push(x); });
-      rs.sort(function (a, b) { return a - b; }); var rm = rs.length ? rs[Math.floor(rs.length / 2)] : NaN, dom = up > dn * 1.5 ? 'صعودی' : dn > up * 1.5 ? 'نزولی' : 'بدون جهت غالب';
+      rs.sort(function (a, b) { return a - b; }); var rm = rs.length ? rs[Math.floor(rs.length / 2)] : NaN, dom = up > dn * 1.5 && up >= 0.4 * n ? 'صعودی' : dn > up * 1.5 && dn >= 0.4 * n ? 'نزولی' : 'بدون جهت غالب';
       var risk = []; if (stale.length) risk.push(fa(stale.length, 0) + ' دارایی با دادهٔ قدیمی‌تر از ۴ روز (' + nameL(stale, 4) + ')'); if (ob) risk.push(fa(ob, 0) + ' دارایی در اشباع خرید (RSI ≥ ۷۰)');
       if (nearR.length) risk.push('نزدیک سطح تأیید صعود / مقاومت (کمتر از ۲٪): ' + nameL(nearR, 5)); if (nearS.length) risk.push('نزدیک از دست دادن حمایت (کمتر از ۲٪): ' + nameL(nearS, 5));
       var said = dom === 'صعودی' ? 'بیشتر دارایی‌های این بازار روند صعودی دارند؛ ' + (rm >= 65 ? 'ولی RSI میانه بالاست، پس خرید تازه در اصلاح بهتر از تعقیب قیمت است.' : 'خرید فقط روی سیگنال‌های تأییدشده.')
         : dom === 'نزولی' ? 'بیشتر دارایی‌ها روند نزولی دارند؛ خرید تازه پرریسک است و دارندگان حد ضرر را رعایت کنند.' : 'بازار جهت روشنی ندارد؛ انتخاب تک‌دارایی و حجم کمتر.';
       return [TE.MKFA[c] || c, fa(n, 0), 'صعودی ' + fa(up, 0) + ' · نزولی ' + fa(dn, 0) + ' · خنثی/متضاد ' + fa(n - up - dn, 0) + ' → ' + dom, fa(st3, 0) + ' دارایی با روند هم‌جهت در هر سه افق', isFinite(rm) ? 'RSI میانه ' + fa(rm, 0) + ' · اشباع خرید ' + fa(ob, 0) + ' · اشباع فروش ' + fa(os, 0) : '—', risk.join('؛ ') || 'ریسک ویژه‌ای در داده دیده نشد', said]; });
     (X.idxv || []).forEach(function (v) { if (!v.ok) return; var q = v.chk || {};
-      ov.unshift(['شاخص — ' + v.name, '—', (v.tr ? ['s', 'm', 'l'].map(function (k) { return ({ up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: '—' })[v.tr[k]] || '—'; }).join(' / ') : '—') + ' (کوتاه / میان / بلند)', fa(v.last) + ' (' + v.dateFa + ')',
-        'تغییر ۱ / ۵ / ۲۰ جلسه: ' + pct(v.chg1, 1) + ' / ' + pct(v.chg5, 1) + ' / ' + pct(v.chg20, 1), (isFinite(q.dUp) && q.dUp <= 0.02 && q.dUp >= 0 ? 'نزدیک مقاومت ' + fa(v.up) + ' (' + pct(q.dUp, 1) + ')؛ ' : '') + (isFinite(q.dDn) && q.dDn >= -0.02 && q.dDn <= 0 ? 'نزدیک حمایت ' + fa(v.dn) + ' (' + pct(q.dDn, 1) + ')؛ ' : '') + 'مقاومت ' + fa(v.up) + ' · حمایت ' + fa(v.dn), v.act || '']); });
+      var nUp = v.tr ? ['s', 'm', 'l'].filter(function (k) { return v.tr[k] === 'up'; }).length : 0, nDn = v.tr ? ['s', 'm', 'l'].filter(function (k) { return v.tr[k] === 'down'; }).length : 0;
+      ov.unshift(['شاخص — ' + v.name + ' · ' + fa(v.last) + ' (' + v.dateFa + ')', '—', (v.tr ? ['s', 'm', 'l'].map(function (k) { return ({ up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: '—' })[v.tr[k]] || '—'; }).join(' / ') : '—') + ' (کوتاه / میان / بلند)', nUp === 3 ? 'صعودی قوی (هر سه افق)' : nDn === 3 ? 'نزولی قوی (هر سه افق)' : nUp > nDn ? 'صعودی ' + fa(nUp, 0) + ' از ۳ افق' : nDn > nUp ? 'نزولی ' + fa(nDn, 0) + ' از ۳ افق' : 'متضاد یا خنثی',
+        'تغییر ۱ / ۵ / ۲۰ جلسه: ' + pct(v.chg1, 1) + ' / ' + pct(v.chg5, 1) + ' / ' + pct(v.chg20, 1) + (isFinite(v.rsi) ? ' · RSI ' + fa(v.rsi, 0) : ''), (isFinite(q.dUp) && q.dUp <= 0.02 && q.dUp >= 0 ? 'نزدیک مقاومت ' + fa(v.up) + ' (' + pct(q.dUp, 1) + ')؛ ' : '') + (isFinite(q.dDn) && q.dDn >= -0.02 && q.dDn <= 0 ? 'نزدیک حمایت ' + fa(v.dn) + ' (' + pct(q.dDn, 1) + ')؛ ' : '') + 'مقاومت ' + fa(v.up) + ' · حمایت ' + fa(v.dn), v.act || '']); });
     out.s1.push(ctx.panel('وضعیت کلی بازار — روند، قدرت، مومنتوم و ریسک', [table(['بازار', 'تعداد', 'روند (کوتاه/میان/بلند هم‌وزن)', 'قدرت روند', 'مومنتوم', 'ریسک‌های اصلی', 'خوانش ساده'], ov),
       h('p', { class: 'small muted', text: 'قدرت روند = تعداد افق‌های هم‌جهت (کوتاه: میانگین ۲۰، میان: میانگین ۵۰ و ۲۰۰، بلند: میانگین ۲۰۰ و بازده ۲۵۰ جلسه). مومنتوم = RSI ۱۴ و جهت هیستوگرام MACD نسبت به ۵ جلسهٔ قبل. هیچ درصدی در این جدول احتمال نیست.' })]));
     if (LVR) {
@@ -26723,9 +26724,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         D0.length > 15 || U0.length > 15 ? h('button', { class: 'btn btn-sm', type: 'button', text: all0 ? 'نمایش ۱۵ مورد اول هر جدول' : 'نمایش همه', onclick: function () { S.tzAll = !S.tzAll; ctx.rerender(); } }) : null]));
     })();
     // scenario levels: indices (not tradable) and every market of the Iran markets tool — the former «۵. راه‌حل» table
-    var scn = [];
+    var scn = [], BULLL = function (l) { return l === 'up' || l === 'upw' ? true : l === 'dn' || l === 'dnw' ? false : null; };
     (X.idxv || []).forEach(function (v) { if (!v.ok) return; var q = v.chk || {}; scn.push([v.name + ' (شاخص — فقط سناریو)', fa(v.last), q.fa || '—', fa(v.up) + ' (' + pct(q.dUp, 1) + ')', fa(v.dn) + ' (' + pct(q.dDn, 1) + ')', '—', (v.res || []).slice(0, 2).map(function (x) { return fa(x); }).join(' / ') || '—', (v.sup || []).slice(0, 2).map(function (x) { return fa(x); }).join(' / ') || '—', v.act || '—']); });
     if (LVR) LVR.rows.forEach(function (a) { var p = a.plan; if (!p || !p.up || !(p.lv && p.lv.hi10 > 0)) return; var idx = a.kind === 'tse-index';
+      // an index already shown from the engine gets the channel model's lean added to its row, not a second row with other levels
+      if (idx) { var eq = /هم‌وزن/.test(a.name), row = scn.filter(function (r) { return /شاخص/.test(r[0]) && /هم‌وزن/.test(r[0]) === eq; })[0];
+        if (row) { row[2] += ' · مدل کانال (ابزار بازارهای ایران): ' + Hub.iranMarkets.LEAN[p.lean][0] + ((BULLL(p.lean) === false && /بالای سطح تأیید صعودی/.test(row[2])) || (BULLL(p.lean) === true && /زیر سطح تأیید نزولی/.test(row[2])) ? ' — با موتور هم‌جهت نیست؛ تمایل کانال از جایگاه قیمت در کانال می‌آید و روند موتور از میانگین‌ها' : ''); return; } }
       scn.push([a.name + (idx ? ' (شاخص — فقط سناریو)' : ''), fa(a.last), Hub.iranMarkets.LEAN[p.lean][0] + (p.chk ? ' · ' + p.chk.fa : ''), fa(p.lv.hi10) + (p.chk ? ' (' + pct(p.chk.dUp, 1) + ')' : ''), fa(p.lv.lo10) + (p.chk ? ' (' + pct(p.chk.dDn, 1) + ')' : ''), idx ? '—' : fa(p.stopL), p.upT.map(function (v) { return fa(v); }).join(' / ') || '—', p.dnT.map(function (v) { return fa(v); }).join(' / ') || '—', idx ? 'فقط سناریو؛ شاخص قابل معامله نیست. ' + (p.lean === 'up' || p.lean === 'upw' ? 'صعود تأییدشده = محیط مساعدتر برای سهام' : 'نزول تأییدشده = سخت‌گیری بیشتر در خرید سهام') : p.act]); });
     if (scn.length) out.s2.push(ctx.panel('سطوح و سناریوهای همهٔ بازارها (شاخص، ارز، طلا، سکه، نفت و …)', [table(['بازار', 'آخرین', 'تمایل / وضعیت', 'تأیید صعود بالای', 'تأیید نزول زیر', 'حد ضرر خرید', 'اهداف صعودی', 'اهداف نزولی', 'اقدام'], scn),
       h('p', { class: 'small muted', text: 'تأیید = بسته‌شدن قیمت پایانی بالاتر یا پایین‌تر از سطح (بالاترین / پایین‌ترین قیمت پایانی ۱۰ جلسهٔ قبل در ابزار بازارهای ایران؛ ۲۰ جلسه برای شاخص‌ها در موتور). شاخص‌ها و سری‌های غیرقابل‌معامله فقط سناریو دارند، نه ورود و حد ضرر. اقدام این جدول از ابزار بازارهای ایران است و برای دارایی‌های موتور، اقدام همان ستون جدول‌های بالاست.' })]));
@@ -27340,11 +27344,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611160601) */
+/* PWA: offline cache + app updates (version 202611160633) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611160601';
+  window.HUB_APP_VERSION = '202611160633';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
