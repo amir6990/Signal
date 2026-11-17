@@ -10594,6 +10594,75 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   };
 })(window);
 
+/* js/core/histmerge.js */
+/* =====================================================================
+ * HISTORY GUARD — an update adds new rows; it never removes the history already stored.
+ * Used by every data feed (Hub.signals.safeFetch), by the phone sync (pull) and by the history audit.
+ *
+ *   merge(old, fresh, opt) → merged value of the same shape. Shapes recognised anywhere in a store's data map:
+ *     rows    [{date, close, …}]            stored rows before the fresh range + the fresh rows + stored official rows after it
+ *     packed  [[yyyymmdd, o, h, l, c], …]   (Iran-economy series) merged by the first element
+ *     objects { key: shape }                merged key by key; a key missing from the fresh fetch keeps its stored history
+ *   A series is never shortened. If the fresh rows disagree with the stored ones on the overlapping dates (median gap > 5%,
+ *   e.g. a fallback source in another unit), the two are not mixed: the longer history is kept and the case is reported.
+ *   Cap: 3,000 rows per series (≈ 12 years of sessions) — far above the deepest need of the engine (1,250).
+ *
+ *   audit() → per data group: series, rows (min / median / max) against the engine's needs (short & medium 260, long 560, validation 1,250)
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var CAP = 3000, NEED = { s: 260, m: 260, l: 560, full: 1250 };
+  function isRows(a) { return Array.isArray(a) && a.length > 0 && a[0] && typeof a[0] === 'object' && !Array.isArray(a[0]) && a[0].date != null; }
+  function isPacked(a) { return Array.isArray(a) && a.length > 0 && Array.isArray(a[0]) && typeof a[0][0] === 'number' && a[0][0] > 19000000; }
+  function dk(r) { return Array.isArray(r) ? r[0] : +r.date || r.date; }
+  function cl(r) { return Array.isArray(r) ? r[4] : r.close; }
+  function median(a) { if (!a.length) return NaN; var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.floor(s.length / 2)]; }
+  // do the two series measure the same thing in the same unit? (overlapping dates, official rows only)
+  function sameUnit(o, n) { var m = {}; o.forEach(function (r) { if (!r.live) m[dk(r)] = cl(r); }); var g = [];
+    n.forEach(function (r) { var v = m[dk(r)], c = cl(r); if (!r.live && v > 0 && c > 0) g.push(Math.abs(c / v - 1)); }); return g.length < 3 || median(g.slice(-60)) <= 0.05; }
+  function mergeSeries(o, n, rep, path) {
+    if (!o || !o.length) return n; if (!n || !n.length) return o;
+    if (!sameUnit(o, n)) { if (rep) rep.push({ path: path, kind: 'unit', old: o.length, fresh: n.length, kept: n.length >= o.length ? 'fresh' : 'old' }); return n.length >= o.length ? n : o; }
+    // the fresh series is authoritative inside its own date range (an official row replaces a provisional one; a weekly bar that grew
+    // during the week replaces its earlier partial version); stored rows before that range are kept, and official rows after it too
+    var f0 = dk(n[0]), fL = dk(n[n.length - 1]), pre = o.filter(function (r) { return dk(r) < f0; }), suf = o.filter(function (r) { return dk(r) > fL && !r.live; });
+    var out = pre.concat(n, suf), added = n.filter(function (r) { var d = dk(r); return !o.some(function (q) { return dk(q) === d; }); }).length;
+    if (out.length > CAP) out = out.slice(-CAP);
+    if (rep && out.length > n.length) rep.push({ path: path, kind: 'kept', old: o.length, fresh: n.length, merged: out.length, added: added });
+    return out;
+  }
+  function merge(o, n, opt, rep, path) {
+    path = path || '';
+    if (n === undefined || n === null) return o;
+    if (o === undefined || o === null) return n;
+    if ((isRows(o) || isPacked(o) || (Array.isArray(o) && !o.length)) && (isRows(n) || isPacked(n) || (Array.isArray(n) && !n.length))) return mergeSeries(o, n, rep, path);
+    if (Array.isArray(o) || Array.isArray(n)) return n;   // other arrays (lists, settings): the fresh value
+    if (typeof o === 'object' && typeof n === 'object') { var out = {}; Object.keys(n).forEach(function (k) { out[k] = merge(o[k], n[k], opt, rep, path ? path + '.' + k : k); });
+      Object.keys(o).forEach(function (k) { if (!(k in out) && hasHist(o[k])) { out[k] = o[k]; if (rep) rep.push({ path: path ? path + '.' + k : k, kind: 'missing', old: depth(o[k]) }); } }); return out; }
+    return n;
+  }
+  function hasHist(v) { if (isRows(v) || isPacked(v)) return true; if (v && typeof v === 'object' && !Array.isArray(v)) return Object.keys(v).some(function (k) { return hasHist(v[k]); }); return false; }
+  function depth(v) { if (isRows(v) || isPacked(v)) return v.length; if (v && typeof v === 'object' && !Array.isArray(v)) { var m = 0; Object.keys(v).forEach(function (k) { m = Math.max(m, depth(v[k])); }); return m; } return 0; }
+  // stores whose data are a snapshot, not a history (option contracts expire): never merged
+  var SNAPSHOT = { 'hub.sigoptions.v1': 1, 'sig-options': 1 };
+  function mergeStore(key, oldData, freshData, rep) { if (SNAPSHOT[key]) return freshData; return merge(oldData, freshData, null, rep, ''); }
+
+  /* history audit: is there enough history for every horizon of the engine? */
+  var GROUPS = [['hub.sigstocks.v1', 'سهام و صندوق‌ها', function (d) { var o = {}; Object.keys(d || {}).forEach(function (k) { if (k[0] !== '_' && d[k] && d[k].px) o[k] = d[k].px.length; }); return o; }],
+    ['hub.sig-gold.v1', 'طلا و سکه', null], ['hub.sig-fx.v1', 'ارز و تتر', null], ['hub.sigglobal.v1', 'بازارهای جهانی و رمزارز', null],
+    ['hub.longview.v1', 'سری‌های اقتصاد ایران (روزانه)', function (d) { var o = {}; Object.keys(d || {}).forEach(function (k) { var v = d[k]; if (v && v.d) o[k] = v.d.length; }); return o; }]];
+  function audit() {
+    var St = Hub.util && Hub.util.store; if (!St) return [];
+    return GROUPS.map(function (g) { var S = St.get(g[0], null), live = S && S.meta && !/synthetic|illustrative/i.test(S.meta.source || ''), m = g[2] ? g[2](S && S.data) : {};
+      if (!g[2] && S && S.data) Object.keys(S.data).forEach(function (k) { if (isRows(S.data[k])) m[k] = S.data[k].length; });
+      var v = Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) { return a - b; }), short = Object.keys(m).filter(function (k) { return m[k] < NEED.m; }), noLong = Object.keys(m).filter(function (k) { return m[k] >= NEED.m && m[k] < NEED.l; });
+      return { key: g[0], fa: g[1], live: !!live, n: v.length, min: v[0] || 0, med: v.length ? v[Math.floor(v.length / 2)] : 0, max: v[v.length - 1] || 0, short: short, noLong: noLong, full: v.filter(function (x) { return x >= NEED.full; }).length,
+        log: S && S.meta && S.meta.histLog || null }; });
+  }
+  Hub.histMerge = { merge: merge, mergeStore: mergeStore, mergeSeries: mergeSeries, audit: audit, NEED: NEED, CAP: CAP, depth: depth };
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* js/core/datasync.js */
 /* =====================================================================
  * DATA SYNC — PC → GitHub → phone.
@@ -10609,7 +10678,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   'use strict';
   var Hub = root.Hub = root.Hub || {};
   var KEY = 'hub.sync.v1';
-  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
+  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1', 'hub.central.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
   var KEEP = ['set', 'tk', 'settings', 'f', 'sel', 'opt'];               // the phone keeps its own settings / filters
   var DEF = { repo: 'amir6990/Signal', branch: 'claude/iran-stock-signals-excel-guqwon', dir: 'hub/data', token: '', auto: false, autoPull: true, site: 'https://amir6990.github.io/Signal/hub/' };
   function ls() { try { return root.localStorage; } catch (e) { return null; } }
@@ -10639,6 +10708,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
           if (!live(S)) return;
           if (!force && live(L) && ts(L) >= ts(S)) { out.same.push(k); return; }
           var N = Object.assign({}, S); if (L) KEEP.forEach(function (x) { if (L[x] !== undefined) N[x] = L[x]; });
+          // the snapshot adds to the history already on this device; it never shortens a series kept here (history guard)
+          if (live(L) && L.data && Hub.histMerge) { try { N.data = Hub.histMerge.mergeStore(k, L.data, S.data, []); } catch (e) { /* keep the snapshot as is */ } }
           put(k, N); out.updated.push(k);
         });
       }).catch(function (e) { out.errors.push(name + ': ' + e.message); });
@@ -10650,10 +10721,18 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return fetch('https://api.github.com/repos/' + c.repo + path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error('GitHub ' + r.status + ': ' + (j.message || '')); e.status = r.status; throw e; } return j; }); });
   }
+  /* the central verdict goes to the public repo for the push-alert job — without anything about the user's own positions */
+  function publicCentral(C) { var by = {}; Object.keys(C.by || {}).forEach(function (k) { var r = Object.assign({}, C.by[k]); delete r.held; if (r.tier === 'pos') r.tier = 'none'; by[k] = r; }); return { at: C.at, upd: C.upd, by: by }; }
+  /* one file through the contents API (used by the push setup: public VAPID key, subscriptions) */
+  function putFile(path, text, msg) { var c = cfg(); if (!c.token) return Promise.reject(new Error('توکن GitHub روی این دستگاه ثبت نشده است'));
+    var url = '/contents/' + path.split('/').map(encodeURIComponent).join('/'), b64 = btoa(unescape(encodeURIComponent(text)));
+    return gh(c, url + '?ref=' + encodeURIComponent(c.branch)).then(function (j) { return j.sha; }, function (e) { if (e.status === 404) return null; throw e; })
+      .then(function (sha) { return gh(c, url, 'PUT', Object.assign({ message: msg || ('hub: ' + path), content: b64, branch: c.branch }, sha ? { sha: sha } : {})); }); }
+  function getFile(path) { var c = cfg(); if (!c.token) return Promise.reject(new Error('no token')); return gh(c, '/contents/' + path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(c.branch)).then(function (j) { return decodeURIComponent(escape(atob(String(j.content || '').replace(/\n/g, '')))); }); }
   function build(names) {
     var files = [];
     names.forEach(function (name) {
-      var st = {}; FILES[name].forEach(function (k) { var S = get(k, null); if (live(S)) st[k] = S; });
+      var st = {}; FILES[name].forEach(function (k) { var S = get(k, null); if (k === 'hub.central.v1') { if (S && S.by) st[k] = publicCentral(S); return; } if (live(S)) st[k] = S; });
       if (Object.keys(st).length) files.push({ name: name, content: JSON.stringify({ version: 1, publishedAt: new Date().toISOString(), by: 'pc', stores: st }, round) });
     });
     // widget.json: the trading engine's own dashboard feed (priorities, confirmed signals, pulse, index forecast) — opt-in; no positions or account data
@@ -10701,7 +10780,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   if (root.document) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 800); }); else setTimeout(boot, 800); }
 
-  Hub.dataSync = { cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
+  Hub.dataSync = { putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/alerts.js */
@@ -10738,7 +10817,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function isF(x) { return typeof x === 'number' && isFinite(x); }
   function fa(x, d) { if (!isF(x)) return '—'; var a = Math.abs(x), s = a >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d == null ? (a < 10 ? 2 : a < 100 ? 1 : 0) : d); return s.replace(/[0-9]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }).replace(/,/g, '٬').replace('.', '٫'); }
   function defaults() { return { on: true, buy: true, sell: true, pre: true, info: true, sys: true, cls: { stock: true, fund: true, gold: true, fx: true, crypto: true, commodity: true }, minConf: 0, nearPct: 1.5, quietFrom: 23, quietTo: 7, heldOnly: false }; }
-  function load() { var S = (U() && U().store.get(KEY, null)) || {}; S.set = Object.assign(defaults(), S.set || {}); S.set.cls = Object.assign(defaults().cls, S.set.cls || {}); S.log = Array.isArray(S.log) ? S.log : []; S.sent = S.sent || {}; S.snap = S.snap || {}; S.stats = S.stats || { n: 0, sys: 0, sysFail: 0, byType: {} }; return S; }
+  function load() { var S = (U() && U().store.get(KEY, null)) || {}; S.set = Object.assign(defaults(), S.set || {}); S.set.cls = Object.assign(defaults().cls, S.set.cls || {}); S.log = Array.isArray(S.log) ? S.log : []; S.sent = S.sent || {}; S.snap = S.snap || {}; S.stats = Object.assign({ n: 0, sys: 0, sysFail: 0 }, S.stats || {}); S.stats.byType = S.stats.byType || {}; return S; }
   function save(S) { try { var cut = Date.now() - 20 * 864e5; Object.keys(S.sent).forEach(function (k) { if (S.sent[k] < cut) delete S.sent[k]; }); S.log = S.log.slice(-500); U().store.set(KEY, S); } catch (e) { /* storage full: alerts still shown */ } }
   function tehranHour() { try { return +new Date().toLocaleString('en-US', { timeZone: 'Asia/Tehran', hour: '2-digit', hour12: false }) % 24; } catch (e) { return new Date().getHours(); } }
 
@@ -10746,7 +10825,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function card(r, extra) {
     var L = r.L || r.lv || {}, buy = L.buy, tp = L.tp || [];
     return Object.assign({ key: r.key, sym: r.sym, cls: r.cls, mk: CLSFA[r.cls] || r.cls, sid: r.sid || null, act: r.actFa || '', st: r.stFa || '', tier: r.tierFa || '', px: r.px,
-      zone: buy && isF(buy[0]) ? [buy[0], buy[1]] : null, up: isF(L.upConf) ? L.upConf : L.up, dn: isF(L.dnConf) ? L.dnConf : L.dn, stop: L.stop, tp1: tp[0], tp2: tp[1], rr: r.rr,
+      zone: buy && isF(buy[0]) ? [buy[0], buy[1]] : null, up: isF(L.upConf) ? L.upConf : L.up, dn: isF(L.dnConf) ? L.dnConf : L.dn, stop: L.stop, tp1: tp[0], tp2: tp[1], rr: isF(r.rr) ? r.rr : L.rr,
       hz: r.hz || '', conf: r.conf, why: r.why || r.rcWhy || '', inv: isF(L.inv) ? 'بسته‌شدن ' + (r.tier === 'ok' ? 'زیر ' + fa(L.stop) : 'بالای ' + fa(L.inv)) : isF(L.stop) ? 'بسته‌شدن زیر ' + fa(L.stop) : '',
       dataAt: r.date || '', floor: L.floor || null, ceil: L.ceil || null, tzConf: L.tzConf }, extra || {});
   }
@@ -10773,7 +10852,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function evaluateCentral(C, fresh) {
     var S = load(), out = [], by = (C && C.by) || {}, first = !Object.keys(S.snap).length;
     Object.keys(by).forEach(function (k) {
-      var r = by[k], p = S.snap[k] || null, held = !!r.held, stale = fresh && fresh[r.cls] === false;
+      var r = by[k].key ? by[k] : Object.assign({ key: k }, by[k]), p = S.snap[k] || null, held = !!r.held, stale = fresh && fresh[r.cls] === false;
       if (!p && first) { S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held }; return; }   // the first run only records the baseline: nothing is «new» yet
       var was = p || {};
       if (r.tier === 'ok' && was.tier !== 'ok') out.push(ev(stale ? 'data' : 'buyOk', r, null, stale ? 'سیگنال خرید روی دادهٔ قدیمی؛ تا دریافت دادهٔ تازه قابل اقدام نیست.' : r.why));
@@ -10841,7 +10920,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function requestPermission() { if (typeof Notification === 'undefined') return Promise.resolve('unsupported'); if (Notification.permission !== 'default') return Promise.resolve(Notification.permission); return Notification.requestPermission(); }
   function markRead() { var S = load(); S.log.forEach(function (e) { e.state = 'read'; }); save(S); }
 
-  Hub.alerts = { KEY: KEY, LVL: LVL, TYPE: TYPE, load: load, save: save, defaults: defaults, evaluateCentral: evaluateCentral, evaluatePrices: evaluatePrices, deliver: deliver, statusOf: statusOf, requestPermission: requestPermission, markRead: markRead, card: card, nextAct: nextAct };
+  Hub.alerts = { quiet: function (e) { return quiet(load(), e); }, allowed: function (e) { return allowed(load(), e); }, KEY: KEY, LVL: LVL, TYPE: TYPE, load: load, save: save, defaults: defaults, evaluateCentral: evaluateCentral, evaluatePrices: evaluatePrices, deliver: deliver, statusOf: statusOf, requestPermission: requestPermission, markRead: markRead, card: card, nextAct: nextAct };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/smartrefresh.js */
@@ -10962,6 +11041,66 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     setTimeout(function () { try { tick('open'); } catch (e) { BUSY = false; } }, 20000); }
   Hub.smartRefresh = { SKEY: SKEY, STKEY: STKEY, MK: MK, defaults: defaults, set: set, state: st, saveState: saveSt, marketState: marketState, teh: teh, tick: tick, active: active, afterFull: afterFull, freshness: freshness, light: function (m) { var S = st(); return light(m, S, teh()).then(function (r) { saveSt(S); return r; }); } };
   if (Hub.util) start(); else root.addEventListener('load', start);
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* js/core/webpush.js */
+/* =====================================================================
+ * PUSH TO A CLOSED APP — directive 17, approved by the user on 2026-11-17 (scheduled GitHub job + Web Push).
+ *
+ *   PC (once):   keys()      → a VAPID key pair made in this browser. The PUBLIC key is published to the repo (hub/push/vapid.json);
+ *                              the PRIVATE key is shown once to be saved as the repository secret VAPID_PRIVATE_KEY — it is never
+ *                              written to the repo or sent anywhere else (the GitHub API cannot store secrets through this hub's token).
+ *   Phone:       subscribe() → the home-screen app subscribes with that public key; the subscription (push-service address +
+ *                              encryption keys, nothing personal) is added to hub/push/subs.json with this device's GitHub token,
+ *                              or shown as text to paste on the PC (addSub) when the phone has no token.
+ *   GitHub job:  .github/workflows/push-alerts.yml runs hourly on market days and after every published snapshot: it reads the
+ *                published central verdict and TGJU's live board, runs the same alert rules (js/core/alerts.js) and sends the
+ *                encrypted notifications. TSETMC does not answer GitHub's servers, so stock alerts come from the snapshots the PC
+ *                or phone publishes after an update; gold, coins and FX are also checked against live prices every hour.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var KEY = 'hub.push.v1', DIR = 'hub/push';
+  function st() { return (Hub.util && Hub.util.store.get(KEY, null)) || {}; }
+  function save(o) { try { Hub.util.store.set(KEY, Object.assign(st(), o)); } catch (e) { /* ignore */ } }
+  function b64u(buf) { var s = '', a = new Uint8Array(buf); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  function unb64u(s) { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var b = atob(s), a = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+  function supported() { return !!(root.navigator && navigator.serviceWorker && root.PushManager && root.crypto && crypto.subtle); }
+  function site() { var c = Hub.dataSync ? Hub.dataSync.cfg() : {}; var served = Hub.dataSync && Hub.dataSync.served && Hub.dataSync.served(); return served ? './' : (c.site || 'https://amir6990.github.io/Signal/hub/'); }
+
+  // 1 · PC: make the VAPID key pair (P-256), publish the public key, hand back the private key for the repository secret
+  function keys() {
+    return crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']).then(function (kp) { return crypto.subtle.exportKey('jwk', kp.privateKey); }).then(function (j) {
+      var pub = b64u(new Uint8Array([4].concat(Array.from(unb64u(j.x)), Array.from(unb64u(j.y))))), priv = j.d;
+      var body = JSON.stringify({ publicKey: pub, createdAt: new Date().toISOString(), note: 'VAPID public key of the hub. The private key is the repository secret VAPID_PRIVATE_KEY.' }, null, 1);
+      return Hub.dataSync.putFile(DIR + '/vapid.json', body, 'hub: push — public VAPID key').then(function () { save({ pub: pub, priv: priv, at: Date.now() }); return { pub: pub, priv: priv }; });
+    });
+  }
+  function publicKey() { return fetch(site().replace(/\/?$/, '/') + 'push/vapid.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('کلید عمومی هنوز منتشر نشده (HTTP ' + r.status + ')'); return r.json(); }).then(function (j) { if (!j.publicKey) throw new Error('کلید عمومی نامعتبر'); return j.publicKey; }); }
+
+  // 2 · phone: subscribe this device, then register the subscription in the repo (with a token) or hand it over as text
+  function subscribe(label) {
+    if (!supported()) return Promise.reject(new Error('این مرورگر Web Push ندارد. در آیفون: iOS ۱۶٫۴ یا بالاتر و برنامه از «افزودن به صفحهٔ اصلی» باز شده باشد.'));
+    var perm = typeof Notification !== 'undefined' && Notification.permission !== 'granted' ? Notification.requestPermission() : Promise.resolve('granted');
+    return perm.then(function (p) { if (p !== 'granted') throw new Error('اجازهٔ اعلان داده نشد.'); return Promise.all([navigator.serviceWorker.ready, publicKey()]); })
+      .then(function (r) { var reg = r[0], key = r[1]; return reg.pushManager.getSubscription().then(function (old) { if (old && st().key === key) return old; return (old ? old.unsubscribe() : Promise.resolve()).then(function () { return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: unb64u(key) }); }); }).then(function (sub) { save({ key: key }); return sub; }); })
+      .then(function (sub) { var j = sub.toJSON(), rec = { endpoint: j.endpoint, keys: j.keys, label: label || deviceLabel(), at: new Date().toISOString() }; save({ sub: rec });
+        var c = Hub.dataSync.cfg(); if (!c.token) return { rec: rec, registered: false, text: JSON.stringify(rec) };
+        return addSub(rec).then(function () { return { rec: rec, registered: true }; }); });
+  }
+  function deviceLabel() { var u = (root.navigator && navigator.userAgent) || ''; return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? 'Android' : 'رایانه'; }
+  // add (or replace, by push address) one subscription in hub/push/subs.json — PC or any device with the token
+  function addSub(rec) {
+    if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch (e) { return Promise.reject(new Error('متن اشتراک معتبر نیست.')); } }
+    if (!rec || !/^https:\/\//.test(rec.endpoint || '') || !rec.keys || !rec.keys.p256dh || !rec.keys.auth) return Promise.reject(new Error('اشتراک ناقص است.'));
+    return Hub.dataSync.getFile(DIR + '/subs.json').then(function (t) { return JSON.parse(t); }, function () { return { subs: [] }; }).then(function (F) {
+      F.subs = (F.subs || []).filter(function (s) { return s.endpoint !== rec.endpoint; }).concat([rec]).slice(-10); F.updatedAt = new Date().toISOString();
+      return Hub.dataSync.putFile(DIR + '/subs.json', JSON.stringify(F, null, 1), 'hub: push — device subscription'); });
+  }
+  function unsubscribe() { if (!supported()) return Promise.resolve(false); return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (s) { save({ sub: null }); return s ? s.unsubscribe() : false; }); }
+  function status() { if (!supported()) return Promise.resolve({ ok: false, why: 'unsupported' }); return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (s) { return { ok: true, sub: !!s, perm: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported', local: st() }; }).catch(function (e) { return { ok: false, why: e.message }; }); }
+  Hub.webPush = { keys: keys, subscribe: subscribe, addSub: addSub, unsubscribe: unsubscribe, status: status, supported: supported, publicKey: publicKey, state: st, SECRET: 'VAPID_PRIVATE_KEY', SECRET_URL: 'https://github.com/amir6990/Signal/settings/secrets/actions/new' };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/grid.js */
@@ -21673,6 +21812,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return Promise.resolve().then(function () { return fn(S, progress); }).then(function (errs) {
       var got = S.data && Object.keys(S.data).some(function (k) { return k[0] !== '_' && hasContent(S.data[k]); });
       if (!got) { var o = keep; S.data = o.data; S.meta = o.meta; var e = new Error((errs && errs.length ? summErr(errs) : 'no data returned') + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; }
+      // history guard: an update only adds rows — stored history the fresh fetch did not return (shorter request, failed symbol, fallback source) stays
+      var wasLive = keep.meta && keep.meta.source && !/synthetic|Illustrative/i.test(keep.meta.source);
+      if (wasLive && Hub.histMerge) { try { var rep = []; S.data = Hub.histMerge.mergeStore(S.tool, keep.data, S.data, rep);
+        S.meta.histLog = { at: Date.now(), kept: rep.filter(function (x) { return x.kind === 'kept'; }).length, missing: rep.filter(function (x) { return x.kind === 'missing'; }).length, unit: rep.filter(function (x) { return x.kind === 'unit'; }).map(function (x) { return x.path + ' (' + x.old + '→' + x.fresh + ', ' + (x.kept === 'old' ? 'تاریخچهٔ قبلی حفظ شد' : 'سری تازه') + ')'; }).slice(0, 10) }; } catch (e2) { /* never lose the fresh data because of the guard */ } }
       return errs || [];
     }, function (e) { var o = keep; S.data = o.data; S.meta = o.meta; throw e; });
   }
@@ -21687,10 +21830,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function deepDaily(code, old, tgt, cap) {
     var tse = Hub.data.tse, have = old && old.length ? old : null, enough = Math.min(tgt, cap && cap.n && Date.now() - cap.at < 7 * 864e5 ? cap.n : tgt);
     if (have && have.length >= enough * 0.9) { var l = have[have.length - 1].date, y = Math.floor(l / 10000), mo = Math.floor(l / 100) % 100, d = l % 100, gap = Math.ceil((Date.now() - Date.UTC(y, mo - 1, d)) / 864e5);
-      return tse.daily(code, Math.max(30, Math.min(tgt, gap + 10))).then(function (r) { return mergeRows(have, r).slice(-tgt); }); }
+      return tse.daily(code, Math.max(30, Math.min(tgt, gap + 10))).then(function (r) { return mergeRows(have, r).slice(-Math.max(tgt, have.length + r.length)); }); }
     var steps = [tgt, 700, 450, 260].filter(function (n, i, a) { return n <= tgt && a.indexOf(n) === i; }), last = null;
     var go = function (i) { if (i >= steps.length) { if (have) return have; throw last || new Error('no data'); }
-      return tse.daily(code, steps[i]).then(function (r) { if (!r.length) throw new Error('empty'); if (cap && (!cap.n || steps[i] > cap.n || Date.now() - cap.at >= 7 * 864e5)) { cap.n = steps[i]; cap.at = Date.now(); } return mergeRows(have, r).slice(-tgt); }, function (e) { last = e; return go(i + 1); }); };
+      return tse.daily(code, steps[i]).then(function (r) { if (!r.length) throw new Error('empty'); if (cap && (!cap.n || steps[i] > cap.n || Date.now() - cap.at >= 7 * 864e5)) { cap.n = steps[i]; cap.at = Date.now(); } return mergeRows(have, r).slice(-Math.max(tgt, have ? have.length : 0)); }, function (e) { last = e; return go(i + 1); }); };
     return go(0);
   }
   function stocksFetch(S, progress, only) {
@@ -21700,7 +21843,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (!smp) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });
     // five symbols at a time (the earlier one-by-one loop took minutes on a phone line)
     var sess = null, nLive = 0, LITE = !!(Hub.util.lite && Hub.util.lite()), CORE = {}; WATCH.forEach(function (x) { CORE[x[0]] = 1; });
-    if (LITE) Object.keys(data).forEach(function (k) { if (k[0] !== '_' && !CORE[k] && data[k] && data[k].px && data[k].px.length > 300) data[k] = { px: data[k].px.slice(-300), ct: data[k].ct }; });   // phone: trim what an earlier full fetch left
+    // phone: the first fetch of a non-core symbol is shallower (LDEPTH = the long horizon's minimum); stored history is never trimmed
+    var LDEPTH = Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.l.min : 560;
     /* individual / institutional flow: the full history (one large answer per symbol, ≈ 1.3 MB for فولاد) is fetched only when the stored
        history has a gap; otherwise today's row comes from the one market-wide list of the session */
     var ctFor = function (c, old, px) {
@@ -21722,11 +21866,11 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       if (nxt >= list.length) return Promise.resolve();
       var w = list[nxt++];
       var code = w.insCode ? Promise.resolve(w.insCode) : tse.resolve(w.symbol).then(function (c) { w.insCode = c; return c; });
-      return code.then(function (c) { var old = data[w.symbol]; return deepDaily(c, old && old.px, LITE && !CORE[w.symbol] ? 300 : tgt, LITE && !CORE[w.symbol] ? null : cap).then(function (px) { return ctFor(c, old && old.ct, px).then(function (ct) { return [px, ct, c]; }); }); })
-        .then(function (r) { var old = data[w.symbol], px = old && r[0] === old.px ? r[0].slice() : r[0], ct = (r[1] || []).slice(-90); addLive(r[2], px, ct); if (LITE && !CORE[w.symbol] && px.length > 300) px = px.slice(-300); data[w.symbol] = { px: px, ct: ct }; }).catch(function (e) { errs.push(w.symbol + ': ' + e.message); }).then(function () { done++; progress && progress(done, list.length, w.symbol); return one(); });
+      return code.then(function (c) { var old = data[w.symbol]; return deepDaily(c, old && old.px, LITE && !CORE[w.symbol] ? Math.max(LDEPTH, old && old.px ? old.px.length : 0) : tgt, LITE && !CORE[w.symbol] ? null : cap).then(function (px) { return ctFor(c, old && old.ct, px).then(function (ct) { return [px, ct, c]; }); }); })
+        .then(function (r) { var old = data[w.symbol], px = old && r[0] === old.px ? r[0].slice() : r[0], ct = (r[1] || []).slice(-90); addLive(r[2], px, ct); data[w.symbol] = { px: px, ct: ct }; }).catch(function (e) { errs.push(w.symbol + ': ' + e.message); }).then(function () { done++; progress && progress(done, list.length, w.symbol); return one(); });
     };
     // deep first fetch is heavy (≈ 5 years per symbol): three at a time; later updates only fetch the missing tail, five at a time
-    var deep = list.some(function (w) { var d = data[w.symbol]; return !d || !d.px || d.px.length < (LITE && !CORE[w.symbol] ? 300 : tgt) * 0.9; });
+    var deep = list.some(function (w) { var d = data[w.symbol]; return !d || !d.px || d.px.length < (LITE && !CORE[w.symbol] ? LDEPTH : tgt) * 0.9; });
     var step = function () { var ps = []; for (var k = 0; k < Math.min(deep ? 3 : 5, list.length); k++) ps.push(one()); return Promise.all(ps); };
     var sessP = tse.session ? tse.session().then(function (x) { sess = x; }, function (e) { errs.push((isFa() ? 'جلسهٔ امروز (دیده‌بان بازار): ' : 'today\'s session (market watch): ') + e.message); }) : Promise.resolve();
     return sessP.then(function () { return step(0); }).then(function () { return Promise.all([tse.index('32097828799138957').catch(function () { return []; }), tse.index('67130298613737946').catch(function () { return []; }), Hub.data.tgju('price_dollar_rl').catch(function () { return []; })]); })
@@ -21779,8 +21923,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function keysOf(S, always) { return S.ins.filter(function (x) { return x.active !== false && x.key; }).map(function (x) { return x.key; }).concat(always).filter(function (k, i, a) { return a.indexOf(k) === i; }); }
   function tgjuFetch(S, list, progress) {
     var P = setObj(S.set), data = {}, errs = [];
+    if (S.meta && !/synthetic|Illustrative/i.test(S.meta.source || '')) Object.keys(S.data || {}).forEach(function (k) { data[k] = S.data[k]; });   // a key that fails keeps its stored history
     var step = function (i) { if (i >= list.length) return Promise.resolve(); var k = list[i]; progress && progress(i + 1, list.length, k);
-      return Hub.data.tgju(k).then(function (r) { data[k] = r.slice(-Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); }).catch(function (e) { errs.push(k + ': ' + e.message); }).then(function () { return step(i + 1); }); };
+      return Hub.data.tgju(k).then(function (r) { var old = data[k]; data[k] = old && old.length && Hub.histMerge ? Hub.histMerge.mergeSeries(old, r) : r; data[k] = data[k].slice(-Math.max(old ? old.length : 0, Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); }).catch(function (e) { errs.push(k + ': ' + e.message); }).then(function () { return step(i + 1); }); };
     // today's price: the daily history ends at the last closed day, the current price is added as a provisional row (replaced once TGJU publishes the day)
     var nowP = Hub.data.tgjuNow ? Hub.data.tgjuNow().catch(function (e) { errs.push((isFa() ? 'قیمت لحظه‌ای TGJU: ' : 'TGJU current prices: ') + e.message); return null; }) : Promise.resolve(null);
     return step(0).then(function () { return nowP; }).then(function (now) {
@@ -26896,7 +27041,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var p5 = ctx.panel('به‌روزرسانی خودکار (فقط وقتی برنامه باز است)', [h('label', { class: 'small' }, [on, ' فعال']), h('label', { class: 'small' }, [' هر ', mins]), h('label', { class: 'small' }, [calc, ' همراه با بک‌تست و اعتبارسنجی (سنگین؛ روی گوشی توصیه نمی‌شود)']),
       h('p', { class: 'small muted', text: 'در هر نوبت فقط منابعی که از آستانهٔ تازگی گذشته‌اند دریافت می‌شوند. بازارهای ۲۴ ساعته (رمزارز) و بورس ایران با همین فاصله بررسی می‌شوند؛ دادهٔ بورس فقط پس از ثبت جلسهٔ تازه در TSETMC تغییر می‌کند. وقتی برنامه بسته است، مرورگر اجازهٔ اجرا نمی‌دهد. فرمان دستی همیشه در دسترس است.' })]);
     var det = h('details', { class: 'fold' }, [h('summary', { text: 'جزئیات منابع، دریافت یک گروه و ابزار نمادها (برای بررسی خطا؛ لازم نیست)' }), dataPanel(ctx)]);
-    return ctx.group([p1, p2, p3, p4, p5, det]);
+    // history depth: an update only adds rows; is there enough history for every horizon?
+    var AU = Hub.histMerge ? Hub.histMerge.audit() : [], NE = Hub.histMerge ? Hub.histMerge.NEED : { m: 260, l: 560, full: 1250 };
+    var p6 = ctx.panel('عمق داده‌های تاریخی (هر به‌روزرسانی فقط داده اضافه می‌کند)', [table(['گروه داده', 'سری‌ها', 'کمترین / میانه / بیشترین روز', 'کمتر از ' + fa(NE.m, 0) + ' روز (کوتاه و میان‌مدت ناکافی)', 'میان ' + fa(NE.m, 0) + ' و ' + fa(NE.l, 0) + ' (بلندمدت ناکافی)', 'دست‌کم ' + fa(NE.full, 0) + ' روز (اعتبارسنجی کامل)', 'آخرین به‌روزرسانی: حفظ تاریخچه'],
+      AU.map(function (a) { var lg = a.log; return [a.fa + (a.live ? '' : ' (نمونه)'), fa(a.n, 0), a.n ? fa(a.min, 0) + ' / ' + fa(a.med, 0) + ' / ' + fa(a.max, 0) : '—', a.short.length ? fa(a.short.length, 0) + ': ' + a.short.slice(0, 6).join('، ') + (a.short.length > 6 ? ' …' : '') : '—', a.noLong.length ? fa(a.noLong.length, 0) : '—', fa(a.full, 0),
+        lg ? fa(lg.kept, 0) + ' سری با تاریخچهٔ قبلی تکمیل شد' + (lg.missing ? '، ' + fa(lg.missing, 0) + ' سری دریافت‌نشده با تاریخچهٔ قبلی ماند' : '') + (lg.unit && lg.unit.length ? '؛ واحد متفاوت (مخلوط نشد): ' + lg.unit.join('، ') : '') + ' — ' + new Date(lg.at).toLocaleString('fa-IR') : '—']; })),
+      h('p', { class: 'small muted', text: 'قاعده: داده‌های تازه به انتهای سری اضافه می‌شوند و ردیف رسمی جای ردیف موقت همان روز را می‌گیرد؛ سری‌ای که در یک به‌روزرسانی دریافت نشود یا کوتاه‌تر برگردد، تاریخچهٔ ذخیره‌شده‌اش را حفظ می‌کند. اگر منبع جایگزین واحد دیگری داشته باشد، دو سری مخلوط نمی‌شوند. سقف هر سری ' + fa(Hub.histMerge ? Hub.histMerge.CAP : 3000, 0) + ' ردیف. نیاز موتور: کوتاه و میان‌مدت ' + fa(NE.m, 0) + '، بلندمدت ' + fa(NE.l, 0) + '، اعتبارسنجی کامل ' + fa(NE.full, 0) + ' جلسه. در گوشی، نخستین دریافت هر نماد غیرهسته ' + fa(NE.l, 0) + ' جلسه است و تاریخچهٔ عمیق‌تر از همگام‌سازی کامپیوتر حفظ می‌شود.' })]);
+    return ctx.group([p1, p6, p2, p3, p4, p5, det]);
   }
   var AKEY = 'hub.autoupd.v1';
   // automatic refresh while the hub is open: stale feeds only, never while an update is running
@@ -28447,9 +28598,30 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       P('کل اعلان‌ها ' + fa(st.n || 0, 0) + ' · اعلان سیستمی ارسال‌شده ' + fa(st.sys || 0, 0) + ' · ناموفق ' + fa(st.sysFail || 0, 0), 'small muted'),
       rows.length ? table(['زمان', 'سطح', 'عنوان', 'دارایی', 'قیمت', 'محدودهٔ ورود', 'سطح تأیید', 'حد ضرر', 'اهداف', 'R:R', 'اقدام بعدی', 'دلیل', 'شرط ابطال', 'اعلان سیستمی', 'وضعیت امروز'], rows) : P('هنوز اعلانی ثبت نشده است. اولین محاسبه فقط خط مبنا را ثبت می‌کند؛ از محاسبهٔ بعدی، تغییرها اعلان می‌شوند.')]);
     var lim = ctx.panel('محدودیت‌ها (صریح)', [h('ul', { class: 'studio-l' }, ['اعلان سیستمی وقتی ارسال می‌شود که هاب باز باشد (زبانهٔ مرورگر، برنامهٔ دسکتاپ یا برنامهٔ صفحهٔ اصلی گوشی). در گوشی، وقتی برنامه بسته یا در پس‌زمینه است، مرورگر زمان‌سنج را متوقف می‌کند؛ با باز شدن برنامه، بررسی جبرانی فوراً اجرا می‌شود.',
-      'ارسال به برنامهٔ بسته (Push واقعی) به یک سرور ارسال نیاز دارد. این هاب سرور ندارد؛ راه‌اندازی آن (مثلاً یک اجرای زمان‌بندی‌شده روی GitHub با کلید Web Push) تصمیم شماست و بدون تأیید صریح انجام نمی‌شود.',
+      'ارسال به برنامهٔ بسته با اجرای ساعتی GitHub انجام می‌شود (بخش بالا)؛ تأخیر تا یک ساعت، و برای سهام فقط پس از انتشار دادهٔ تازه از کامپیوتر یا گوشی.',
       'قیمت پایش سبک، آخرین معامله در لحظهٔ بررسی است؛ نوسان میان دو بررسی دیده نمی‌شود. تأیید شکست یا برگشت فقط با قیمت پایانی و محاسبهٔ دوباره اعلام می‌شود.', 'ایمیل و پیام‌رسان وصل نیستند.'].map(function (t) { return h('li', { text: t }); }))]);
-    return ctx.group([lp, setP, lim]); }
+    return ctx.group([lp, setP, closedPanel(ctx), lim]); }
+  /* push to a closed app: scheduled GitHub job + Web Push (approved by the owner) */
+  function closedPanel(ctx) {
+    var WP = Hub.webPush, DS = Hub.dataSync; if (!WP || !DS) return null;
+    var c = DS.cfg(), loc = WP.state(), out = h('div', { 'aria-live': 'polite' }), say = function (t, k) { U.clear(out); out.appendChild(P(t, 'small ' + (k || ''))); };
+    var copy = function (t) { try { navigator.clipboard.writeText(t); U.toast('کپی شد.', 'good'); } catch (e) { /* manual copy */ } };
+    var k1 = h('button', { class: 'btn', type: 'button', text: loc.pub ? 'ساخت دوبارهٔ کلید (اشتراک‌های قبلی باطل می‌شوند)' : '۱. ساخت کلید و انتشار کلید عمومی', disabled: !c.token, onclick: function () {
+      say('در حال ساخت کلید…'); WP.keys().then(function (r) { ctx.rerender(); }).catch(function (e) { say('ناموفق: ' + e.message, 'crit-t'); }); } });
+    var priv = loc.priv ? h('div', { class: 'callout warn' }, [P('کلید خصوصی را یک بار به‌عنوان «Repository secret» با نام ' + WP.SECRET + ' در GitHub ذخیره کنید (فقط شما و اجرای زمان‌بندی‌شده به آن دسترسی دارید؛ در مخزن عمومی نوشته نمی‌شود):', 'small'),
+      h('code', { 'data-notr': '1', style: 'word-break:break-all;display:block;padding:.4rem;user-select:all', text: loc.priv }), h('div', { class: 'row-ctl' }, [h('button', { class: 'btn ghost', type: 'button', text: 'کپی کلید خصوصی', onclick: function () { copy(loc.priv); } }), h('a', { class: 'btn ghost', href: WP.SECRET_URL, target: '_blank', rel: 'noopener', text: 'باز کردن صفحهٔ ساخت Secret در GitHub' })])]) : null;
+    var sub = h('button', { class: 'btn primary', type: 'button', text: '۲. فعال‌سازی اعلان روی همین دستگاه (برنامهٔ بسته)', onclick: function () { say('در حال ثبت…');
+      WP.subscribe().then(function (r) { if (r.registered) say('این دستگاه ثبت شد. از اجرای بعدی (حداکثر یک ساعت) اعلان‌ها حتی با برنامهٔ بسته می‌رسند.', 'good-t');
+        else { U.clear(out); out.appendChild(P('روی این دستگاه توکن GitHub نیست. این متن را کپی کنید و در کامپیوتر در «۳. افزودن اشتراک دستگاه دیگر» بچسبانید:', 'small')); out.appendChild(h('code', { 'data-notr': '1', style: 'word-break:break-all;display:block;padding:.4rem;user-select:all', text: r.text })); out.appendChild(h('button', { class: 'btn ghost', type: 'button', text: 'کپی', onclick: function () { copy(r.text); } })); } })
+        .catch(function (e) { say('ناموفق: ' + e.message, 'crit-t'); }); } });
+    var ta = h('textarea', { class: 'f-in', rows: '3', style: 'width:100%', placeholder: 'متن اشتراک گوشی را اینجا بچسبانید', 'aria-label': 'اشتراک' });
+    var add = h('button', { class: 'btn', type: 'button', text: '۳. افزودن اشتراک دستگاه دیگر', disabled: !c.token, onclick: function () { say('در حال ثبت…'); WP.addSub(ta.value.trim()).then(function () { ta.value = ''; say('اشتراک ثبت شد.', 'good-t'); }).catch(function (e) { say('ناموفق: ' + e.message, 'crit-t'); }); } });
+    var off = h('button', { class: 'btn ghost', type: 'button', text: 'لغو اشتراک همین دستگاه', onclick: function () { WP.unsubscribe().then(function () { say('اشتراک این دستگاه لغو شد (از فهرست مخزن در اجرای بعدی حذف می‌شود).'); }); } });
+    var st = h('p', { class: 'small muted', text: '…' }); WP.status().then(function (x) { st.textContent = x.ok ? 'این دستگاه: ' + (x.sub ? 'مشترک است' : 'مشترک نیست') + ' · اجازهٔ اعلان: ' + x.perm : 'این مرورگر Web Push ندارد (در آیفون: iOS ۱۶٫۴+ و باز کردن برنامه از صفحهٔ اصلی).'; });
+    return ctx.panel('اعلان وقتی برنامه بسته است (اجرای زمان‌بندی‌شده در GitHub)', [
+      P('اجرای «push-alerts» در GitHub هر ساعت در روزهای شنبه تا پنجشنبه (۸:۱۷ تا ۲۲:۱۷ تهران) و پس از هر انتشار داده اجرا می‌شود: حکم مرکزی منتشرشده را با قبلی مقایسه می‌کند و قیمت لحظه‌ای طلا، سکه و ارز را از TGJU با سطوح همان حکم می‌سنجد؛ همان قواعد اعلانِ برنامه. TSETMC به سرورهای GitHub جواب نمی‌دهد؛ پس اعلان سهام فقط پس از انتشار دادهٔ کامپیوتر/گوشی است (انتشار خودکار پس از به‌روزرسانی را در «همگام‌سازی با گوشی» روشن کنید). موقعیت‌های شما منتشر نمی‌شوند؛ اعلان‌های مخصوص موقعیت باز فقط روی دستگاه است.', 'small muted'),
+      h('div', { class: 'row-ctl' }, [k1, sub, off]), priv, h('div', null, [ta, add]), st, out,
+      P(c.token ? 'توکن GitHub روی این دستگاه هست.' : 'توکن GitHub روی این دستگاه نیست (مرحله‌های ۱ و ۳ روی کامپیوتر انجام می‌شوند).', 'small muted')]); }
 
   /* ---------------- tab 6: schedule & monitoring (directive 16) ---------------- */
   function refreshTab(ctx) {
@@ -28523,11 +28695,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611171927) */
+/* PWA: offline cache + app updates (version 202611171948) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611171927';
+  window.HUB_APP_VERSION = '202611171948';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }

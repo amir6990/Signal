@@ -1,0 +1,33 @@
+# Trading alerts to the phone when the hub app is closed (Web Push). Approved by the repository owner on 2026-11-17.
+# Hourly on Tehran market days (Saturday–Thursday, 08:17–22:17 Tehran = 04:47–18:47 UTC) and after every published snapshot.
+name: push-alerts
+on:
+  schedule:
+    - cron: '47 4-18 * * 0-4,6'
+  push:
+    paths: ['hub/data/tse.json', 'hub/push/subs.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: push-alerts
+  cancel-in-progress: false
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-save web-push@3.6.7
+      - run: node scripts/push/push-alerts.mjs
+        env:
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      - name: keep the alert state
+        run: |
+          git config user.name "hub-push-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hub/push/state.json hub/push/subs.json 2>/dev/null || true
+          if git diff --cached --quiet; then echo "no state change"; else git commit -m "push: alert state [skip ci]" && git push; fi
