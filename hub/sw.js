@@ -1,10 +1,13 @@
-/* service worker — version 202611171744
+/* service worker — version 202611171927
  * app shell: network first (so a new version is picked up as soon as you are online), cache when offline
  * market data (/proxy, other hosts' APIs): network only — the app keeps its last good data itself */
-const V = 'hub-202611171744', SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const V = 'hub-202611171927', SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k.indexOf('hub-') === 0).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
+// a trading alert opens (or focuses) the hub on the trading dashboard centre
+self.addEventListener('notificationclick', e => { e.notification.close(); const url = (e.notification.data && e.notification.data.url) || './#trade-center';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => { for (const c of cs) { if ('focus' in c) { c.navigate ? c.navigate(url).catch(() => {}) : 0; return c.focus(); } } return self.clients.openWindow ? self.clients.openWindow(url) : null; })); });
 self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== 'GET') return;
