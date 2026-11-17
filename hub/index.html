@@ -10354,13 +10354,20 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function viaProxy(url, source) { return routed(url, source, function (full) { return getJSON(full, source); }); }
   /* the same data from several mirrors / providers: the first that answers wins; the error lists every attempt.
      items are URLs (JSON) or {url, text:true, parse:fn} — parse may throw to reject an answer and move on. */
-  function webAny(list, source) {
-    var errs = [];
+  function webAny(list, source, opt) {
+    // opt.ms: give each source at most this long (the request may still finish in the background, it is just not waited for)
+    // opt.skip: a shared {host: reason} map for one run — a host that timed out or was unreachable is not tried again for the next series
+    opt = opt || {}; var errs = [], skip = opt.skip || null;
     function go(i) {
       if (i >= list.length) { var e = new Error(source + ': ' + errs.join(' ؛ ')); e.detail = errs.join(' | '); return Promise.reject(e); }
-      var it = typeof list[i] === 'string' ? { url: list[i] } : list[i], nm = it.name || host(it.url);
-      return (it.text ? viaProxyText(it.url, it.name || source) : viaProxy(it.url, it.name || source)).then(function (r) { var v = it.parse ? it.parse(r) : r; if (v && typeof v === 'object') try { Object.defineProperty(v, '_src', { value: nm, enumerable: false }); } catch (x) {} return v; })
-        .catch(function (e) { errs.push(nm + ': ' + String(e && e.message || e).replace(/^[^:]{0,40}: /, '').slice(0, 120)); return go(i + 1); });
+      var it = typeof list[i] === 'string' ? { url: list[i] } : list[i], nm = it.name || host(it.url || ''), hk = it.url ? host(it.url) : nm;
+      if (skip && skip[hk]) { errs.push(nm + ': رد شد (در همین اجرا جواب نداده بود)'); return go(i + 1); }
+      var p = it.fn ? it.fn() : it.text ? viaProxyText(it.url, it.name || source) : viaProxy(it.url, it.name || source), tm;
+      if (opt.ms) p = Promise.race([p, new Promise(function (_, rej) { tm = setTimeout(function () { var x = new Error('timeout ' + Math.round(opt.ms / 1000) + 's'); x.netFail = true; rej(x); }, opt.ms); })]);
+      return p.then(function (r) { clearTimeout(tm); var v = it.parse ? it.parse(r) : r; if (v && typeof v === 'object') try { Object.defineProperty(v, '_src', { value: nm, enumerable: false }); } catch (x) {} return v; })
+        .catch(function (e) { clearTimeout(tm); var m = String(e && e.message || e);
+          if (skip && (e && e.netFail || /timeout|نرسید|blocked|Failed to fetch|CORS|offline/i.test(m))) skip[hk] = m.slice(0, 80);
+          errs.push(nm + ': ' + m.replace(/^[^:]{0,40}: /, '').slice(0, 120)); return go(i + 1); });
     }
     return go(0);
   }
@@ -25713,6 +25720,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       L.push({ name: 'NY Fed (EFFR)', url: 'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/500.json', parse: nyfedRows }); }
     // phone (https page, no server of ours): Yahoo sends no CORS header, so the official FRED CSV goes first there
     if (D.https) { var isFr = function (x) { return /^FRED/.test(x.name); }; L = L.filter(isFr).concat(L.filter(function (x) { return !isFr(x); })); }
+    // Brent also from TGJU (oil_brent — the series the Iran-economy section already reads; TGJU answers from the phone)
+    if (s.id === 'brent' && D.tgju) L.push({ name: 'TGJU (oil_brent)', fn: function () { return D.tgju('oil_brent'); }, parse: function (r) { return (r || []).map(function (x) { return { date: x.date, close: x.close }; }); } });
     if (s.av && k) L.push({ name: 'Alpha Vantage', url: 'https://www.alphavantage.co/query?function=' + s.av[0] + Object.keys(s.av[1]).map(function (p) { return '&' + p + '=' + s.av[1][p]; }).join('') + '&apikey=' + encodeURIComponent(k), parse: avRows });
     return L.map(function (x) { var p = x.parse; x.parse = function (r) { var rows = p(r); if (rows.length < 5) throw new Error('فقط ' + rows.length + ' داده'); return rows; }; return x; });
   }
@@ -25745,10 +25754,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var D = Hub.data, errs = [], k = D.keys().av, now = Date.now(); S.data = S.data || {}; S.snap = S.snap || {}; S.at = S.at || {}; S.srcOf = S.srcOf || {};
     // daily series refresh every run (free sources); Alpha Vantage only as a fallback, at most every 12 hours (free-tier cap)
     var avDue = !S.avAt || now - S.avAt > 12 * 3600e3, list = SER.filter(function (s) { return s.cg || s.yh || s.fred || (s.av && avDue); }), i = 0, avUsed = false;
-    var any = function (L, src) { return D.webAny ? D.webAny(L, src) : D.web(L[0].url, src).then(L[0].parse); };
+    // one run shares a skip-list: a source host that timed out is not waited for again; on the phone each source gets 9 s at most
+    var skip = {}, ms = D.https ? 9000 : 25000;
+    var any = function (L, src) { return D.webAny ? D.webAny(L, src, { ms: ms, skip: skip }) : D.web(L[0].url, src).then(L[0].parse); };
     var one = function () { if (i >= list.length) return Promise.resolve(); var s = list[i++]; progress && progress(i, list.length, s.name);
       var L = seriesSources(s, D, avDue ? k : null); if (!L.length) { errs.push(s.name + ': منبع بدون کلید ندارد و کلید Alpha Vantage وارد نشده'); return one(); }
-      return any(L, s.name).then(function (rows) { S.data[s.id] = rows.slice(-1500); S.at[s.id] = now; S.srcOf[s.id] = rows._src || L[0].name; if (/Alpha Vantage/.test(rows._src || '')) avUsed = true; }, function (e) { errs.push(s.name + ': ' + e.message); }).then(one); };
+      return any(L, s.name).then(function (rows) { S.data[s.id] = rows.slice(-1500); S.at[s.id] = now; S.srcOf[s.id] = rows._src || L[0].name; if (/Alpha Vantage/.test(rows._src || '')) avUsed = true; }, function (e) { var m = String(e.message || e); errs.push(m.indexOf(s.name + ':') === 0 ? m : s.name + ': ' + m); }).then(one); };
     var snaps = [
       D.web('https://api.coingecko.com/api/v3/global', 'CoinGecko').then(function (j) { var d = j.data || {}; S.snap.cgGlobal = { mcap: d.total_market_cap && d.total_market_cap.usd, dom: d.market_cap_percentage && d.market_cap_percentage.btc, chg: d.market_cap_change_percentage_24h_usd, at: now }; }, function (e) { errs.push('CoinGecko (بازار کل): ' + e.message); }),
       any(irxSources(), 'رمزارز به ریال').then(function (o) { o.at = now; S.snap.nbx = o; }, function (e) { errs.push(e.message); }),
@@ -25756,7 +25767,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       any(oiSources(), 'Open Interest').then(function (o) { o.at = now; S.snap.oi = o; }, function (e) { errs.push(e.message); }),
       D.web('https://api.alternative.me/fng/?limit=1', 'alternative.me').then(function (j) { var d = (j.data || [])[0]; if (!d) throw new Error('بدون داده'); S.snap.fng = { v: Number(d.value), label: d.value_classification, at: now }; }, function (e) { errs.push('شاخص ترس و طمع: ' + e.message); }),
       k && avDue ? D.web('https://www.alphavantage.co/query?function=GOLD_SILVER_SPOT&symbol=SILVER&apikey=' + encodeURIComponent(k), 'Alpha Vantage').then(function (j) { S.snap.silver = { raw: j, at: now }; avUsed = true; }, function (e) { errs.push('نقره (Alpha Vantage): ' + e.message); }) : Promise.resolve()];
-    return Promise.all(snaps).then(one).then(function () {
+    return Promise.all(snaps.concat([one(), one(), one()])).then(function () {
       if (avUsed) S.avAt = now;
       var got = Object.keys(S.data).length + Object.keys(S.snap).length; if (!got) throw new Error(SG.summErr(errs));
       var used = {}; Object.keys(S.srcOf).forEach(function (id) { used[String(S.srcOf[id]).replace(/ \(.*\)$/, '')] = 1; }); ['nbx', 'funding', 'oi'].forEach(function (x) { if (S.snap[x] && S.snap[x].src) used[S.snap[x].src] = 1; });
@@ -27848,11 +27859,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611171659) */
+/* PWA: offline cache + app updates (version 202611171744) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611171659';
+  window.HUB_APP_VERSION = '202611171744';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
