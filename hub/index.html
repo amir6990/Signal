@@ -8763,14 +8763,28 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var title = strip(txt(n, 'title')), d = Date.parse(txt(n, 'pubDate') || txt(n, 'updated') || txt(n, 'published') || txt(n, 'dc:date') || ''), sum = strip(txt(n, 'description') || txt(n, 'summary')).slice(0, 280);
       return { t: title, l: strip(link), d: isFinite(d) ? d : 0, s: feed.name, x: sum, c: tags(title + ' ' + sum) }; }).filter(function (x) { return x.t && /^https?:\/\//.test(x.l); });
   }
+  /* rss2json.com (public, CORS-enabled, no key): fetches the feed on its own server and returns JSON — the phone's route when the site sends no CORS header.
+     Only the public feed address is sent. The JSON is turned back into minimal RSS so the same parser and rules apply. */
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function viaJson(url) {
+    return Hub.data.web('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 'rss2json').then(function (j) {
+      if (!j || j.status !== 'ok' || !Array.isArray(j.items)) throw new Error((j && j.message) || 'پاسخ نامعتبر');
+      return '<?xml version="1.0"?><rss><channel>' + j.items.map(function (it) { var d = Date.parse(String(it.pubDate || '').replace(' ', 'T') + 'Z'); return '<item><title>' + esc(it.title) + '</title><link>' + esc(it.link) + '</link><pubDate>' + (isFinite(d) ? new Date(d).toUTCString() : '') + '</pubDate><description>' + esc(String(it.description || '').replace(/<[^>]+>/g, ' ').slice(0, 400)) + '</description></item>'; }).join('') + '</channel></rss>';
+    });
+  }
   function fetchAll(feeds, progress) {
     var S = store(), base = feeds ? feeds.concat(FEEDS.filter(function (d) { return !feeds.some(function (f) { return f.url === d.url || f.name === d.name; }); })) : FEEDS, list = base.filter(function (f) { return f.active !== false && /^https?:\/\//.test(f.url || ''); }), by = {}, st = {}, i = 0, okN = 0;
     (S.items || []).forEach(function (x) { by[x.l] = x; });
     var one = function () { if (i >= list.length) return Promise.resolve(); var f = list[i++]; progress && progress(i, list.length, f.name);
-      return Hub.data.text(f.url, f.name).then(function (xml) { var it = parse(xml, f); it.forEach(function (x) { if (!by[x.l]) by[x.l] = x; }); st[f.name] = { ok: true, n: it.length, at: Date.now(), route: (Hub.data.route() || {}).name || '' }; okN++; },
+      var route = '';
+      // phone (https, no server of ours): most feeds send no CORS header, so rss2json goes first; on the PC the hub server reads the feed itself
+      var first = phone ? function () { return viaJson(f.url).then(function (x) { route = 'rss2json'; return x; }); } : function () { return Hub.data.text(f.url, f.name); };
+      var second = phone ? function () { return Hub.data.text(f.url, f.name); } : function () { return viaJson(f.url).then(function (x) { route = 'rss2json'; return x; }); };
+      return first().catch(function (e) { return second().catch(function (e2) { var x = new Error((e && (e.detail || e.message)) + ' | ' + (e2 && (e2.detail || e2.message))); x.detail = x.message; throw x; }); }).then(function (xml) { var it = parse(xml, f); it.forEach(function (x) { if (!by[x.l]) by[x.l] = x; }); st[f.name] = { ok: true, n: it.length, at: Date.now(), route: route || (Hub.data.route() || {}).name || '' }; okN++; },
         function (e) { st[f.name] = { ok: false, err: String(e && (e.detail || e.message) || e).slice(0, 220), at: Date.now() }; }).then(one); };
     if (Hub.data.resetRoutes) Hub.data.resetRoutes();
-    return Promise.all([one(), one(), one()]).then(function () {
+    var phone = false;
+    return (Hub.data.serverProxy ? Hub.data.serverProxy() : Promise.resolve(null)).then(function (same) { phone = !!Hub.data.https && !same; }).then(function () { return Promise.all([one(), one(), one()]); }).then(function () {
       var cut = Date.now() - 45 * 864e5, items = Object.keys(by).map(function (k) { return by[k]; }).filter(function (x) { return !x.d || x.d > cut; }).sort(function (a, b) { return (b.d || 0) - (a.d || 0); }).slice(0, 800);
       if (okN) { S.items = items; S.meta = { source: 'RSS (' + okN + ' خوراک)', asOf: new Date().toISOString(), asOfTs: Date.now() }; } S.status = Object.assign({}, S.status || {}, st);
       Hub.util.store.set(KEY, S); if (okN && Hub.dataSync) Hub.dataSync.notify(); return { ok: okN, total: list.length, status: st, items: S.items.length }; });
@@ -10300,27 +10314,35 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     pcAt = Date.now();
     return (pcP = tfetch('http://127.0.0.1:8790/proxy/health', 2500).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { PC = j && j.ok ? PCSRV : null; return !!PC; }).catch(function () { PC = null; return false; }));
   }
-  function routes(hst) { var px = (keys().tseProxy || '').trim(), r = [], g = good[hst]; if (px) r.push(['your proxy', px]); if (SAME) r.push(['server proxy', SAME]); r.push(['direct', '']); if (PC && px.indexOf('127.0.0.1:8790') < 0) r.push(['PC hub server', PC]); if (px.indexOf('127.0.0.1:8787') < 0 && !HTTPS) r.push(['local proxy', LOCAL]); if (g) r.sort(function (a, b) { return (b[0] === g) - (a[0] === g); }); return r; }
+  /* public CORS relays — last resort on the phone (https page, no server of ours). Only for public, key-free URLs of the hosts below:
+     no API key, token or account data ever goes through them. They are third-party free services: availability is not guaranteed. */
+  var RELAY_HOSTS = /^(query[12]\.finance\.yahoo\.com|fred\.stlouisfed\.org|markets\.newyorkfed\.org)$/;
+  var RELAYS = [['public relay (allorigins)', 'https://api.allorigins.win/raw?url='], ['public relay (codetabs)', 'https://api.codetabs.com/v1/proxy/?quest=']];
+  function relayOK(hst, url) { return HTTPS && !SAME && RELAY_HOSTS.test(hst) && !/[?&](api_?key|apikey|token|key|access_token)=/i.test(url || ''); }
+  function routes(hst, url) { var px = (keys().tseProxy || '').trim(), r = [], g = good[hst]; if (px) r.push(['your proxy', px]); if (SAME) r.push(['server proxy', SAME]); r.push(['direct', '']); if (PC && px.indexOf('127.0.0.1:8790') < 0) r.push(['PC hub server', PC]); if (relayOK(hst, url)) RELAYS.forEach(function (x) { r.push(x); }); if (px.indexOf('127.0.0.1:8787') < 0 && !HTTPS) r.push(['local proxy', LOCAL]); if (g) r.sort(function (a, b) { return (b[0] === g) - (a[0] === g); }); return r; }
   function wrap(px, url) { return !px ? url : px.indexOf('{url}') >= 0 ? px.replace('{url}', encodeURIComponent(url)) : px + encodeURIComponent(url); }
   function routed(url, source, get) {
-    var hst = host(url), list = routes(hst), errs = [];
+    var hst = host(url), list = routes(hst, url), errs = [];
     function next(i) {
       if (i >= list.length) {
         var faL = Hub.i18n && Hub.i18n.lang() === 'fa', tried = list.map(function (x) { return x[0]; }).join(faL ? '، ' : ', ');
-        var e = new Error(source + ': ' + (HTTPS ? (faL ? 'به سرور نرسید (' + (errs[errs.length - 1] || '') + '). این سرور فقط از اینترنت داخل ایران جواب می‌دهد: فیلترشکن را خاموش کنید و دوباره بزنید؛ اگر نشد «تست اتصال» را بزنید.' : 'could not reach the server (' + (errs[errs.length - 1] || '') + '). It answers only from inside Iran: switch the VPN off and retry, or run the connection test.')
+        var e = new Error(source + ': ' + (HTTPS ? (/(\.ir|tgju\.org|tsetmc\.com)$/.test(hst) ? (faL ? 'به سرور نرسید (' + (errs[errs.length - 1] || '') + '). این سرور فقط از اینترنت داخل ایران جواب می‌دهد: فیلترشکن را خاموش کنید و دوباره بزنید؛ اگر نشد «تست اتصال» را بزنید.' : 'could not reach the server (' + (errs[errs.length - 1] || '') + '). It answers only from inside Iran: switch the VPN off and retry, or run the connection test.') : (faL ? 'از گوشی به این سرور نرسید (' + (errs[errs.length - 1] || '') + '); منبع بعدی امتحان می‌شود.' : 'not reachable from this page (' + (errs[errs.length - 1] || '') + ').'))
           : (faL ? 'به سرور نرسید (امتحان‌شده: ' + tried + ').' + (PC || SAME ? '' : ' سرور هاب روی این کامپیوتر روشن نیست: run-hub.bat را اجرا کنید (یا هاب را از http://127.0.0.1:8790 باز کنید).') : 'could not reach the server (tried: ' + tried + ').' + (PC || SAME ? '' : ' The hub server on this PC is not running: start run-hub.bat (or open the hub at http://127.0.0.1:8790).'))));
         e.routes = errs; e.detail = errs.join(' | '); if (!good[hst] && !errs.some(function (x) { return /timeout|HTTP 5\d\d|empty/.test(x); })) dead[hst] = { at: Date.now(), msg: e.message, detail: e.detail }; throw e; }
       return get(wrap(list[i][1], url)).then(function (r) { good[hst] = list[i][0]; lastRoute = { name: list[i][0], host: hst, at: Date.now() }; return r; })
         .catch(function (e) { errs.push(list[i][0] + ': ' + String(e && e.message || e).replace(/^[A-Za-z]+: /, '').slice(0, 90)); return next(i + 1); });
     }
     var dd = dead[hst]; if (dd && Date.now() - dd.at < 45000) { var de = new Error(dd.msg); de.detail = dd.detail; de.fast = true; return Promise.reject(de); }   // the host just failed on every route: do not wait 76 more timeouts
-    return detectSame().then(detectPC).then(function () { list = routes(hst); return next(0); });
+    return detectSame().then(detectPC).then(function () { list = routes(hst, url); return next(0); });
   }
   function resetRoutes() { dead = {}; if (!PC) pcP = null; }
   // connection test: each address is called straight from this page, one by one, and timed
   function diagnose(onRow) {
     var T = [['TSETMC · اطلاعات نماد (فولاد)', TSE + 'Instrument/GetInstrumentInfo/46348559193224090'], ['TSETMC · قیمت روزانه', TSE + 'ClosingPrice/GetClosingPriceDailyList/46348559193224090/5'], ['TSETMC · حقیقی/حقوقی', TSE + 'ClientType/GetClientTypeHistory/46348559193224090'],
-      ['TSETMC · شاخص کل', TSE + 'Index/GetIndexB2History/32097828799138957'], ['TSETMC · تابلوی اختیار معامله', TSE + 'Instrument/GetInstrumentOptionMarketWatch/0'], ['TGJU · دلار', 'https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl']];
+      ['TSETMC · شاخص کل', TSE + 'Index/GetIndexB2History/32097828799138957'], ['TSETMC · تابلوی اختیار معامله', TSE + 'Instrument/GetInstrumentOptionMarketWatch/0'], ['TGJU · دلار', 'https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl'],
+      ['TGJU · قیمت لحظه‌ای', 'https://call.tgju.org/ajax.json'], ['FRED · نفت برنت (CSV)', 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU&cosd=2026-01-01'], ['Yahoo · نفت برنت', 'https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?range=5d&interval=1d'],
+      ['نوبیتکس (apiv2)', 'https://apiv2.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls'], ['والکس', 'https://api.wallex.ir/v1/markets'], ['Bitget · Funding', 'https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=BTCUSDT&productType=usdt-futures'],
+      ['rss2json (خبرها)', 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent('https://www.irna.ir/rss/tp/20')], ['رله allorigins', 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2026-10-01')], ['رله codetabs', 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2026-10-01')]];
     var out = [], go = function (i) {
       if (i >= T.length) return Promise.resolve(out);
       var t0 = Date.now(), row = { name: T[i][0], url: T[i][1] };
@@ -10549,7 +10571,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     riskFree: function () { return call('riskFree', []); },
     test: function (which) { return which === 'tse' ? tseProvider.quote('فولاد') : providers[which].riskFree(); },
     text: function (url, source) { return routed(url, source || host(url), function (u) { return tfetch(u, 20000).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }); }); },   // any text page (RSS) over the same routes as the market data
-    tse: tseProvider, tgju: tgju, tgjuNow: tgjuNow, web: viaProxy, webAny: webAny, webText: viaProxyText, route: function () { return lastRoute; }, diagnose: diagnose, resetRoutes: resetRoutes, localPing: localPing, LOCAL: LOCAL, serverProxy: function () { return detectSame().then(function () { return SAME; }); },
+    tse: tseProvider, tgju: tgju, tgjuNow: tgjuNow, web: viaProxy, webAny: webAny, webText: viaProxyText, route: function () { return lastRoute; }, diagnose: diagnose, resetRoutes: resetRoutes, localPing: localPing, LOCAL: LOCAL, https: HTTPS, serverProxy: function () { return detectSame().then(function () { return SAME; }); },
     testTgju: function () { return tgju('price_dollar_rl').then(function (r) { if (!r.length) throw new Error('TGJU: empty series'); return r[r.length - 1]; }); },
     history: function (sym, market) { return market === 'tse' ? tseProvider.history(sym, 260) : historyGlobal(sym); }
   };
@@ -25653,13 +25675,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var SER = [
     { id: 'btc', name: 'بیت‌کوین (BTC)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'bitcoin', fresh: 2 },
     { id: 'eth', name: 'اتریوم (ETH)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'ethereum', fresh: 2 },
-    { id: 'brent', name: 'نفت برنت', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['BRENT', { interval: 'daily' }], yh: 'BZ=F', fresh: 6 },
-    { id: 'wti', name: 'نفت WTI', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['WTI', { interval: 'daily' }], yh: 'CL=F', fresh: 6 },
-    { id: 'ng', name: 'گاز طبیعی (هنری هاب)', mk: 'energy', unit: 'دلار/میلیون BTU', src: 'Alpha Vantage', av: ['NATURAL_GAS', { interval: 'daily' }], yh: 'NG=F', fresh: 6 },
-    { id: 'ust10', name: 'بازده اوراق ۱۰ سالهٔ آمریکا', mk: 'rates', unit: '٪', src: 'Alpha Vantage', av: ['TREASURY_YIELD', { interval: 'daily', maturity: '10year' }], yh: '^TNX', fresh: 6 },
+    { id: 'brent', name: 'نفت برنت', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['BRENT', { interval: 'daily' }], yh: 'BZ=F', fr: 'DCOILBRENTEU', fresh: 6 },
+    { id: 'wti', name: 'نفت WTI', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['WTI', { interval: 'daily' }], yh: 'CL=F', fr: 'DCOILWTICO', fresh: 6 },
+    { id: 'ng', name: 'گاز طبیعی (هنری هاب)', mk: 'energy', unit: 'دلار/میلیون BTU', src: 'Alpha Vantage', av: ['NATURAL_GAS', { interval: 'daily' }], yh: 'NG=F', fr: 'DHHNGSP', fresh: 6 },
+    { id: 'ust10', name: 'بازده اوراق ۱۰ سالهٔ آمریکا', mk: 'rates', unit: '٪', src: 'Alpha Vantage', av: ['TREASURY_YIELD', { interval: 'daily', maturity: '10year' }], yh: '^TNX', fr: 'DGS10', fresh: 6 },
     { id: 'ffr', name: 'نرخ بهرهٔ فدرال', mk: 'rates', unit: '٪', src: 'Alpha Vantage', av: ['FEDERAL_FUNDS_RATE', { interval: 'daily' }], fred: 'DFF', fresh: 6 },
-    { id: 'copper', name: 'مس', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['COPPER', { interval: 'monthly' }], yh: 'HG=F', yhMul: 2204.62262, fresh: 45 },
-    { id: 'alu', name: 'آلومینیوم', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['ALUMINUM', { interval: 'monthly' }], yh: 'ALI=F', fresh: 45 }];
+    { id: 'copper', name: 'مس', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['COPPER', { interval: 'monthly' }], yh: 'HG=F', yhMul: 2204.62262, fr: 'PCOPPUSDM', fresh: 45 },
+    { id: 'alu', name: 'آلومینیوم', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['ALUMINUM', { interval: 'monthly' }], yh: 'ALI=F', fr: 'PALUMUSDM', fresh: 45 }];
   var MKFA = { crypto: 'رمزارز', energy: 'انرژی', rates: 'نرخ بهره', metals: 'فلزات' };
   function sample() { return { version: 1, tool: 'global-markets', meta: { title: 'Global markets', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, data: {}, snap: {}, at: {} }; }
   function avRows(j) {   // {data:[{date:'2026-11-10', value:'74.1'}]}; '.' marks a missing day
@@ -25685,8 +25707,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var L = [];
     if (s.cg) L.push({ name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/coins/' + s.cg + '/market_chart?vs_currency=usd&days=365&interval=daily', parse: cgRows });
     if (s.yh) ['query1', 'query2'].forEach(function (h) { L.push({ name: 'Yahoo Finance (' + s.yh + ')', url: 'https://' + h + '.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(s.yh) + '?range=5y&interval=1d', parse: function (j) { return yhRows(j, s.yhMul); } }); });
+    // FRED (St. Louis Fed) CSV: same series from the official primary data (EIA daily oil and gas; Treasury 10y; IMF monthly metals, $/t). Daily oil/gas lag about a week.
+    if (s.fr) L.push({ name: 'FRED (' + s.fr + ')', text: true, url: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + s.fr + '&cosd=' + (new Date().getUTCFullYear() - 6) + '-01-01', parse: fredRows });
     if (s.fred) { L.push({ name: 'FRED (' + s.fred + ')', text: true, url: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + s.fred, parse: fredRows });
       L.push({ name: 'NY Fed (EFFR)', url: 'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/500.json', parse: nyfedRows }); }
+    // phone (https page, no server of ours): Yahoo sends no CORS header, so the official FRED CSV goes first there
+    if (D.https) { var isFr = function (x) { return /^FRED/.test(x.name); }; L = L.filter(isFr).concat(L.filter(function (x) { return !isFr(x); })); }
     if (s.av && k) L.push({ name: 'Alpha Vantage', url: 'https://www.alphavantage.co/query?function=' + s.av[0] + Object.keys(s.av[1]).map(function (p) { return '&' + p + '=' + s.av[1][p]; }).join('') + '&apikey=' + encodeURIComponent(k), parse: avRows });
     return L.map(function (x) { var p = x.parse; x.parse = function (r) { var rows = p(r); if (rows.length < 5) throw new Error('فقط ' + rows.length + ' داده'); return rows; }; return x; });
   }
@@ -26354,7 +26380,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     try { var R0 = U.store.get('hub.updrun.v1', null) || {}; U.store.set('hub.updrun.v1', Object.assign({}, R0, { cur: { id: UPD.id, at: UPD.at, dataOnly: UPD.dataOnly, st: 'running' } })); } catch (e) { /* optional */ }
     var say = function (i, t, k) { UPD.lines[i] = { t: t, k: k || '' }; var el = document.getElementById('upd-log'); if (el) { U.clear(el); UPD.lines.forEach(function (l) { if (l) el.appendChild(h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t })); }); } };
     // every data feed of the hub: trading feeds first, then the Iran-economy series, the temporal tool and anything else registered
-    var seen = {}, q = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || seen[f.id]) return false; seen[f.id] = 1; return true; }), fails = 0;
+    var seen = {}, q = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || seen[f.id]) return false; seen[f.id] = 1; return true; }), fails = 0, parts = 0;
     var NAME = function (f) { return FAT[f.id] || ({ 'sig-temporal': 'تحلیل زمانی (چرخه‌ها و پنجره‌ها)', 'long-view': 'تحلیل مالی اقتصاد ایران (سری‌ها)', 'sig-global': 'بازارهای جهانی و رمزارز (CoinGecko، نوبیتکس، OKX، Alpha Vantage)' })[f.id] || f.title; };
     q.reduce(function (p, f, i) { return p.then(function () {
       if (opt.calcOnly) { UPD.st[f.id] = 'fresh'; say(i, NAME(f) + ': دریافت نشد (فقط محاسبات روی دادهٔ موجود)', 'muted'); return; }
@@ -26365,13 +26391,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var tryOnce = function (k) { return SG.safeFetch(f.fetch, St, function (a, b, q) { say(i, NAME(f) + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + q); })
         .catch(function (e) { if (k > 0) throw e; say(i, NAME(f) + ': خطا (' + e.message + ')؛ تلاش دوباره …', 'warn-t'); return new Promise(function (r) { setTimeout(r, 2000); }).then(function () { St = loadFeed(f); return tryOnce(1); }); }); };
       return tryOnce(0)
-        .then(function (errs) { U.store.set(f.storeKey, St); var n = seriesN(St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : '', { n: recvN(St, errs, t0), fail: errs.length, upd: UPD.id }); UPD.st[f.id] = 'proc'; say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
+        .then(function (errs) { U.store.set(f.storeKey, St); var n = seriesN(St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : '', { n: recvN(St, errs, t0), fail: errs.length, upd: UPD.id }); if (errs.length) parts++; UPD.st[f.id] = 'proc'; say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
           function (e) { fails++; flog(f.id, false, e.message, { n: 0, fail: seriesN(St), upd: UPD.id }); UPD.st[f.id] = 'err'; say(i, NAME(f) + ': ناموفق، دادهٔ قبلی حفظ شد (جدید معرفی نمی‌شود) — ' + e.message, 'crit-t'); });
     }); }, Promise.resolve()).then(function () {
       // news feeds (economy section) and the live market inputs of the valuation models that were used before
       var k = q.length, jobs = []; if (opt.calcOnly) return;
       if (Hub.news && Hub.news.fetchAll) { var ES = U.store.get('hub.efi.v1', null), fd = ES && Array.isArray(ES.feeds) && ES.feeds.length ? ES.feeds : null; say(k, 'خبرها (خوراک‌های RSS) …');
-        jobs.push(Hub.news.fetchAll(fd).then(function (r) { if (!r.ok) fails++; say(k, 'خبرها: ' + (r.ok ? fa(r.ok, 0) + ' از ' + fa(r.total, 0) + ' خوراک به‌روز شد' : 'هیچ خوراکی جواب نداد؛ خبرهای قبلی حفظ شد'), r.ok ? (r.ok < r.total ? 'warn-t' : 'good-t') : 'crit-t'); }, function (e) { fails++; say(k, 'خبرها: ناموفق — ' + e.message, 'crit-t'); })); }
+        jobs.push(Hub.news.fetchAll(fd).then(function (r) { if (!r.ok) fails++; else if (r.ok < r.total) parts++; say(k, 'خبرها: ' + (r.ok ? fa(r.ok, 0) + ' از ' + fa(r.total, 0) + ' خوراک به‌روز شد' : 'هیچ خوراکی جواب نداد؛ خبرهای قبلی حفظ شد'), r.ok ? (r.ok < r.total ? 'warn-t' : 'good-t') : 'crit-t'); }, function (e) { fails++; say(k, 'خبرها: ناموفق — ' + e.message, 'crit-t'); })); }
       if (Hub.macro && Hub.macro.ITEMS) { var used = []; Object.keys(Hub.macro.ITEMS).forEach(function (it) { Object.keys(Hub.macro.ITEMS[it].sources || {}).forEach(function (sk) { var c = Hub.macro.current(it, sk); if (c && c.live) used.push([it, sk]); }); });
         if (used.length) { say(k + 1, 'ورودی‌های بازار مدل‌های ارزش‌گذاری (نرخ بدون ریسک، صرف ریسک، تورم) …');
           jobs.push(Promise.all(used.map(function (u) { return Hub.macro.refresh(u[0], u[1]).then(function () { return 0; }, function () { return 1; }); })).then(function (r) { var bad = r.reduce(function (a, b) { return a + b; }, 0); say(k + 1, 'ورودی‌های مدل‌های ارزش‌گذاری: ' + fa(used.length - bad, 0) + ' از ' + fa(used.length, 0) + ' به‌روز شد' + (bad ? ' (بقیه مقدار قبلی)' : ''), bad ? 'warn-t' : 'good-t'); })); } }
@@ -26405,7 +26431,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       try { if (Hub.auditCore) Hub.auditCore.reset(); TE.clearCache(); } catch (e) { /* optional */ }
       Object.keys(UPD.st).forEach(function (k) { if (UPD.st[k] === 'proc') UPD.st[k] = UPD.calcOk === false ? 'pend' : 'ok'; });
       try { var PR = U.store.get('hub.updrun.v1', null) || {}; U.store.set('hub.updrun.v1', opt.calcOnly ? Object.assign({}, PR, { cur: null, calcId: UPD.calcOk ? PR.id || UPD.id : PR.calcId, sigVal: UPD.sigVal }) : { id: UPD.id, at: UPD.at, doneAt: Date.now(), st: UPD.st, calcOk: UPD.calcOk === null ? null : UPD.calcOk !== false, dataOnly: UPD.dataOnly, fails: fails, nFeeds: q.length - 2, nOk: Object.keys(UPD.st).filter(function (k) { return UPD.st[k] === 'ok' || UPD.st[k] === 'fresh' || UPD.st[k] === 'pend'; }).length, nErr: Object.keys(UPD.st).filter(function (k) { return UPD.st[k] === 'err'; }).length, calcId: UPD.calcOk ? UPD.id : (PR.calcId || null), sigVal: UPD.sigVal }); } catch (e) { /* optional */ }
-      UPD.phase = 'done'; UPD.busy = false; UPD.doneAt = Date.now(); U.toast(fails ? fa(fails, 0) + ' منبع ناموفق بود؛ بقیه به‌روز شد.' : 'همه‌چیز به‌روز شد.', fails ? 'warn' : 'good'); ctx.rerender(); if (onDone) onDone(); });
+      UPD.phase = 'done'; UPD.busy = false; UPD.doneAt = Date.now(); U.toast(fails ? fa(fails, 0) + ' منبع ناموفق بود؛ بقیه به‌روز شد.' : parts ? 'به‌روز شد، ولی ' + fa(parts, 0) + ' بخش ناقص ماند (جزئیات در جدول).' : 'همه‌چیز به‌روز شد.', fails || parts ? 'warn' : 'good'); ctx.rerender(); if (onDone) onDone(); });
     ctx.rerender();
   }
   function updPanel(ctx, compact) {
@@ -27822,11 +27848,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611171648) */
+/* PWA: offline cache + app updates (version 202611171659) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611171648';
+  window.HUB_APP_VERSION = '202611171659';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
