@@ -10570,7 +10570,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   'use strict';
   var Hub = root.Hub = root.Hub || {};
   var KEY = 'hub.sync.v1';
-  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1'], news: ['hub.news.v1'] };
+  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
   var KEEP = ['set', 'tk', 'settings', 'f', 'sel', 'opt'];               // the phone keeps its own settings / filters
   var DEF = { repo: 'amir6990/Signal', branch: 'claude/iran-stock-signals-excel-guqwon', dir: 'hub/data', token: '', auto: false, autoPull: true, site: 'https://amir6990.github.io/Signal/hub/' };
   function ls() { try { return root.localStorage; } catch (e) { return null; } }
@@ -27822,11 +27822,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611171527) */
+/* PWA: offline cache + app updates (version 202611171648) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611171527';
+  window.HUB_APP_VERSION = '202611171648';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
