@@ -10735,7 +10735,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function gh(c, path, method, body) {
     if (!tokOK(cleanTok(c.token))) return Promise.reject(new Error('توکن GitHub قالب درستی ندارد (باید با github_pat_ یا ghp_ شروع شود و فقط حرف لاتین، عدد و _ داشته باشد). توکن را دوباره از GitHub کپی و ثبت کنید.'));
     c = Object.assign({}, c, { token: cleanTok(c.token) });
-    return fetch('https://api.github.com/repos/' + c.repo + path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    return fetch('https://api.github.com/repos/' + c.repo + path, { cache: 'no-store', method: method || 'GET', headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error('GitHub ' + r.status + ': ' + (j.message || '')); e.status = r.status; throw e; } return j; }); });
   }
   /* the central verdict goes to the public repo for the push-alert job — without anything about the user's own positions */
@@ -10780,10 +10780,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (!small.length && !big.length) return Promise.reject(new Error(fa() ? 'دادهٔ واقعی برای انتشار نیست؛ اول به‌روزرسانی کنید' : 'no live data to publish'));
     var done = { at: Date.now(), files: [] }, say = progress || function () {};
     // 1 · the small sets (central verdict, gold & FX, news, options …) in one commit
-    var p = small.length ? (say('بخش ۱ از ' + (1 + Math.ceil(big.length / 3)) + ': حکم مرکزی، طلا و ارز، خبرها'), commitFiles(small).then(function (i) { done.files = done.files.concat(i.files); })) : Promise.resolve();
+    var head = null, p = small.length ? (say('بخش ۱ از ' + (1 + Math.ceil(big.length / 3)) + ': حکم مرکزی، طلا و ارز، خبرها'), commitFiles(small).then(function (i) { head = i.sha; done.files = done.files.concat(i.files); })) : Promise.resolve();
     // 2 · stock shards, three per commit (each commit is small enough to finish on a slow line)
     var groups = []; for (var g = 0; g < big.length; g += 3) groups.push(big.slice(g, g + 3));
-    groups.forEach(function (grp, gi) { p = p.then(function () { say('بخش ' + (gi + 2) + ' از ' + (1 + groups.length) + ': سهام (' + grp.map(function (f) { return f.name; }).join('، ') + ')'); return commitFiles(grp).then(function (i) { done.files = done.files.concat(i.files); }); }); });
+    groups.forEach(function (grp, gi) { p = p.then(function () { say('بخش ' + (gi + 2) + ' از ' + (1 + groups.length) + ': سهام (' + grp.map(function (f) { return f.name; }).join('، ') + ')'); return commitFiles(grp, head).then(function (i) { head = i.sha; done.files = done.files.concat(i.files); }); }); });
     return p.then(function () { if (big.length && full) put(KEY + '.pubFull', Date.now()); done.stocks = big.length ? (full ? 'full' : 'tail40') : 'none'; put(KEY + '.pub', done); return done; });
   }
   // widget.json only (phone or PC): the widget reads it from raw.githubusercontent.com (cache ≈ 5 min) or the site
@@ -10791,19 +10791,22 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var c = cfg(); if (!c.token) return Promise.reject(new Error('توکن GitHub وارد نشده است'));
     return commitFiles([{ name: 'widget', content: JSON.stringify(W, round) }]).then(function (info) { put(KEY + '.wpub', info); return info; });
   }
-  function commitFiles(files) {
-    var c = cfg();
+  // head: the commit just made by this run (the next part builds on it — no re-read, no stale cache); retried on a race with another commit
+  function commitFiles(files, head0) {
+    var c = cfg(), refPath = '/git/refs/heads/' + c.branch.split('/').map(encodeURIComponent).join('/');
     var ref = '/git/ref/heads/' + c.branch.split('/').map(encodeURIComponent).join('/');
-    var attempt = function (n) {
-      return gh(c, ref).then(function (r) { var head = r.object.sha;
-        return gh(c, '/git/commits/' + head).then(function (cm) {
-          return Promise.all(files.map(function (f) { return gh(c, '/git/blobs', 'POST', { content: f.content, encoding: 'utf-8' }).then(function (b) { return { path: c.dir.replace(/\/$/, '') + '/' + f.name + '.json', mode: '100644', type: 'blob', sha: b.sha }; }); }))
-            .then(function (tree) { return gh(c, '/git/trees', 'POST', { base_tree: cm.tree.sha, tree: tree }); })
-            .then(function (t) { return gh(c, '/git/commits', 'POST', { message: 'data: ' + files.map(function (f) { return f.name; }).join(' + ') + ' snapshot from PC', tree: t.sha, parents: [head] }); })
-            .then(function (nc) { return gh(c, '/git/refs/heads/' + c.branch.split('/').map(encodeURIComponent).join('/'), 'PATCH', { sha: nc.sha }); });
-        }); }).catch(function (e) { if (n < 2 && (e.status === 422 || e.status === 409)) return attempt(n + 1); throw e; });   // someone (the Action) committed in between
+    var blobs = null;   // uploaded once; a retry only rebuilds the tree and the commit
+    var upload = function () { if (blobs) return Promise.resolve(blobs); var out = [], chain = Promise.resolve();
+      files.forEach(function (f) { chain = chain.then(function () { return gh(c, '/git/blobs', 'POST', { content: f.content, encoding: 'utf-8' }).then(function (b) { out.push({ path: c.dir.replace(/\/$/, '') + '/' + f.name + '.json', mode: '100644', type: 'blob', sha: b.sha }); }); }); });
+      return chain.then(function () { blobs = out; return out; }); };
+    var attempt = function (n, head) {
+      return (head ? Promise.resolve(head) : gh(c, ref).then(function (r) { return r.object.sha; })).then(function (h) {
+        return gh(c, '/git/commits/' + h).then(function (cm) { return upload().then(function (tree) { return gh(c, '/git/trees', 'POST', { base_tree: cm.tree.sha, tree: tree }); })
+          .then(function (t) { return gh(c, '/git/commits', 'POST', { message: 'data: ' + files.map(function (f) { return f.name; }).join(' + ') + ' snapshot from PC', tree: t.sha, parents: [h] }); })
+          .then(function (nc) { return gh(c, refPath, 'PATCH', { sha: nc.sha }).then(function () { return nc.sha; }); }); });
+      }).catch(function (e) { if (n < 4 && (e.status === 422 || e.status === 409)) return new Promise(function (r) { setTimeout(r, 1500 * (n + 1)); }).then(function () { return attempt(n + 1, null); }); throw e; });   // another commit landed in between: rebuild on the new head
     };
-    return attempt(0).then(function () { var info = { at: Date.now(), files: files.map(function (f) { return f.name + ' (' + Math.round(f.content.length / 1024) + ' KB)'; }) }; put(KEY + '.pub', info); return info; });
+    return attempt(0, head0 || null).then(function (sha) { var info = { at: Date.now(), sha: sha, files: files.map(function (f) { return f.name + ' (' + Math.round(f.content.length / 1024) + ' KB)'; }) }; put(KEY + '.pub', info); return info; });
   }
   function fa() { return Hub.i18n && Hub.i18n.lang() === 'fa'; }
 
@@ -28769,11 +28772,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611180819) */
+/* PWA: offline cache + app updates (version 202611181001) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611180819';
+  window.HUB_APP_VERSION = '202611181001';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
