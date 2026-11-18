@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: '47 4-18 * * 0-4,6'
   push:
-    paths: ['hub/data/tse.json', 'hub/push/subs.json']
+    paths: ['hub/data/central.json', 'hub/data/tgju.json', 'hub/push/subs.json']
   workflow_dispatch:
 permissions:
   contents: write

@@ -14,7 +14,7 @@ if (!subs.length) { console.log('no subscriptions — nothing to do'); process.e
 webpush.setVapidDetails('https://amir6990.github.io/Signal/hub/', vapid.publicKey, priv);
 
 // the published central verdict
-const tse = rd('hub/data/tse.json', null), C = tse && tse.stores && tse.stores['hub.central.v1'];
+const cf = rd('hub/data/central.json', null) || rd('hub/data/tse.json', null), C = cf && cf.stores && cf.stores['hub.central.v1'];
 const state = rd('hub/push/state.json', { snap: {}, sent: {}, centralAt: 0 });
 
 // a minimal host for alerts.js: an in-memory store; no DOM, no toasts, no system notifications

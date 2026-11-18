@@ -10678,7 +10678,10 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   'use strict';
   var Hub = root.Hub = root.Hub || {};
   var KEY = 'hub.sync.v1';
-  var FILES = { tse: ['hub.sigstocks.v1', 'hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1', 'hub.central.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
+  /* stocks (≈ 100 MB as plain JSON with full history) are published apart: rows packed as arrays and split in shards (stocks.json + stocks-1…n.json),
+     each well under GitHub's limits; the small sets go first in their own commit, so a slow upload of the stocks never holds back the rest */
+  var SKEY = 'hub.sigstocks.v1', SHARD = 6e6;
+  var FILES = { central: ['hub.central.v1'], tse: ['hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
   var KEEP = ['set', 'tk', 'settings', 'f', 'sel', 'opt'];               // the phone keeps its own settings / filters
   var DEF = { repo: 'amir6990/Signal', branch: 'claude/iran-stock-signals-excel-guqwon', dir: 'hub/data', token: '', auto: false, autoPull: true, site: 'https://amir6990.github.io/Signal/hub/' };
   function ls() { try { return root.localStorage; } catch (e) { return null; } }
@@ -10704,7 +10707,15 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   function pull(force) {
     var out = { updated: [], same: [], errors: [], snaps: {} };
-    return Promise.all(Object.keys(FILES).map(function (name) {
+    // the stock shards: stocks.json says how many; the rows come packed as arrays
+    var stocks = fetchSnap('stocks').then(function (s0) { var n = s0.shards || 1, more = []; for (var i = 1; i < n; i++) more.push(fetchSnap('stocks-' + i));
+      return Promise.all(more).then(function (rest) { var S = s0.stores && s0.stores[SKEY]; if (!S) return; var D = {}; [s0].concat(rest).forEach(function (f) { var st = f.stores && f.stores[SKEY]; Object.keys((st && st.data) || {}).forEach(function (k) { D[k] = unpackSym(st.data[k]); }); });
+        var L = get(SKEY, null); out.snaps.stocks = { publishedAt: s0.publishedAt, by: s0.by, shards: n };
+        if (!live(S)) return; if (!force && live(L) && ts(L) >= ts(S)) { out.same.push(SKEY); return; }
+        var N = Object.assign({}, S, { data: D }); if (L) KEEP.forEach(function (x) { if (L[x] !== undefined) N[x] = L[x]; });
+        if (live(L) && L.data && Hub.histMerge) { try { N.data = Hub.histMerge.mergeStore(SKEY, L.data, D, []); } catch (e) { /* keep the snapshot */ } }
+        put(SKEY, N); out.updated.push(SKEY); }); }).catch(function (e) { out.errors.push('stocks: ' + e.message); });
+    return Promise.all([stocks].concat(Object.keys(FILES).map(function (name) {
       return fetchSnap(name).then(function (snap) {
         out.snaps[name] = { publishedAt: snap.publishedAt, by: snap.by };
         Object.keys(snap.stores || {}).forEach(function (k) {
@@ -10717,7 +10728,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
           put(k, N); out.updated.push(k);
         });
       }).catch(function (e) { out.errors.push(name + ': ' + e.message); });
-    })).then(function () { put(KEY + '.last', { at: Date.now(), snaps: out.snaps }); return out; });
+    }))).then(function () { put(KEY + '.last', { at: Date.now(), snaps: out.snaps }); return out; });
   }
 
   /* ---------- publish (PC): one commit with tse.json and/or tgju.json via the Git Data API ---------- */
@@ -10735,6 +10746,23 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return gh(c, url + '?ref=' + encodeURIComponent(c.branch)).then(function (j) { return j.sha; }, function (e) { if (e.status === 404) return null; throw e; })
       .then(function (sha) { return gh(c, url, 'PUT', Object.assign({ message: msg || ('hub: ' + path), content: b64, branch: c.branch }, sha ? { sha: sha } : {})); }); }
   function getFile(path) { var c = cfg(); if (!c.token) return Promise.reject(new Error('no token')); return gh(c, '/contents/' + path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(c.branch)).then(function (j) { return decodeURIComponent(escape(atob(String(j.content || '').replace(/\n/g, '')))); }); }
+  function packRows(rows) { if (!Array.isArray(rows) || !rows.length || typeof rows[0] !== 'object' || Array.isArray(rows[0])) return rows; var ks = {}; rows.forEach(function (r) { Object.keys(r).forEach(function (k) { ks[k] = 1; }); }); var K = Object.keys(ks);
+    return { __p: 1, k: K, r: rows.map(function (r) { return K.map(function (k) { var v = r[k]; return v === undefined ? null : typeof v === 'number' && isFinite(v) && v % 1 ? +v.toPrecision(7) : v; }); }) }; }
+  function unpackRows(o) { if (!o || o.__p !== 1) return o; return o.r.map(function (a) { var r = {}; o.k.forEach(function (k, i) { if (a[i] !== null) r[k] = a[i]; }); return r; }); }
+  function packSym(v) { if (!v || typeof v !== 'object' || Array.isArray(v)) return Array.isArray(v) ? packRows(v) : v; var o = {}; Object.keys(v).forEach(function (k) { o[k] = Array.isArray(v[k]) ? packRows(v[k]) : v[k]; }); return o; }
+  function unpackSym(v) { if (!v || typeof v !== 'object') return v; if (v.__p === 1) return unpackRows(v); if (Array.isArray(v)) return v; var o = {}; Object.keys(v).forEach(function (k) { o[k] = v[k] && v[k].__p === 1 ? unpackRows(v[k]) : v[k]; }); return o; }
+  /* tail: only the last rows of each series (the phone merges them into the history it keeps — history guard). A full history
+     (≈ 60 MB) is published at most once a week, the rest of the time a tail of 40 sessions (≈ 3 MB): the repository keeps every
+     version of every file, so publishing the full set every half hour would grow it by gigabytes a month */
+  function buildStocks(tail) {
+    var S = get(SKEY, null); if (!live(S)) return [];
+    var D = S.data || {}, keys = Object.keys(D), parts = [[]], size = 0, packed = {};
+    keys.forEach(function (k) { var v = D[k]; if (tail && v && typeof v === 'object' && !Array.isArray(v)) { var t = {}; Object.keys(v).forEach(function (q) { t[q] = Array.isArray(v[q]) ? v[q].slice(-tail) : v[q]; }); v = t; } else if (tail && Array.isArray(v)) v = v.slice(-tail);
+      var p = packSym(v), n = JSON.stringify(p).length; packed[k] = p; if (size + n > SHARD && parts[parts.length - 1].length) { parts.push([]); size = 0; } parts[parts.length - 1].push(k); size += n; });
+    return parts.map(function (ks, i) { var d = {}; ks.forEach(function (k) { d[k] = packed[k]; });
+      var st = i === 0 ? Object.assign({}, S, { data: d }) : { part: i, data: d };
+      return { name: i === 0 ? 'stocks' : 'stocks-' + i, content: JSON.stringify({ version: 2, publishedAt: new Date().toISOString(), by: 'pc', shards: parts.length, tail: tail || 0, stores: (function () { var o = {}; o[SKEY] = st; return o; })() }, round) }; });
+  }
   function build(names) {
     var files = [];
     names.forEach(function (name) {
@@ -10745,11 +10773,18 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (cfg().widget && Hub.tradeEngine) { try { var TS = get('hub.tradingEngine.v1', null), R = Hub.tradeEngine.run((TS && TS.e) || {}), W = R.widget(); if (W.asOf) files.push({ name: 'widget', content: JSON.stringify(W, round) }); } catch (e) { /* widget is optional */ } }
     return files;
   }
-  function publish(names) {
-    var c = cfg(); names = names || Object.keys(FILES);
+  function publish(names, progress) {
+    var c = cfg(), withStocks = !names || names.indexOf('stocks') >= 0; names = (names || Object.keys(FILES)).filter(function (n) { return FILES[n]; });
     if (!c.token) return Promise.reject(new Error(fa() ? 'توکن GitHub وارد نشده است' : 'no GitHub token'));
-    var files = build(names); if (!files.length) return Promise.reject(new Error(fa() ? 'دادهٔ واقعی برای انتشار نیست؛ اول به‌روزرسانی کنید' : 'no live data to publish'));
-    return commitFiles(files);
+    var pf = get(KEY + '.pubFull', null), full = withStocks && (!pf || Date.now() - pf > 7 * 864e5), small = build(names), big = withStocks ? buildStocks(full ? 0 : 40) : [];
+    if (!small.length && !big.length) return Promise.reject(new Error(fa() ? 'دادهٔ واقعی برای انتشار نیست؛ اول به‌روزرسانی کنید' : 'no live data to publish'));
+    var done = { at: Date.now(), files: [] }, say = progress || function () {};
+    // 1 · the small sets (central verdict, gold & FX, news, options …) in one commit
+    var p = small.length ? (say('بخش ۱ از ' + (1 + Math.ceil(big.length / 3)) + ': حکم مرکزی، طلا و ارز، خبرها'), commitFiles(small).then(function (i) { done.files = done.files.concat(i.files); })) : Promise.resolve();
+    // 2 · stock shards, three per commit (each commit is small enough to finish on a slow line)
+    var groups = []; for (var g = 0; g < big.length; g += 3) groups.push(big.slice(g, g + 3));
+    groups.forEach(function (grp, gi) { p = p.then(function () { say('بخش ' + (gi + 2) + ' از ' + (1 + groups.length) + ': سهام (' + grp.map(function (f) { return f.name; }).join('، ') + ')'); return commitFiles(grp).then(function (i) { done.files = done.files.concat(i.files); }); }); });
+    return p.then(function () { if (big.length && full) put(KEY + '.pubFull', Date.now()); done.stocks = big.length ? (full ? 'full' : 'tail40') : 'none'; put(KEY + '.pub', done); return done; });
   }
   // widget.json only (phone or PC): the widget reads it from raw.githubusercontent.com (cache ≈ 5 min) or the site
   function publishWidget(W) {
@@ -10791,7 +10826,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var tail = c.token.slice(-4);
     return gh(c, '').then(function (j) { var p = j.permissions || {}; return p.push ? { ok: true, why: 'توکن معتبر است و روی مخزن ' + c.repo + ' اجازهٔ نوشتن دارد (چهار نویسهٔ آخر: …' + tail + ').' } : { ok: false, why: 'توکن معتبر است ولی روی ' + c.repo + ' فقط اجازهٔ خواندن دارد: در GitHub برای این توکن «Contents: Read and write» را فعال کنید.' }; },
       function (e) { return { ok: false, why: e.status === 401 ? 'GitHub این توکن را نمی‌شناسد (۴۰۱): باطل شده، منقضی شده یا ناقص کپی شده است. چهار نویسهٔ آخرِ توکن ثبت‌شده: …' + tail + ' — با چهار نویسهٔ آخر توکن تازه در GitHub مقایسه کنید.' : e.status === 404 ? 'توکن معتبر است ولی به مخزن ' + c.repo + ' دسترسی ندارد (۴۰۴): در تنظیمات توکن، «Repository access» را روی همین مخزن بگذارید.' : e.status === 403 ? 'دسترسی رد شد (۴۰۳): ' + e.message : e.message }; }); }
-  Hub.dataSync = { testToken: testToken, tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
+  Hub.dataSync = { _buildStocks: buildStocks, _unpackSym: unpackSym, testToken: testToken, tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/alerts.js */
@@ -28641,7 +28676,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     tk.addEventListener('change', function () { var v = tk.value.trim(); tk.value = ''; if (!v || v === DS.cfg().token) return; if (DS.tokOK && !DS.tokOK(v)) { tkSt.textContent = 'وضعیت: متن چسبانده‌شده توکن معتبر GitHub نیست (باید با github_pat_ شروع شود).'; return; } DS.setCfg({ token: v }); tkSt.textContent = 'وضعیت: ثبت شده (همین حالا).'; pubB.disabled = false; k1.disabled = false; add.disabled = false; U.toast('توکن در همین مرورگر ثبت شد.', 'good'); });
     var tkSt = h('p', { class: 'small', text: 'وضعیت: ' + (!c.token ? 'ثبت نشده' : DS.tokOK && !DS.tokOK(c.token) ? 'ثبت شده ولی قالب آن درست نیست — توکن را دوباره از GitHub کپی کنید و اینجا بچسبانید' : 'ثبت شده') + '.' });
     var au = h('input', { type: 'checkbox', 'aria-label': 'انتشار خودکار' }); au.checked = !!c.auto; au.addEventListener('change', function () { DS.setCfg({ auto: au.checked }); U.toast(au.checked ? 'انتشار خودکار روشن شد.' : 'انتشار خودکار خاموش شد.', 'good'); });
-    var pubB = h('button', { class: 'btn', type: 'button', text: 'انتشار داده‌ها و حکم مرکزی الان', disabled: !c.token, onclick: function () { say('در حال انتشار…'); DS.publish().then(function (i) { say('منتشر شد: ' + i.files.join('، ') + '.', 'good-t'); }, function (e) { say('انتشار ناموفق: ' + e.message, 'crit-t'); }); } });
+    var pubB = h('button', { class: 'btn', type: 'button', text: 'انتشار داده‌ها و حکم مرکزی الان', disabled: !c.token, onclick: function () { say('در حال انتشار…'); DS.publish(null, function (t) { say('در حال انتشار — ' + t + ' …'); }).then(function (i) { say('منتشر شد' + (i.stocks === 'full' ? ' (سهام با تاریخچهٔ کامل؛ تا یک هفته فقط ۴۰ جلسهٔ آخر منتشر می‌شود)' : i.stocks === 'tail40' ? ' (سهام: ۴۰ جلسهٔ آخر)' : '') + ': ' + i.files.join('، ') + '.', 'good-t'); }, function (e) { say('انتشار ناموفق: ' + e.message + (/fetch/i.test(e.message) ? ' (اتصال به api.github.com قطع شد؛ اگر فیلترشکن روشن/خاموش شد یا اینترنت ضعیف است، دوباره بزنید — بخش‌هایی که منتشر شده‌اند لازم نیست تکرار شوند)' : ''), 'crit-t'); }); } });
     var step0 = h('div', { class: 'callout ' + (c.token ? 'info' : 'warn') }, [P('۰. توکن GitHub (فقط یک بار، روی کامپیوتر): فقط مخزن ' + c.repo + ' و فقط Contents: Read and write. فقط در همین مرورگر ذخیره و فقط به api.github.com فرستاده می‌شود.', 'small'), tkSt,
       h('label', { class: 'small' }, ['توکن: ', tk]), h('div', { class: 'row-ctl' }, [h('label', { class: 'chk-l' }, [au, document.createTextNode(' بعد از هر به‌روزرسانی موفق، خودکار منتشر شود')]), pubB,
         h('button', { class: 'btn ghost', type: 'button', text: 'آزمون توکن', onclick: function () { say('در حال آزمون…'); DS.testToken().then(function (r) { say(r.why, r.ok ? 'good-t' : 'crit-t'); }); } })])]);
@@ -28734,11 +28769,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611180759) */
+/* PWA: offline cache + app updates (version 202611180819) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611180759';
+  window.HUB_APP_VERSION = '202611180819';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
