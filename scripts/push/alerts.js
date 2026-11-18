@@ -31,7 +31,9 @@
   function isF(x) { return typeof x === 'number' && isFinite(x); }
   function fa(x, d) { if (!isF(x)) return '—'; var a = Math.abs(x), s = a >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d == null ? (a < 10 ? 2 : a < 100 ? 1 : 0) : d); return s.replace(/[0-9]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }).replace(/,/g, '٬').replace('.', '٫'); }
   function defaults() { return { on: true, buy: true, sell: true, pre: true, info: true, sys: true, cls: { stock: true, fund: true, gold: true, fx: true, crypto: true, commodity: true }, minConf: 0, nearPct: 1.5, quietFrom: 23, quietTo: 7, heldOnly: false }; }
-  function load() { var S = (U() && U().store.get(KEY, null)) || {}; S.set = Object.assign(defaults(), S.set || {}); S.set.cls = Object.assign(defaults().cls, S.set.cls || {}); S.log = Array.isArray(S.log) ? S.log : []; S.sent = S.sent || {}; S.snap = S.snap || {}; S.stats = Object.assign({ n: 0, sys: 0, sysFail: 0 }, S.stats || {}); S.stats.byType = S.stats.byType || {}; return S; }
+  function load() { var S = (U() && U().store.get(KEY, null)) || {}; S.set = Object.assign(defaults(), S.set || {}); S.set.cls = Object.assign(defaults().cls, S.set.cls || {}); S.log = Array.isArray(S.log) ? S.log : []; S.sent = S.sent || {}; S.snap = S.snap || {}; S.stats = Object.assign({ n: 0, sys: 0, sysFail: 0 }, S.stats || {}); S.stats.byType = S.stats.byType || {}; S.px = S.px || {};
+    // v2 (2026-11-18): alerts on crossings only; the level-state alerts of the first live test (hundreds of «touch») are cleared once
+    if (S.v !== 2) { S.log = []; S.sent = {}; S.px = {}; S.v = 2; } return S; }
   function save(S) { try { var cut = Date.now() - 20 * 864e5; Object.keys(S.sent).forEach(function (k) { if (S.sent[k] < cut) delete S.sent[k]; }); S.log = S.log.slice(-500); U().store.set(KEY, S); } catch (e) { /* storage full: alerts still shown */ } }
   function tehranHour() { try { return +new Date().toLocaleString('en-US', { timeZone: 'Asia/Tehran', hour: '2-digit', hour12: false }) % 24; } catch (e) { return new Date().getHours(); } }
 
@@ -84,19 +86,27 @@
   /* ---- 2 · light layer: a fresh price against the levels the central engine published ---- */
   function evaluatePrices(map, meta) {
     var S = load(), cen = U().store.get('hub.central.v1', null), by = cen && cen.by || {}, out = [], near = [], touched = [], np = (S.set.nearPct || 1.5) / 100;
+    // a level matters only where the central verdict can still turn into a trade: blocked by the model gate, by data or by an ended setup → no pre-alert
+    var BLOCK = { model: 1, valNone: 1, data: 1, expired: 1 };
     Object.keys(map || {}).forEach(function (k) {
       var q = map[k], r0 = by[k]; if (!r0 || !q || !(q.px > 0)) return;
       var r = Object.assign({ key: k }, r0, { px: q.px, L: r0.lv ? { buy: r0.lv.buy, stop: r0.lv.stop, tp: r0.lv.tp, upConf: r0.lv.up, dnConf: r0.lv.dn, floor: r0.lv.floor, ceil: r0.lv.ceil, tzConf: r0.lv.tzConf } : {} }), L = r.L, px = q.px, held = !!r0.held, live = r0.tier === 'ok' || held;
-      var w = function (lv) { return isF(lv) && Math.abs(px / lv - 1) <= np; };
-      if (live && isF(L.stop) && px <= L.stop) { out.push(ev('stop', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' به حد ضرر ' + fa(L.stop) + ' رسید.')); touched.push(k); return; }
-      if (live && L.tp && isF(L.tp[0]) && px >= L.tp[0]) { out.push(ev('tp', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' به هدف اول ' + fa(L.tp[0]) + ' رسید.')); touched.push(k); }
-      if (r0.tier === 'wait' && isF(L.upConf) && px >= L.upConf) { out.push(ev('touch', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' از سطح تأیید صعود ' + fa(L.upConf) + ' گذشت (هنوز بسته نشده).')); touched.push(k); }
-      else if (r0.tier === 'wait' && L.buy && isF(L.buy[0]) && px >= L.buy[0] && px <= L.buy[1]) out.push(ev('preBuy', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' داخل محدودهٔ ورود ' + fa(L.buy[0]) + '–' + fa(L.buy[1]) + ' است؛ شرط تأیید هنوز برقرار نیست.'));
-      else if (r0.tier === 'wait' && w(L.upConf)) out.push(ev('preBreak', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' در فاصلهٔ کمتر از ' + fa(S.set.nearPct, 1) + '٪ از سطح تأیید ' + fa(L.upConf) + ' است.'));
-      if (r0.tier === 'floor' && isF(L.tzConf) && px >= L.tzConf) { out.push(ev('touch', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' از سطح تأیید برگشت ' + fa(L.tzConf) + ' گذشت؛ تأیید با بسته‌شدن.')); touched.push(k); }
-      if (L.ceil && isF(L.ceil[0]) && px >= L.ceil[0] && r0.sell !== 'inZone') out.push(ev('preCeil', r, { pxSrc: q.src, pxAt: q.at }, 'قیمت ' + fa(px) + ' وارد محدودهٔ سقف احتمالی ' + fa(L.ceil[0]) + '–' + fa(L.ceil[1]) + ' شد.'));
+      var prev = S.px[k] && S.px[k].sid === (r0.sid || '') ? S.px[k].px : null; S.px[k] = { px: px, at: q.at || Date.now(), sid: r0.sid || '' };
+      var w = function (lv) { return isF(lv) && Math.abs(px / lv - 1) <= np; }, X = { pxSrc: q.src, pxAt: q.at };
       if (w(L.stop) || w(L.upConf) || w(L.tzConf) || (L.tp && w(L.tp[0])) || (L.buy && (w(L.buy[0]) || w(L.buy[1])))) near.push(k);
+      if (prev == null) return;   // first observation of this signal: recorded, nothing has crossed yet
+      // events fire on a crossing between two checks, not on a state that already held
+      var up = function (lv) { return isF(lv) && prev < lv && px >= lv; }, dn = function (lv) { return isF(lv) && prev > lv && px <= lv; }, into = function (z) { return z && isF(z[0]) && !(prev >= z[0] && prev <= z[1]) && px >= z[0] && px <= z[1]; };
+      var open = r0.tier === 'wait' && !BLOCK[r0.rc];
+      if (live && dn(L.stop)) { out.push(ev('stop', r, X, 'قیمت ' + fa(px) + ' به حد ضرر ' + fa(L.stop) + ' رسید.')); touched.push(k); return; }
+      if (live && L.tp && up(L.tp[0])) { out.push(ev('tp', r, X, 'قیمت ' + fa(px) + ' به هدف اول ' + fa(L.tp[0]) + ' رسید.')); touched.push(k); }
+      if (open && up(L.upConf)) { out.push(ev('touch', r, X, 'قیمت ' + fa(px) + ' از سطح تأیید صعود ' + fa(L.upConf) + ' گذشت (هنوز بسته نشده).')); touched.push(k); }
+      else if (open && into(L.buy)) out.push(ev('preBuy', r, X, 'قیمت ' + fa(px) + ' وارد محدودهٔ ورود ' + fa(L.buy[0]) + '–' + fa(L.buy[1]) + ' شد؛ شرط تأیید هنوز برقرار نیست.'));
+      else if (open && w(L.upConf) && px < L.upConf && Math.abs(prev / L.upConf - 1) > np) out.push(ev('preBreak', r, X, 'قیمت ' + fa(px) + ' به فاصلهٔ کمتر از ' + fa(S.set.nearPct, 1) + '٪ از سطح تأیید ' + fa(L.upConf) + ' رسید.'));
+      if (r0.tier === 'floor' && up(L.tzConf)) { out.push(ev('touch', r, X, 'قیمت ' + fa(px) + ' از سطح تأیید برگشت ' + fa(L.tzConf) + ' گذشت؛ تأیید با بسته‌شدن.')); touched.push(k); }
+      if (L.ceil && up(L.ceil[0]) && r0.sell !== 'inZone') out.push(ev('preCeil', r, X, 'قیمت ' + fa(px) + ' وارد محدودهٔ سقف احتمالی ' + fa(L.ceil[0]) + '–' + fa(L.ceil[1]) + ' شد.'));
     });
+    save(S);
     return { events: out, near: near, touched: touched, meta: meta || null };
   }
 
