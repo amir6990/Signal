@@ -10786,7 +10786,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   if (root.document) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 800); }); else setTimeout(boot, 800); }
 
-  Hub.dataSync = { tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
+  /* token check without writing anything: valid? this repository? write access? (GET the repository; permissions come back for the token) */
+  function testToken() { var c = cfg(); if (!c.token) return Promise.resolve({ ok: false, why: 'توکنی ثبت نشده است.' });
+    var tail = c.token.slice(-4);
+    return gh(c, '').then(function (j) { var p = j.permissions || {}; return p.push ? { ok: true, why: 'توکن معتبر است و روی مخزن ' + c.repo + ' اجازهٔ نوشتن دارد (چهار نویسهٔ آخر: …' + tail + ').' } : { ok: false, why: 'توکن معتبر است ولی روی ' + c.repo + ' فقط اجازهٔ خواندن دارد: در GitHub برای این توکن «Contents: Read and write» را فعال کنید.' }; },
+      function (e) { return { ok: false, why: e.status === 401 ? 'GitHub این توکن را نمی‌شناسد (۴۰۱): باطل شده، منقضی شده یا ناقص کپی شده است. چهار نویسهٔ آخرِ توکن ثبت‌شده: …' + tail + ' — با چهار نویسهٔ آخر توکن تازه در GitHub مقایسه کنید.' : e.status === 404 ? 'توکن معتبر است ولی به مخزن ' + c.repo + ' دسترسی ندارد (۴۰۴): در تنظیمات توکن، «Repository access» را روی همین مخزن بگذارید.' : e.status === 403 ? 'دسترسی رد شد (۴۰۳): ' + e.message : e.message }; }); }
+  Hub.dataSync = { testToken: testToken, tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/alerts.js */
@@ -28638,7 +28643,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var au = h('input', { type: 'checkbox', 'aria-label': 'انتشار خودکار' }); au.checked = !!c.auto; au.addEventListener('change', function () { DS.setCfg({ auto: au.checked }); U.toast(au.checked ? 'انتشار خودکار روشن شد.' : 'انتشار خودکار خاموش شد.', 'good'); });
     var pubB = h('button', { class: 'btn', type: 'button', text: 'انتشار داده‌ها و حکم مرکزی الان', disabled: !c.token, onclick: function () { say('در حال انتشار…'); DS.publish().then(function (i) { say('منتشر شد: ' + i.files.join('، ') + '.', 'good-t'); }, function (e) { say('انتشار ناموفق: ' + e.message, 'crit-t'); }); } });
     var step0 = h('div', { class: 'callout ' + (c.token ? 'info' : 'warn') }, [P('۰. توکن GitHub (فقط یک بار، روی کامپیوتر): فقط مخزن ' + c.repo + ' و فقط Contents: Read and write. فقط در همین مرورگر ذخیره و فقط به api.github.com فرستاده می‌شود.', 'small'), tkSt,
-      h('label', { class: 'small' }, ['توکن: ', tk]), h('div', { class: 'row-ctl' }, [h('label', { class: 'chk-l' }, [au, document.createTextNode(' بعد از هر به‌روزرسانی موفق، خودکار منتشر شود')]), pubB])]);
+      h('label', { class: 'small' }, ['توکن: ', tk]), h('div', { class: 'row-ctl' }, [h('label', { class: 'chk-l' }, [au, document.createTextNode(' بعد از هر به‌روزرسانی موفق، خودکار منتشر شود')]), pubB,
+        h('button', { class: 'btn ghost', type: 'button', text: 'آزمون توکن', onclick: function () { say('در حال آزمون…'); DS.testToken().then(function (r) { say(r.why, r.ok ? 'good-t' : 'crit-t'); }); } })])]);
     var k1 = h('button', { class: 'btn', type: 'button', text: loc.pub ? 'ساخت دوبارهٔ کلید (اشتراک‌های قبلی باطل می‌شوند)' : '۱. ساخت کلید و انتشار کلید عمومی', disabled: !c.token, onclick: function () {
       say('در حال ساخت کلید…'); WP.keys().then(function (r) { ctx.rerender(); }).catch(function (e) { say('ناموفق: ' + e.message, 'crit-t'); }); } });
     var priv = loc.priv ? h('div', { class: 'callout warn' }, [P('کلید خصوصی را یک بار به‌عنوان «Repository secret» با نام ' + WP.SECRET + ' در GitHub ذخیره کنید (فقط شما و اجرای زمان‌بندی‌شده به آن دسترسی دارید؛ در مخزن عمومی نوشته نمی‌شود):', 'small'),
@@ -28728,11 +28734,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611180755) */
+/* PWA: offline cache + app updates (version 202611180759) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611180755';
+  window.HUB_APP_VERSION = '202611180759';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
