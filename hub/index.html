@@ -28625,11 +28625,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var c = DS.cfg(), loc = WP.state(), out = h('div', { 'aria-live': 'polite' }), say = function (t, k) { U.clear(out); out.appendChild(P(t, 'small ' + (k || ''))); };
     var copy = function (t) { try { navigator.clipboard.writeText(t); U.toast('کپی شد.', 'good'); } catch (e) { /* manual copy */ } };
     // step 0 (PC): the GitHub token and the snapshot publishing live here too — the full sync page is «مرکز دادهٔ بازار ← همگام‌سازی با گوشی» (#market-data)
-    var tk = h('input', { class: 'f-in', type: 'password', autocomplete: 'off', placeholder: c.token ? 'توکن ثبت شده است (برای تغییر، توکن تازه را بچسبانید)' : 'توکن fine-grained GitHub را اینجا بچسبانید', 'aria-label': 'توکن GitHub', style: 'min-width:280px' });
-    tk.addEventListener('change', function () { var v = tk.value.trim(); if (!v) return; DS.setCfg({ token: v }); tk.value = ''; U.toast('توکن در همین مرورگر ثبت شد.', 'good'); ctx.rerender(); });
+    // the browser's password manager may refill a password field on every render: never re-render from here, and ignore the value already saved
+    var tk = h('input', { class: 'f-in', type: 'password', autocomplete: 'new-password', name: 'hub-gh-token-' + Date.now(), 'data-lpignore': 'true', placeholder: c.token ? 'توکن ثبت شده است (برای تغییر، توکن تازه را بچسبانید)' : 'توکن fine-grained GitHub را اینجا بچسبانید', 'aria-label': 'توکن GitHub', style: 'min-width:280px' });
+    tk.addEventListener('change', function () { var v = tk.value.trim(); tk.value = ''; if (!v || v === DS.cfg().token) return; DS.setCfg({ token: v }); tkSt.textContent = 'وضعیت: ثبت شده (همین حالا).'; pubB.disabled = false; k1.disabled = false; add.disabled = false; U.toast('توکن در همین مرورگر ثبت شد.', 'good'); });
+    var tkSt = h('p', { class: 'small', text: 'وضعیت: ' + (c.token ? 'ثبت شده' : 'ثبت نشده') + '.' });
     var au = h('input', { type: 'checkbox', 'aria-label': 'انتشار خودکار' }); au.checked = !!c.auto; au.addEventListener('change', function () { DS.setCfg({ auto: au.checked }); U.toast(au.checked ? 'انتشار خودکار روشن شد.' : 'انتشار خودکار خاموش شد.', 'good'); });
     var pubB = h('button', { class: 'btn', type: 'button', text: 'انتشار داده‌ها و حکم مرکزی الان', disabled: !c.token, onclick: function () { say('در حال انتشار…'); DS.publish().then(function (i) { say('منتشر شد: ' + i.files.join('، ') + '.', 'good-t'); }, function (e) { say('انتشار ناموفق: ' + e.message, 'crit-t'); }); } });
-    var step0 = h('div', { class: 'callout ' + (c.token ? 'info' : 'warn') }, [P('۰. توکن GitHub (فقط یک بار، روی کامپیوتر): فقط مخزن ' + c.repo + ' و فقط Contents: Read and write. فقط در همین مرورگر ذخیره و فقط به api.github.com فرستاده می‌شود. وضعیت: ' + (c.token ? 'ثبت شده' : 'ثبت نشده') + '.', 'small'),
+    var step0 = h('div', { class: 'callout ' + (c.token ? 'info' : 'warn') }, [P('۰. توکن GitHub (فقط یک بار، روی کامپیوتر): فقط مخزن ' + c.repo + ' و فقط Contents: Read and write. فقط در همین مرورگر ذخیره و فقط به api.github.com فرستاده می‌شود.', 'small'), tkSt,
       h('label', { class: 'small' }, ['توکن: ', tk]), h('div', { class: 'row-ctl' }, [h('label', { class: 'chk-l' }, [au, document.createTextNode(' بعد از هر به‌روزرسانی موفق، خودکار منتشر شود')]), pubB])]);
     var k1 = h('button', { class: 'btn', type: 'button', text: loc.pub ? 'ساخت دوبارهٔ کلید (اشتراک‌های قبلی باطل می‌شوند)' : '۱. ساخت کلید و انتشار کلید عمومی', disabled: !c.token, onclick: function () {
       say('در حال ساخت کلید…'); WP.keys().then(function (r) { ctx.rerender(); }).catch(function (e) { say('ناموفق: ' + e.message, 'crit-t'); }); } });
@@ -28720,11 +28722,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611180712) */
+/* PWA: offline cache + app updates (version 202611180741) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611180712';
+  window.HUB_APP_VERSION = '202611180741';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
