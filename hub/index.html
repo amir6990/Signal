@@ -10685,8 +10685,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   // through the hub's store (memory + IndexedDB): the data sets are larger than a phone's localStorage
   function get(k, d) { if (Hub.util && Hub.util.store) return Hub.util.store.get(k, d); var s = ls(); try { var v = s && s.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
   function put(k, v) { if (Hub.util && Hub.util.store) return Hub.util.store.set(k, v); var s = ls(); try { s && s.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
-  function cfg() { return Object.assign({}, DEF, get(KEY, {}) || {}); }
-  function setCfg(c) { put(KEY, Object.assign(cfg(), c)); }
+  /* a GitHub token is only letters, digits and «_». Text copied from a right-to-left page often carries invisible direction marks
+     (U+200E/U+200F/U+202A–U+202E) or spaces: they are removed, otherwise the browser refuses the request header */
+  function cleanTok(t) { return String(t || '').replace(/[^A-Za-z0-9_]/g, ''); }
+  function tokOK(t) { return /^(github_pat_[A-Za-z0-9_]{40,}|gh[pousr]_[A-Za-z0-9]{30,})$/.test(t); }
+  function cfg() { var c = Object.assign({}, DEF, get(KEY, {}) || {}); c.token = cleanTok(c.token); return c; }
+  function setCfg(c) { if (c && 'token' in c) c = Object.assign({}, c, { token: cleanTok(c.token) }); put(KEY, Object.assign(cfg(), c)); }
   function live(S) { return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
   function ts(S) { return (S && S.meta && S.meta.asOfTs) || 0; }
   function served() { var L = root.location || {}; return /^https?:$/.test(L.protocol || '') && !/claude|anthropic|localhost|127\.0\.0\.1/.test(L.host || ''); }
@@ -10718,6 +10722,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
 
   /* ---------- publish (PC): one commit with tse.json and/or tgju.json via the Git Data API ---------- */
   function gh(c, path, method, body) {
+    if (!tokOK(cleanTok(c.token))) return Promise.reject(new Error('توکن GitHub قالب درستی ندارد (باید با github_pat_ یا ghp_ شروع شود و فقط حرف لاتین، عدد و _ داشته باشد). توکن را دوباره از GitHub کپی و ثبت کنید.'));
+    c = Object.assign({}, c, { token: cleanTok(c.token) });
     return fetch('https://api.github.com/repos/' + c.repo + path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error('GitHub ' + r.status + ': ' + (j.message || '')); e.status = r.status; throw e; } return j; }); });
   }
@@ -10780,7 +10786,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   if (root.document) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 800); }); else setTimeout(boot, 800); }
 
-  Hub.dataSync = { putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
+  Hub.dataSync = { tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/core/alerts.js */
@@ -28627,8 +28633,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     // step 0 (PC): the GitHub token and the snapshot publishing live here too — the full sync page is «مرکز دادهٔ بازار ← همگام‌سازی با گوشی» (#market-data)
     // the browser's password manager may refill a password field on every render: never re-render from here, and ignore the value already saved
     var tk = h('input', { class: 'f-in', type: 'password', autocomplete: 'new-password', name: 'hub-gh-token-' + Date.now(), 'data-lpignore': 'true', placeholder: c.token ? 'توکن ثبت شده است (برای تغییر، توکن تازه را بچسبانید)' : 'توکن fine-grained GitHub را اینجا بچسبانید', 'aria-label': 'توکن GitHub', style: 'min-width:280px' });
-    tk.addEventListener('change', function () { var v = tk.value.trim(); tk.value = ''; if (!v || v === DS.cfg().token) return; DS.setCfg({ token: v }); tkSt.textContent = 'وضعیت: ثبت شده (همین حالا).'; pubB.disabled = false; k1.disabled = false; add.disabled = false; U.toast('توکن در همین مرورگر ثبت شد.', 'good'); });
-    var tkSt = h('p', { class: 'small', text: 'وضعیت: ' + (c.token ? 'ثبت شده' : 'ثبت نشده') + '.' });
+    tk.addEventListener('change', function () { var v = tk.value.trim(); tk.value = ''; if (!v || v === DS.cfg().token) return; if (DS.tokOK && !DS.tokOK(v)) { tkSt.textContent = 'وضعیت: متن چسبانده‌شده توکن معتبر GitHub نیست (باید با github_pat_ شروع شود).'; return; } DS.setCfg({ token: v }); tkSt.textContent = 'وضعیت: ثبت شده (همین حالا).'; pubB.disabled = false; k1.disabled = false; add.disabled = false; U.toast('توکن در همین مرورگر ثبت شد.', 'good'); });
+    var tkSt = h('p', { class: 'small', text: 'وضعیت: ' + (!c.token ? 'ثبت نشده' : DS.tokOK && !DS.tokOK(c.token) ? 'ثبت شده ولی قالب آن درست نیست — توکن را دوباره از GitHub کپی کنید و اینجا بچسبانید' : 'ثبت شده') + '.' });
     var au = h('input', { type: 'checkbox', 'aria-label': 'انتشار خودکار' }); au.checked = !!c.auto; au.addEventListener('change', function () { DS.setCfg({ auto: au.checked }); U.toast(au.checked ? 'انتشار خودکار روشن شد.' : 'انتشار خودکار خاموش شد.', 'good'); });
     var pubB = h('button', { class: 'btn', type: 'button', text: 'انتشار داده‌ها و حکم مرکزی الان', disabled: !c.token, onclick: function () { say('در حال انتشار…'); DS.publish().then(function (i) { say('منتشر شد: ' + i.files.join('، ') + '.', 'good-t'); }, function (e) { say('انتشار ناموفق: ' + e.message, 'crit-t'); }); } });
     var step0 = h('div', { class: 'callout ' + (c.token ? 'info' : 'warn') }, [P('۰. توکن GitHub (فقط یک بار، روی کامپیوتر): فقط مخزن ' + c.repo + ' و فقط Contents: Read and write. فقط در همین مرورگر ذخیره و فقط به api.github.com فرستاده می‌شود.', 'small'), tkSt,
@@ -28722,11 +28728,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611180741) */
+/* PWA: offline cache + app updates (version 202611180755) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611180741';
+  window.HUB_APP_VERSION = '202611180755';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
