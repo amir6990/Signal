@@ -26,10 +26,13 @@
     preBuy: ['pre', 'در آستانهٔ فرصت خرید — در انتظار تأیید', 'pre'], preBreak: ['pre', 'در آستانهٔ شکست سطح تأیید صعود', 'pre'], preFloor: ['pre', 'در محدودهٔ احتمالی کف — برگشت هنوز تأیید نشده', 'pre'],
     preCeil: ['pre', 'در محدودهٔ احتمالی سقف — فروش هنوز تأیید نشده', 'pre'], touch: ['pre', 'قیمت به سطح کلیدی رسید — محاسبهٔ دوباره', 'pre'],
     weak: ['info', 'سیگنال تضعیف یا باطل شد', 'info'], expired: ['info', 'سیگنال منقضی شد', 'info'], data: ['info', 'نیازمند تأیید داده', 'info'],
-    watch: ['important', 'دارایی تحت پایش: تغییر وضعیت کف یا سقف', 'pre'] };
+    watch: ['important', 'دارایی تحت پایش: تغییر وضعیت کف یا سقف', 'pre'],
+    // time-cycle engine (directive 21): only methods that passed the walk-forward test raise these
+    cycEarly: ['info', 'چرخهٔ زمانی: هشدار اولیه — نزدیک پنجرهٔ زمانی حساس', 'pre'], cycSerious: ['important', 'چرخهٔ زمانی: هشدار جدی — چند روش مستقل هم‌زمان', 'pre'],
+    cycConfirmed: ['important', 'چرخهٔ زمانی: هشدار تأییدشده — قیمت هم سناریو را تأیید کرد', 'pre'], cycInvalid: ['info', 'چرخهٔ زمانی: ابطال هشدار', 'info'] };
   // floor / ceiling states of the central record (directive 18 · 2-3); the watchlist (hub.watch.v1) is alerted on every change into one of them
   var S4FA = { nearFloor: 'نزدیک کف احتمالی (برگشت تأیید نشده)', upConf: 'تأیید برگشت صعودی', nearCeil: 'نزدیک سقف احتمالی', dnConf: 'تأیید برگشت نزولی' };
-  var CLSFA = { stock: 'سهام', fund: 'صندوق', gold: 'طلا و سکه', fx: 'ارز', crypto: 'رمزارز', commodity: 'کالا و انرژی', option: 'اختیار معامله' };
+  var CLSFA = { stock: 'سهام', fund: 'صندوق', gold: 'طلا و سکه', fx: 'ارز', crypto: 'رمزارز', commodity: 'کالا و انرژی', intl: 'شاخص‌های جهانی', option: 'اختیار معامله' };
   function U() { return Hub.util; }
   function isF(x) { return typeof x === 'number' && isFinite(x); }
   function fa(x, d) { if (!isF(x)) return '—'; var a = Math.abs(x), s = a >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d == null ? (a < 10 ? 2 : a < 100 ? 1 : 0) : d); return s.replace(/[0-9]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }).replace(/,/g, '٬').replace('.', '٫'); }
@@ -62,10 +65,13 @@
       case 'preCeil': return 'اگر دارید: ذخیرهٔ بخشی از سود یا حد ضرر متحرک؛ فروش کامل فقط با بسته‌شدن زیر ' + fa(c.tzConf) + '.';
       case 'touch': return 'قیمت لحظه‌ای به سطح رسید؛ تأیید یا ابطال پس از محاسبهٔ دوباره با دادهٔ پایانی اعلام می‌شود.';
       case 'weak': return 'اقدام قبلی دیگر معتبر نیست؛ وضعیت جدید را در داشبورد ببینید.';
+      case 'cycEarly': case 'cycSerious': case 'cycConfirmed': return c.cy && c.cy.win ? 'پنجرهٔ احتمالی ' + c.cy.win.typeFa + ': ' + fd(c.cy.win.a) + ' تا ' + fd(c.cy.win.b) + '. هشدار زمانی دستور معامله نیست؛ با قیمت و سایر موتورها بسنجید.' : '';
+      case 'cycInvalid': return 'پیش‌بینی زمانی قبلی دیگر معتبر نیست.';
       case 'watch': return c.s4 === 'nearFloor' ? 'هنوز خرید نکنید؛ شرط تأیید: بسته‌شدن بالای ' + fa(c.tzConf) + '.' : c.s4 === 'upConf' ? 'برگشت صعودی تأیید شد؛ وضعیت سیگنال را در مرکز اعلان‌ها ببینید.' : c.s4 === 'nearCeil' ? 'اگر دارید: ذخیرهٔ بخشی از سود را بررسی کنید.' : c.s4 === 'dnConf' ? 'اگر دارید: خروج یا کاهش طبق سطح تأیید نزولی.' : '';
       default: return '';
     }
   }
+  function fd(d) { return root.Hub && Hub.mktCal && Hub.mktCal.faDate ? Hub.mktCal.faDate(d) : String(d); }
   function ev(t, r, extra, why) { var c = card(r, extra), T = TYPE[t]; c.t = t; c.lvl = T[0]; c.lvlFa = LVL[T[0]].fa; c.title = T[1]; c.side = T[2]; c.next = nextAct(t, c); c.reason = why || c.why; c.at = Date.now(); return c; }
 
   /* ---- 1 · full layer: compare the new central verdict with the previous one ---- */
@@ -73,7 +79,7 @@
     var S = load(), out = [], by = (C && C.by) || {}, first = !Object.keys(S.snap).length, w0 = U().store.get('hub.watch.v1', null), WL = w0 && Array.isArray(w0.keys) ? w0.keys : [];
     Object.keys(by).forEach(function (k) {
       var r = by[k].key ? by[k] : Object.assign({ key: k }, by[k]), p = S.snap[k] || null, held = !!r.held, stale = fresh && fresh[r.cls] === false;
-      if (!p && first) { S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: r.st4 || r.s4 || null }; return; }   // the first run only records the baseline: nothing is «new» yet
+      if (!p && first) { S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: r.st4 || r.s4 || null, cy: r.cyc ? r.cyc.lvl : r.cy ? r.cy.l : 'none' }; return; }   // the first run only records the baseline: nothing is «new» yet
       var was = p || {};
       if (r.tier === 'ok' && was.tier !== 'ok') out.push(ev(stale ? 'data' : 'buyOk', r, null, stale ? 'سیگنال خرید روی دادهٔ قدیمی؛ تا دریافت دادهٔ تازه قابل اقدام نیست.' : r.why));
       else if (was.tier === 'ok' && r.tier !== 'ok') out.push(ev(r.st === 'exp' ? 'expired' : 'weak', r, null, r.stFa + ' — ' + (r.rcWhy || r.why)));
@@ -84,7 +90,12 @@
       if (r.sell === 'inZone' && was.sell !== 'inZone') out.push(ev('preCeil', r));
       var s4 = r.st4 || r.s4 || null;
       if (WL.indexOf(k) >= 0 && s4 && S4FA[s4] && was.s4 !== undefined && was.s4 !== s4) out.push(ev('watch', r, { watch: true, s4: s4 }, 'وضعیت کف/سقف: ' + S4FA[s4] + '.'));
-      S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: s4 };
+      // cycle levels: markets other than single shares / funds always; shares and funds only when held or on the watchlist
+      var cy = r.cyc || (r.cy ? { lvl: r.cy.l, win: r.cy.w, st: r.cy.s } : null), cl = cy ? cy.lvl : 'none', pl = was.cy || 'none', cyOn = (r.cls !== 'stock' && r.cls !== 'fund') || held || WL.indexOf(k) >= 0;
+      if (cyOn && was.cy !== undefined && cl !== pl) {
+        if (cl === 'early' || cl === 'serious' || cl === 'confirmed') out.push(ev(cl === 'early' ? 'cycEarly' : cl === 'serious' ? 'cycSerious' : 'cycConfirmed', r, { watch: WL.indexOf(k) >= 0, cy: cy }, 'افق ' + ((r.cyc && r.cyc.hz) || '') + '؛ ' + ((r.cyc && r.cyc.stFa) || '') + '.'));
+        else if (pl === 'early' || pl === 'serious' || pl === 'confirmed') out.push(ev('cycInvalid', r, { cy: cy }, 'سطح هشدار زمانی از «' + pl + '» به «' + cl + '» رسید.')); }
+      S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: s4, cy: cl };
     });
     save(S); return out;
   }
