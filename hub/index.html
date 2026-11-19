@@ -10663,120 +10663,6 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   Hub.histMerge = { merge: merge, mergeStore: mergeStore, mergeSeries: mergeSeries, audit: audit, NEED: NEED, CAP: CAP, depth: depth };
 })(typeof window !== 'undefined' ? window : globalThis);
 
-/* js/core/extviews.js */
-/* =====================================================================
- * EXTERNAL VIEWS — forecasts of outside analysts, kept beside the engine, never inside it.
- * Requested by the user on 2026-11-19 («این تحلیل‌ها را بررسی کن، اگر درست بود در محاسباتت لحاظ کن»).
- *
- * Why a separate layer: the engine's signals pass a gate of back-tested evidence. One source with one late hit is not
- * evidence, so a view changes no signal, tier or level. What it gets instead is a scored record:
- *   status        pending (before / inside its window) · hit in window · hit late · missed — from daily high/low (close if none)
- *   distance      from the last price to the target, in % and in ATR(14)
- *   base rate     how often this asset's own history moved that far within the same horizon (from every start day):
- *                   «by window end»  = the low reached the target at any time up to the window end
- *                   «inside window»  = the low reached the target between window start and end (the claim as stated)
- *                 both are shown — the forecast's added value is the gap between its claimed timing and this base rate
- *   engine        where the target sits against the engine's own floor zone, stop and down-confirmation level
- *   track record  per source: resolved views, hit in window, hit late, missed
- * The user decides whether a source has earned more weight; the code does not.
- * ===================================================================== */
-(function (root) {
-  'use strict';
-  var Hub = root.Hub = root.Hub || {};
-  var KEY = 'hub.extviews.v1';
-  var DEF = [
-    { id: 'isaac-ons-20261018', key: 'g:ons', source: 'Isaac Finance', issued: 20261018, px: 4160, dir: 'down', zone: [3780, 3800], from: 20261018, to: 20261115, alt: { to: 20261106, why: 'متن فارسی همان پیام «تا نیمهٔ آبان‌ماه» گفته (۱۵ آبان ۱۴۰۵ = ۶ نوامبر)؛ متن دیگر «تا نیمهٔ نوامبر». هر دو سنجیده می‌شود.' },
-      note: 'پیش‌بینی ۲۶ مهر ۱۴۰۵ در قیمت حدود ۴٬۱۶۰: انس به ۳٬۷۸۰ تا ۳٬۸۰۰ «از مهرماه تا نیمهٔ آبان‌ماه / نیمهٔ نوامبر». منبع در ۲۷ آبان ادعای تحقق کرده (لمس ۳٬۷۵۰).' },
-    { id: 'isaac-ons-20261118', key: 'g:ons', source: 'Isaac Finance', issued: 20261118, px: 3768, dir: 'down', zone: [3480, 3520], from: 20261215, to: 20270107,
-      note: 'هدف بعدی انس: ۳٬۴۸۰ تا ۳٬۵۲۰ در بازهٔ ۲۴ آذر ۱۴۰۵ تا ۱۷ دی ۱۴۰۵ (۱۵ دسامبر ۲۰۲۶ تا ۷ ژانویهٔ ۲۰۲۷). روش تحلیل اعلام نشده.' },
-    { id: 'isaac-btc-20261118', key: 'x:btc', source: 'Isaac Finance', issued: 20261118, px: 62562, dir: 'down', zone: [50000, 57000], deep: 49700, from: 20261215, to: 20270115,
-      note: 'بیت‌کوین در ۶۲٬۵۶۲؛ ساختار نزولی ۷ هفته‌ای؛ اهداف ۵۷ تا ۵۰ هزار و ۴۹٬۷۰۰؛ کف زمانی نیمهٔ دوم دسامبر ۲۰۲۶ تا نیمهٔ اول ژانویهٔ ۲۰۲۷. روش اعلام نشده.' }];
-  function U() { return Hub.util; }
-  function isF(x) { return typeof x === 'number' && isFinite(x); }
-  function load() { var S = (U() && U().store.get(KEY, null)) || null; if (!S || S.v !== 1) S = { v: 1, views: [], seeded: [] };
-    DEF.forEach(function (d) { if (S.seeded.indexOf(d.id) < 0) { S.views.push(JSON.parse(JSON.stringify(d))); S.seeded.push(d.id); } }); return S; }
-  function save(S) { try { U().store.set(KEY, S); } catch (e) { /* ignore */ } }
-  function list() { return load().views; }
-  function add(v) { var S = load(); v.id = v.id || ('v' + Date.now()); S.views = S.views.filter(function (x) { return x.id !== v.id; }).concat([v]); save(S); return v; }
-  function remove(id) { var S = load(); S.views = S.views.filter(function (x) { return x.id !== id; }); save(S); }
-  function forKey(k) { return list().filter(function (v) { return v.key === k; }); }
-
-  /* the price rows of an engine key: g:<tgju key> (gold, coins, FX), x:<global id> (crypto, energy, rates) */
-  var STORES = { g: ['hub.sig-gold.v1', 'hub.sig-fx.v1'], x: ['hub.sigglobal.v1'] };
-  function rowsOf(key) { var p = String(key).split(':'), L = STORES[p[0]] || [], id = p.slice(1).join(':');
-    for (var i = 0; i < L.length; i++) { var S = U() && U().store.get(L[i], null), r = S && S.data && S.data[id]; if (Array.isArray(r) && r.length) return r.filter(function (x) { return x && isF(x.close) && x.close > 0; }); } return []; }
-  function d2n(d) { return Date.UTC(Math.floor(d / 10000), Math.floor(d / 100) % 100 - 1, d % 100) / 864e5; }
-  function n2d(n) { var t = new Date(n * 864e5); return t.getUTCFullYear() * 10000 + (t.getUTCMonth() + 1) * 100 + t.getUTCDate(); }
-  function today() { var t = new Date(Date.now() + 3.5 * 3600e3); return t.getUTCFullYear() * 10000 + (t.getUTCMonth() + 1) * 100 + t.getUTCDate(); }
-  function lo(r) { return isF(r.low) && r.low > 0 ? r.low : r.close; }
-  function hi(r) { return isF(r.high) && r.high > 0 ? r.high : r.close; }
-  // the price level a direction must reach: the near edge of the zone (down: top of the zone; up: bottom)
-  function edge(v) { var a = Math.min(v.zone[0], v.zone[1]), b = Math.max(v.zone[0], v.zone[1]); return v.dir === 'up' ? a : b; }
-  function touched(r, v, lvl) { return v.dir === 'up' ? hi(r) >= lvl : lo(r) <= lvl; }
-  function atr(rows) { var t = rows.slice(-15), s = 0, k = 0; for (var i = 1; i < t.length; i++) { var a = t[i], p = t[i - 1].close;
-      var tr = isF(a.high) && isF(a.low) ? Math.max(a.high - a.low, Math.abs(a.high - p), Math.abs(a.low - p)) : Math.abs(a.close - p); s += tr; k++; } return k ? s / k : NaN; }
-  // sessions per calendar day in the last year of this series (gold ≈ 5/7, crypto 1)
-  function density(rows) { if (rows.length < 30) return 1; var L = d2n(rows[rows.length - 1].date), c = rows.filter(function (r) { return d2n(r.date) > L - 365; }).length; return Math.min(1, Math.max(0.3, c / 365)); }
-
-  /* base rate: share of start days t from which the price moved by `mv` (−0.07 = 7 % down) by day b (and inside [a, b]) */
-  function baseRate(rows, mv, aDays, bDays, dir, keep) {
-    var dn = density(rows), A = Math.max(1, Math.round(aDays * dn)), B = Math.max(A, Math.round(bDays * dn)), N = rows.length, by = 0, inn = 0, cnt = 0;
-    if (N < B + 60) return { n: 0, A: A, B: B };
-    for (var t = 0; t + B < N; t++) { if (keep && !keep(t)) continue; var lvl = rows[t].close * (1 + mv), hitBy = false, hitIn = false;
-      for (var j = t + 1; j <= t + B; j++) { var ok = dir === 'up' ? hi(rows[j]) >= lvl : lo(rows[j]) <= lvl; if (ok) { hitBy = true; if (j >= t + A) { hitIn = true; break; } } }
-      cnt++; if (hitBy) by++; if (hitIn) inn++; }
-    return { n: cnt, eff: Math.max(1, Math.round(cnt / B)), A: A, B: B, pBy: cnt ? by / cnt : NaN, pIn: cnt ? inn / cnt : NaN, from: rows[0].date, to: rows[N - 1].date };
-  }
-  // drawdown (down views) or run-up (up views) of the close against its 60-session extreme — the «similar situation» filter
-  function dd60(rows, t, dir) { var m = rows[t].close; for (var j = Math.max(0, t - 59); j <= t; j++) m = dir === 'up' ? Math.min(m, rows[j].close) : Math.max(m, rows[j].close); return rows[t].close / m - 1; }
-  /* both versions: every start day, and only start days already in a similar move (at least 60 % of today's 60-session
-     drawdown, and at least 5 %) — a fall that has already started may be more likely to continue, or to have exhausted itself */
-  function rates(rows, mv, a, b, dir) { var all = baseRate(rows, mv, a, b, dir), cur = dd60(rows, rows.length - 1, dir), th = dir === 'up' ? Math.max(0.05, cur * 0.6) : Math.min(-0.05, cur * 0.6);
-    var cond = Math.abs(cur) >= 0.05 ? baseRate(rows, mv, a, b, dir, function (t) { var d = dd60(rows, t, dir); return dir === 'up' ? d >= th : d <= th; }) : null;
-    all.cur = cur; all.cond = cond; all.th = th; return all; }
-
-  function evaluate(v, opt) {
-    opt = opt || {}; var rows = opt.rows || rowsOf(v.key), now = opt.today || today(), lvl = edge(v), out = { v: v, rows: rows.length, lvl: lvl };
-    if (!rows.length) { out.status = 'nodata'; out.fa = 'دادهٔ قیمت این دارایی در مرورگر نیست'; return out; }
-    var after = rows.filter(function (r) { return r.date > v.issued; }), hit = null, deep = null;
-    for (var i = 0; i < after.length; i++) { if (!hit && touched(after[i], v, lvl)) hit = after[i]; if (isF(v.deep) && !deep && touched(after[i], v, v.deep)) deep = after[i]; }
-    var last = rows[rows.length - 1], end = function (to) { return hit ? (hit.date < v.from ? 'early' : hit.date <= to ? 'hit' : 'late') : now > to ? 'missed' : now < v.from ? 'before' : 'inside'; };
-    out.status = end(v.to); out.hit = hit; out.deep = deep; out.last = last;
-    if (v.alt && v.alt.to) out.altStatus = end(v.alt.to);
-    if (hit) { out.lateDays = Math.max(0, Math.round(d2n(hit.date) - d2n(v.to))); if (v.alt && v.alt.to) out.altLateDays = Math.max(0, Math.round(d2n(hit.date) - d2n(v.alt.to))); }
-    // path extreme since the call (lowest low for a down view) — how far the market went in the called direction
-    var ext = after.reduce(function (m, r) { var x = v.dir === 'up' ? hi(r) : lo(r); return m == null ? x : v.dir === 'up' ? Math.max(m, x) : Math.min(m, x); }, null);
-    out.ext = ext; out.extPct = isF(ext) && v.px ? ext / v.px - 1 : NaN;
-    var A = atr(rows); out.atr = A; out.distPct = lvl / last.close - 1; out.distAtr = isF(A) && A > 0 ? (lvl - last.close) / A : NaN;
-    if (out.status === 'before' || out.status === 'inside') {
-      var ld = d2n(last.date), a = Math.max(0, d2n(v.from) - ld), b = Math.max(1, d2n(v.to) - ld), mv = lvl / last.close - 1;
-      out.base = mv * (v.dir === 'up' ? 1 : -1) <= 0 ? { already: true } : rates(rows, mv, a, b, v.dir);
-      out.base.mv = mv; out.base.aDays = a; out.base.bDays = b;
-      if (isF(v.deep)) { var mv2 = v.deep / last.close - 1; out.baseDeep = rates(rows, mv2, a, b, v.dir); out.baseDeep.mv = mv2; }
-    }
-    // the engine's own levels for the same asset (central verdict)
-    var C = U() && U().store.get('hub.central.v1', null), rec = C && C.by && C.by[v.key], L = rec && rec.lv || (rec && rec.L) || null;
-    if (L) { var e = [], fl = L.floor, lowZ = Math.min(v.zone[0], v.zone[1]), hiZ = Math.max(v.zone[0], v.zone[1]);
-      if (fl && isF(fl[0])) { var f0 = Math.min(fl[0], fl[1]), f1 = Math.max(fl[0], fl[1]);
-        e.push(hiZ < f0 ? { k: 'below', t: 'هدف ' + pc(hiZ / f0 - 1) + ' زیر کف آماری موتور (' + f(f0) + '–' + f(f1) + ')' } : lowZ > f1 ? { k: 'above', t: 'هدف بالای کف آماری موتور (' + f(f0) + '–' + f(f1) + ')' } : { k: 'overlap', t: 'هدف با کف آماری موتور (' + f(f0) + '–' + f(f1) + ') هم‌پوشانی دارد' }); }
-      else e.push({ k: 'nofloor', t: 'موتور برای این دارایی محدودهٔ کف آماری ندارد' + (rows.length < 700 ? ' (تاریخچه ' + rows.length + ' روز؛ کمتر از نیاز)' : '') });
-      var dnc = isF(L.dn) ? L.dn : L.dnConf; if (isF(dnc)) e.push({ k: 'dn', t: 'سطح تأیید نزولی موتور ' + f(dnc) + (last.close < dnc ? ' — قیمت زیر آن است (هم‌جهت با دید نزولی)' : ' — قیمت بالای آن است') });
-      if (isF(L.stop) && v.dir === 'down' && rec.st === 'ok') e.push({ k: 'risk', t: 'هشدار: هدف این دیدگاه زیر حد ضرر سیگنال خرید فعال موتور (' + f(L.stop) + ') است' });
-      out.engine = { tier: rec.tier, st: rec.st, stFa: rec.stFa, items: e }; }
-    return out;
-  }
-  function f(x) { return Hub.tradeEngine && Hub.tradeEngine.fa ? Hub.tradeEngine.fa(x, Math.abs(x) < 100 ? 2 : 0) : String(Math.round(x)); }
-  function pc(x) { return (x >= 0 ? '+' : '−') + (Math.abs(x) * 100).toFixed(1) + '٪'; }
-  var STFA = { hit: 'محقق در بازهٔ اعلام‌شده', late: 'قیمت محقق شد، اما بعد از بازهٔ زمانی', early: 'قیمت پیش از شروع بازه محقق شد', missed: 'محقق نشد', before: 'در انتظار (بازه هنوز شروع نشده)', inside: 'در انتظار (داخل بازه)', nodata: 'بدون داده' };
-
-  /* per-source track record from resolved views; the price-and-time standard counts only «hit» as a success */
-  function record() { var by = {}; list().forEach(function (v) { var e = evaluate(v), s = by[v.source] = by[v.source] || { source: v.source, n: 0, hit: 0, late: 0, early: 0, missed: 0, open: 0 };
-      if (/^(hit|late|early|missed)$/.test(e.status)) { s.n++; s[e.status]++; } else s.open++; });
-    return Object.keys(by).map(function (k) { var s = by[k]; s.timeRate = s.n ? s.hit / s.n : NaN; s.priceRate = s.n ? (s.hit + s.late + s.early) / s.n : NaN; return s; }); }
-
-  Hub.extViews = { KEY: KEY, DEF: DEF, load: load, list: list, add: add, remove: remove, forKey: forKey, evaluate: evaluate, record: record, baseRate: baseRate, rowsOf: rowsOf, STFA: STFA, pc: pc, n2d: n2d, d2n: d2n };
-})(typeof window !== 'undefined' ? window : globalThis);
-
 /* js/core/datasync.js */
 /* =====================================================================
  * DATA SYNC — PC → GitHub → phone.
@@ -28645,11 +28531,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['۱۵. شرط ابطال سناریو', r.tier === 'floor' && isF(L.tzInv) ? 'بسته‌شدن زیر ' + n(L.tzInv) + ' (شکست محدودهٔ کف)' : isF(L.stop) ? 'بسته‌شدن زیر ' + n(L.stop) + (isF(L.inv) && trendOf(r) === 'down' ? '؛ دید نزولی با بسته‌شدن بالای ' + n(L.inv) + ' باطل می‌شود' : '') : NC],
       ['وضعیت سیگنال (مرکزی)', r.stFa + ' · ' + r.tierFa + (r.sid ? ' · شناسه ' + r.sid : '')],
       ['افق‌ها', ['s', 'm', 'l'].map(function (k) { var v = r.hzv && r.hzv[k]; return v ? v.fa.split(' (')[0] + ': ' + (VFA[v.view] || v.view) : ''; }).filter(Boolean).join(' · ') || NC],
-      ['تاریخ داده', (r.date || '—') + (isF(r.age) ? ' (' + fa(r.age, 0) + ' ساعت پیش دریافت شده)' : '')]].concat(extField(r));
+      ['تاریخ داده', (r.date || '—') + (isF(r.age) ? ' (' + fa(r.age, 0) + ' ساعت پیش دریافت شده)' : '')]];
   }
-  // outside analysts' views on this asset: shown, scored, never merged into the fields above
-  function extField(r) { var EV = Hub.extViews; if (!EV || !r.key) return []; var L = EV.forKey(r.key); if (!L.length) return [];
-    return [['دیدگاه بیرونی (خارج از موتور)', L.map(function (v) { var e = EV.evaluate(v); return v.source + ': ' + zone(v.zone) + ' تا ' + sh(v.to) + ' — ' + (EV.STFA[e.status] || e.status); }).join(' · ')]]; }
   function assetRow(r, open) { var a = actionOf(r);
     return h('details', { class: 'prio-card', open: !!open }, [h('summary', null, [h('div', { class: 'mini-l1' }, [h('strong', { 'data-notr': '1', text: r.sym }), chip(CLS[r.cls] || r.cls, 'sev-info'), chip(r.tierFa, TIERC[r.tier]), a ? chip(a[2], a[1] <= 1 ? 'fit-rec' : 'sev-warn') : null,
       h('span', { class: 'small', 'data-notr': '1', text: 'قیمت ' + n(r.px, r) + (r.L && r.L.buy ? ' · ورود ' + zone(r.L.buy) : '') + (r.L && isF(r.L.stop) ? ' · ضرر ' + n(r.L.stop) : '') + (r.L && r.L.tp && isF(r.L.tp[0]) ? ' · هدف ۱ ' + n(r.L.tp[0]) : '') + (isF(r.rr) ? ' · R:R ' + fa(r.rr, 1) : '') })])]),
@@ -28854,41 +28737,6 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var lg = ctx.panel('گزارش اجرا (۴۰ مورد آخر)', [table(['زمان', 'لایه', 'نتیجه', 'شرح'], S.log.slice().reverse().slice(0, 40).map(function (l) { return [dt(l.at), SR.MK[l.m] || ({ eval: 'محاسبهٔ دوباره' })[l.m] || l.m, l.ok ? 'موفق' : 'ناموفق', l.t]; }))]);
     return ctx.group([stP, set1, lg]); }
 
-  /* ---------- external views (Hub.extViews): outside forecasts, scored against the data, kept out of the engine ---------- */
-  function extTab(ctx) {
-    var EV = Hub.extViews; if (!EV) return ctx.panel('دیدگاه‌های بیرونی', [P('ماژول دیدگاه‌های بیرونی بارگذاری نشده است.')]);
-    var pc = EV.pc, p0 = function (x) { return isF(x) ? fa(x * 100, 0) + '٪' : '—'; };
-    var rows = EV.list().map(function (v) { var e = EV.evaluate(v), b = e.base, bd = e.baseDeep, sym = (ctx.R.C && ctx.R.C.by[v.key] || {}).sym || v.key;
-      var st = (EV.STFA[e.status] || e.status) + (e.status === 'late' ? ' (' + fa(e.lateDays, 0) + ' روز دیرتر' + (isF(e.altLateDays) ? '؛ با خوانش «نیمهٔ آبان» ' + fa(e.altLateDays, 0) + ' روز' : '') + ')' : '') + (e.hit ? ' · لمس در ' + sh(e.hit.date) : '');
-      var br = !b ? '—' : b.already ? 'قیمت هم‌اکنون در هدف است' : !b.n ? 'تاریخچه کافی نیست' :
-        'همهٔ روزها: تا پایان بازه ' + p0(b.pBy) + '، داخل بازه ' + p0(b.pIn) + ' (' + fa(b.eff, 0) + ' دورهٔ مستقل)' +
-        (b.cond && b.cond.n ? ' · روزهای مشابه (افت ۶۰‌جلسه‌ای ≥ ' + p0(-b.th) + '): ' + p0(b.cond.pBy) + ' / ' + p0(b.cond.pIn) + ' (' + fa(b.cond.eff, 0) + ' دوره)' : '') +
-        (bd && bd.n ? ' · هدف عمیق ' + n(v.deep) + ': ' + p0(bd.pBy) + ' / ' + p0(bd.pIn) : '') + ' · داده ' + sh(b.from) + ' تا ' + sh(b.to);
-      var en = e.engine ? e.engine.items.map(function (x) { return x.t; }).join('؛ ') : 'حکم مرکزی برای این دارایی نیست';
-      return [sym, v.source, sh(v.issued) + ' @ ' + n(v.px), zone(v.zone) + (isF(v.deep) ? ' / ' + n(v.deep) : ''), sh(v.from) + ' تا ' + sh(v.to), st,
-        e.last ? pc(e.distPct) + (isF(e.distAtr) ? ' (' + fa(Math.abs(e.distAtr), 1) + ' ATR)' : '') : '—', br, en,
-        h('button', { class: 'btn ghost', type: 'button', text: 'حذف', onclick: function () { EV.remove(v.id); ctx.rerender(); } })]; });
-    var tbl = ctx.panel('دیدگاه‌های ثبت‌شده و سنجش آن‌ها با داده', [table(['دارایی', 'منبع', 'تاریخ و قیمت صدور', 'هدف', 'بازهٔ زمانی', 'وضعیت', 'فاصله تا هدف', 'نرخ پایه از تاریخچهٔ همین دارایی', 'نسبت با موتور', ''], rows),
-      P('«نرخ پایه» یعنی در تاریخچهٔ همین دارایی، از چند درصد روزها قیمت در همین فاصلهٔ زمانی به همین اندازه حرکت کرده است؛ نسخهٔ «همهٔ روزها» و نسخهٔ «روزهای مشابه» هر دو نشان داده می‌شود. پنجره‌ها هم‌پوشان‌اند، پس تعداد دوره‌های مستقل (نه تعداد روزها) حجم واقعی نمونه است. پیش‌بینی وقتی ارزش افزوده دارد که دقت آن در چند مورد ثبت‌شده از این نرخ پایه بیشتر باشد.'),
-      P('توضیح هر مورد: ' + EV.list().map(function (v) { return v.note || ''; }).filter(Boolean).join(' | '), 'small muted')]);
-    var rec = ctx.panel('کارنامهٔ منابع', [table(['منبع', 'موارد بسته‌شده', 'قیمت و زمان درست', 'فقط قیمت (دیر یا زود)', 'محقق نشد', 'باز'], EV.record().map(function (s) { return [s.source, fa(s.n, 0), fa(s.hit, 0), fa(s.late + s.early, 0), fa(s.missed, 0), fa(s.open, 0)]; })),
-      P('سیاست فعلی: این دیدگاه‌ها هیچ سیگنال، رتبه یا سطحی از موتور را تغییر نمی‌دهند؛ موتور فقط شواهد آزموده‌شده را می‌پذیرد و یک منبع با یک مورد (آن هم با تأخیر زمانی) کارنامه به حساب نمی‌آید. اگر پس از چند مورد ثبت‌شده کارنامهٔ منبعی از نرخ پایه بهتر بود، تصمیم دادن وزن به آن با شماست.')]);
-    // add a view
-    var C = ctx.R.C, keys = C ? Object.keys(C.by).filter(function (k) { return k[0] !== 's'; }) : [], f = {};
-    var inp = function (k, lab, type, w, ph) { var i = h('input', { type: type || 'number', class: 'f-in', style: 'width:' + (w || 6) + 'rem', placeholder: ph || '', 'aria-label': lab }); i.addEventListener('change', function () { f[k] = i.value; }); return h('label', { class: 'small', style: 'margin-inline-end:.6rem' }, [lab + ' ', i]); };
-    var ks = h('select', { class: 'f-sel', 'aria-label': 'دارایی' }, keys.map(function (k) { return h('option', { value: k, text: C.by[k].sym }); })); f.key = keys[0];
-    ks.addEventListener('change', function () { f.key = ks.value; });
-    var dir = h('select', { class: 'f-sel', 'aria-label': 'جهت' }, [h('option', { value: 'down', text: 'نزولی' }), h('option', { value: 'up', text: 'صعودی' })]); f.dir = 'down'; dir.addEventListener('change', function () { f.dir = dir.value; });
-    var gd = function (x) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(x || ''); return m ? +(m[1] + m[2] + m[3]) : NaN; };
-    var addB = h('button', { class: 'btn primary', type: 'button', text: 'ثبت دیدگاه', onclick: function () {
-      var v = { key: f.key, source: (f.source || '').trim(), issued: gd(f.issued), px: +f.px, dir: f.dir, zone: [+f.z1, +f.z2], from: gd(f.from), to: gd(f.to), note: (f.note || '').trim() };
-      if (!v.source || !isF(v.issued) || !(v.px > 0) || !(v.zone[0] > 0) || !(v.zone[1] > 0) || !isF(v.from) || !isF(v.to) || v.to < v.from) { U.toast('همهٔ خانه‌ها لازم است (تاریخ‌ها به میلادی، پایان بعد از شروع).', 'bad'); return; }
-      EV.add(v); U.toast('ثبت شد.', 'good'); ctx.rerender(); } });
-    var form = ctx.panel('ثبت دیدگاه تازه', [h('div', null, [h('label', { class: 'small', style: 'margin-inline-end:.6rem' }, ['دارایی ', ks]), h('label', { class: 'small', style: 'margin-inline-end:.6rem' }, ['جهت ', dir]),
-      inp('source', 'منبع', 'text', 9), inp('issued', 'تاریخ صدور', 'date', 9), inp('px', 'قیمت در صدور'), inp('z1', 'هدف از'), inp('z2', 'هدف تا'), inp('from', 'بازه از', 'date', 9), inp('to', 'بازه تا', 'date', 9), inp('note', 'توضیح', 'text', 16), addB])]);
-    return ctx.group([tbl, rec, form]);
-  }
-
   // a tab returns a group; a single panel (early return) is wrapped so the toolkit always receives { el }
   function W(fn) { return function (ctx) { var r = fn(ctx); return r && r.el && !r.nodeType ? r : ctx.group([r]); }; }
   TK.define({
@@ -28901,7 +28749,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ['Awaiting confirmation', function () { return fa(cnt('wait'), 0); }, function () { return 'نزدیک کف: ' + fa(cnt('floor'), 0); }],
       ['Sell / exit', function () { return fa(R().recs.filter(function (r) { return r.sell === 'confirmed' || (r.held && /^(close|sell|reduce)$/.test(r.act)); }).length, 0); }, function () { return 'محدودهٔ سقف: ' + fa(R().recs.filter(function (r) { return r.sell === 'inZone'; }).length, 0); }],
       ['New alerts', function () { var A = Hub.alerts ? Hub.alerts.load() : null; return fa(A ? A.log.filter(function (e) { return e.state === 'new'; }).length : 0, 0); }, function () { var u = U.store.get('hub.updrun.v1', null); return u && u.doneAt ? 'به‌روزرسانی ' + ago(u.doneAt) : 'به‌روزرسانی نشده'; }]]; },
-    tabs: [{ group: 'Decision', items: [['dash', 'داشبورد تصمیم', W(dashTab)], ['gold', 'طلا و سکه: کف و سقف', W(goldTab)], ['why', 'چرا خرید نیست؟', W(whyTab)], ['sync', 'هماهنگی سیگنال‌ها', W(syncTab)], ['ext', 'دیدگاه‌های بیرونی', W(extTab)]] },
+    tabs: [{ group: 'Decision', items: [['dash', 'داشبورد تصمیم', W(dashTab)], ['gold', 'طلا و سکه: کف و سقف', W(goldTab)], ['why', 'چرا خرید نیست؟', W(whyTab)], ['sync', 'هماهنگی سیگنال‌ها', W(syncTab)]] },
       { group: 'Monitoring', items: [['alerts', 'مرکز اعلان‌ها', W(alertsTab)], ['refresh', 'زمان‌بندی و پایش', W(refreshTab)]] }]
   });
   Hub.tradeCenter = { actionOf: actionOf, fields: fields, bubbles: bubbles, trendOf: trendOf };
@@ -28937,11 +28785,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611190818) */
+/* PWA: offline cache + app updates (version 202611190826) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611190818';
+  window.HUB_APP_VERSION = '202611190826';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
