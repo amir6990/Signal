@@ -25,7 +25,10 @@
     tp: ['important', 'هدف سود محقق شد', 'sell'], actChg: ['important', 'اقدام پیشنهادی تغییر کرد', 'sell'], reduce: ['important', 'ذخیرهٔ سود / کاهش موقعیت', 'sell'],
     preBuy: ['pre', 'در آستانهٔ فرصت خرید — در انتظار تأیید', 'pre'], preBreak: ['pre', 'در آستانهٔ شکست سطح تأیید صعود', 'pre'], preFloor: ['pre', 'در محدودهٔ احتمالی کف — برگشت هنوز تأیید نشده', 'pre'],
     preCeil: ['pre', 'در محدودهٔ احتمالی سقف — فروش هنوز تأیید نشده', 'pre'], touch: ['pre', 'قیمت به سطح کلیدی رسید — محاسبهٔ دوباره', 'pre'],
-    weak: ['info', 'سیگنال تضعیف یا باطل شد', 'info'], expired: ['info', 'سیگنال منقضی شد', 'info'], data: ['info', 'نیازمند تأیید داده', 'info'] };
+    weak: ['info', 'سیگنال تضعیف یا باطل شد', 'info'], expired: ['info', 'سیگنال منقضی شد', 'info'], data: ['info', 'نیازمند تأیید داده', 'info'],
+    watch: ['important', 'دارایی تحت پایش: تغییر وضعیت کف یا سقف', 'pre'] };
+  // floor / ceiling states of the central record (directive 18 · 2-3); the watchlist (hub.watch.v1) is alerted on every change into one of them
+  var S4FA = { nearFloor: 'نزدیک کف احتمالی (برگشت تأیید نشده)', upConf: 'تأیید برگشت صعودی', nearCeil: 'نزدیک سقف احتمالی', dnConf: 'تأیید برگشت نزولی' };
   var CLSFA = { stock: 'سهام', fund: 'صندوق', gold: 'طلا و سکه', fx: 'ارز', crypto: 'رمزارز', commodity: 'کالا و انرژی', option: 'اختیار معامله' };
   function U() { return Hub.util; }
   function isF(x) { return typeof x === 'number' && isFinite(x); }
@@ -59,6 +62,7 @@
       case 'preCeil': return 'اگر دارید: ذخیرهٔ بخشی از سود یا حد ضرر متحرک؛ فروش کامل فقط با بسته‌شدن زیر ' + fa(c.tzConf) + '.';
       case 'touch': return 'قیمت لحظه‌ای به سطح رسید؛ تأیید یا ابطال پس از محاسبهٔ دوباره با دادهٔ پایانی اعلام می‌شود.';
       case 'weak': return 'اقدام قبلی دیگر معتبر نیست؛ وضعیت جدید را در داشبورد ببینید.';
+      case 'watch': return c.s4 === 'nearFloor' ? 'هنوز خرید نکنید؛ شرط تأیید: بسته‌شدن بالای ' + fa(c.tzConf) + '.' : c.s4 === 'upConf' ? 'برگشت صعودی تأیید شد؛ وضعیت سیگنال را در مرکز اعلان‌ها ببینید.' : c.s4 === 'nearCeil' ? 'اگر دارید: ذخیرهٔ بخشی از سود را بررسی کنید.' : c.s4 === 'dnConf' ? 'اگر دارید: خروج یا کاهش طبق سطح تأیید نزولی.' : '';
       default: return '';
     }
   }
@@ -66,10 +70,10 @@
 
   /* ---- 1 · full layer: compare the new central verdict with the previous one ---- */
   function evaluateCentral(C, fresh) {
-    var S = load(), out = [], by = (C && C.by) || {}, first = !Object.keys(S.snap).length;
+    var S = load(), out = [], by = (C && C.by) || {}, first = !Object.keys(S.snap).length, w0 = U().store.get('hub.watch.v1', null), WL = w0 && Array.isArray(w0.keys) ? w0.keys : [];
     Object.keys(by).forEach(function (k) {
       var r = by[k].key ? by[k] : Object.assign({ key: k }, by[k]), p = S.snap[k] || null, held = !!r.held, stale = fresh && fresh[r.cls] === false;
-      if (!p && first) { S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held }; return; }   // the first run only records the baseline: nothing is «new» yet
+      if (!p && first) { S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: r.st4 || r.s4 || null }; return; }   // the first run only records the baseline: nothing is «new» yet
       var was = p || {};
       if (r.tier === 'ok' && was.tier !== 'ok') out.push(ev(stale ? 'data' : 'buyOk', r, null, stale ? 'سیگنال خرید روی دادهٔ قدیمی؛ تا دریافت دادهٔ تازه قابل اقدام نیست.' : r.why));
       else if (was.tier === 'ok' && r.tier !== 'ok') out.push(ev(r.st === 'exp' ? 'expired' : 'weak', r, null, r.stFa + ' — ' + (r.rcWhy || r.why)));
@@ -78,7 +82,9 @@
       else if (!held && r.sell === 'confirmed' && was.sell !== 'confirmed') out.push(ev('sellOk', r, null, 'برگشت نزولی در محدودهٔ سقف احتمالی تأیید شد. ' + (r.actWhy || '')));
       if (r.tier === 'floor' && r.tzState === 'inZone' && was.tzState !== 'inZone') out.push(ev('preFloor', r));
       if (r.sell === 'inZone' && was.sell !== 'inZone') out.push(ev('preCeil', r));
-      S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held };
+      var s4 = r.st4 || r.s4 || null;
+      if (WL.indexOf(k) >= 0 && s4 && S4FA[s4] && was.s4 !== undefined && was.s4 !== s4) out.push(ev('watch', r, { watch: true, s4: s4 }, 'وضعیت کف/سقف: ' + S4FA[s4] + '.'));
+      S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: s4 };
     });
     save(S); return out;
   }
@@ -111,9 +117,10 @@
   }
 
   /* ---- 3 · delivery: dedup, history, toast, system notification ---- */
-  function idOf(e) { var lv = e.t === 'stop' ? e.stop : e.t === 'tp' ? e.tp1 : e.t === 'preBreak' || e.t === 'touch' ? e.up || e.tzConf : e.t === 'preFloor' || e.t === 'preCeil' ? e.tzConf : ''; return [e.key, e.t, e.sid || '', isF(lv) ? Math.round(lv) : ''].join('|'); }
+  function idOf(e) { var lv = e.t === 'stop' ? e.stop : e.t === 'tp' ? e.tp1 : e.t === 'preBreak' || e.t === 'touch' ? e.up || e.tzConf : e.t === 'preFloor' || e.t === 'preCeil' ? e.tzConf : ''; return [e.key, e.t, e.sid || '', isF(lv) ? Math.round(lv) : ''].join('|') + (e.t === 'watch' ? '|' + e.s4 : ''); }
   function allowed(S, e) {
-    var s = S.set; if (!s.on) return false; if (s.cls && s.cls[e.cls] === false) return false;
+    var s = S.set; if (!s.on) return false; if (e.watch) return true;   // the user asked to watch this asset: class and side switches do not mute it
+    if (s.cls && s.cls[e.cls] === false) return false;
     if (e.side === 'buy' && !s.buy) return false; if (e.side === 'sell' && !s.sell && e.t !== 'stop') return false; if ((e.side === 'pre') && !s.pre) return false; if (e.side === 'info' && !s.info) return false;
     if (s.minConf && isF(e.conf) && e.conf < s.minConf && e.side !== 'sell') return false; return true;
   }
