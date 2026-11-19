@@ -10843,8 +10843,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
           if (hit.length === 1) { o.ftype = hit[0].f.t; o.ftSrc = 'registry'; o.manager = hit[0].f.manager; o.start = hit[0].f.start; o.reg = hit[0].f.reg; }
           else { o.ftype = typeByName(m.name); o.ftSrc = 'name'; if (/طلا|سکه/.test(m.name) && o.ftype === 'commodity') o.ftype = 'gold'; } } });
       R.at = Date.now(); R.date = sess.date; R.nIns = nIns; R.errs = errs; R.v = 1;
-      try { U().store.set(KEY, R); } catch (e) { /* ignore */ }
-      return R; });
+      /* second route for the industry code (cross-check, directive 20): if the market watch carries no csv for a share (field name not
+         confirmed by every client library), its official sector is read from Instrument/GetInstrumentInfo (sector.cSecVal / lSecVal, the
+         field the hub's quote already uses) — at most 60 per update, kept for good, so the whole market is covered within a few updates */
+      var miss = Object.keys(R.ins).filter(function (c) { var o = R.ins[c]; return o.type === 'stock' && (!o.cs || !o.csName) && !o.csTried; }).slice(0, 60), j = 0;
+      var one = function () { if (j >= miss.length || !T.instrumentInfo) return Promise.resolve(); var c = miss[j++], o = R.ins[c];
+        return T.instrumentInfo(c).then(function (i) { var sc = i && i.sector || {}; o.csTried = 1; if (sc.cSecVal) { o.cs = String(sc.cSecVal).trim(); o.csName = String(sc.lSecVal || R.ind[o.cs] || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').trim(); o.csSrc = 'GetInstrumentInfo'; if (o.cs && o.csName && !R.ind[o.cs]) R.ind[o.cs] = o.csName; } }, function () { /* retried next update */ }).then(one); };
+      return Promise.all([one(), one(), one(), one()]).then(function () { try { U().store.set(KEY, R); } catch (e) { /* ignore */ } return R; }); });
   }
   /* bring the stock store's watch list in line with the registry: official industry code / name and fund type on every row; every share
      and fund of the market watch that is missing is added (active, marked «added by the registry»). Returns the number added. */
@@ -29764,11 +29769,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611191351) */
+/* PWA: offline cache + app updates (version 202611191414) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611191351';
+  window.HUB_APP_VERSION = '202611191414';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
