@@ -97,6 +97,7 @@
         else if (pl === 'early' || pl === 'serious' || pl === 'confirmed') out.push(ev('cycInvalid', r, { cy: cy }, 'سطح هشدار زمانی از «' + pl + '» به «' + cl + '» رسید.')); }
       S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: s4, cy: cl };
     });
+    S.cenAt = C && C.at || null; S.cenRun = Date.now();   // which central version the alert baseline reflects (directive 22 · 11, test 6)
     save(S); return out;
   }
 
