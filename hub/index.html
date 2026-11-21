@@ -25908,11 +25908,15 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (l0 && isF(l0.hi) && lv && lv.entry && Math.max(lv.entry[0], lv.entry[1]) > l0.hi * 1.001 && g.code !== 'ok') { moved = true; lv = { entry: [l0.lo, l0.hi], stop: l0.stop, tp: l0.tp || lv.tp }; }
     var tol = isF(atr) ? 0.25 * atr : 0, lo = lv && lv.entry ? Math.min(lv.entry[0], lv.entry[1]) : NaN, hi = lv && lv.entry ? Math.max(lv.entry[0], lv.entry[1]) : NaN;
     o.rr = lv && cl > lv.stop ? (lv.tp[1] - cl) / (cl - lv.stop) : NaN;
-    if (isF(lo) && isF(cl)) { o.en = lv.stop && cl <= lv.stop ? 'stop' : cl > hi + tol ? (o.rr >= minRR ? 'above' : 'missed') : cl < lo ? 'below' : 'in'; o.dist = cl > hi ? cl / hi - 1 : cl < lo ? cl / lo - 1 : 0; }
+    // a stop only exists after entry: a breakout plan whose confirmation level is still above the price has not been triggered,
+    // so a price under its (entry-relative) stop is "waiting below the entry", not "stopped out"
+    var bu = x.S && x.S.bull, trg = tr0 && tr0.dIn ? true : !(bu && bu.type !== 'pullback' && isF(bu.confirm) && cl < bu.confirm);
+    if (isF(lo) && isF(cl)) { o.en = lv.stop && cl <= lv.stop && trg ? 'stop' : lv.stop && cl <= lv.stop ? 'below' : cl > hi + tol ? (o.rr >= minRR ? 'above' : 'missed') : cl < lo ? 'below' : 'in'; o.dist = cl > hi ? cl / hi - 1 : cl < lo ? cl / lo - 1 : 0; }
     var tr = x.track; if (tr) { o.issue = { p: tr.p0, d: tr.d0fa, id: tr.sid || tr.id, lv0: tr.lv0, chg: isF(tr.p0) && tr.p0 > 0 ? cl / tr.p0 - 1 : NaN }; }
     var nm = x.sym, z0 = isF(lo) ? fa(lo) + '–' + fa(hi) : '—';
     if (x.c && x.c.sample || g.code === 'nodata') { o.st = 'nodata'; o.why = (g.chk && g.chk[0] && !g.chk[0].ok ? g.chk[0].t : 'دادهٔ کافی برای ارزیابی نیست') + '؛ سیگنال صادر نمی‌شود.'; }
-    else if (p.st === 'target' || p.st === 'invalid' || o.en === 'stop' || (tr && /^(expired|stopped|invalid|t3)$/.test(tr.st))) { o.st = 'exp'; o.why = p.st === 'target' ? 'هدف قبلی محقق شده؛ بخش اصلی حرکت گذشته است. منتظر تنظیم تازه.' : o.en === 'stop' ? 'قیمت ' + fa(cl) + ' به حد ضرر ' + fa(lv.stop) + ' رسیده؛ سیگنال باطل است.' : 'شرایط اعتبار سیگنال به پایان رسیده (' + (p.why || '').split('؛')[0] + ').'; }
+    else if (p.st === 'target' || p.st === 'invalid' || o.en === 'stop' || (tr && /^(expired|stopped|invalid|t3)$/.test(tr.st))) { o.st = 'exp'; o.why = p.st === 'target' ? 'هدف قبلی محقق شده؛ بخش اصلی حرکت گذشته است. منتظر تنظیم تازه.' : o.en === 'stop' ? (tr0 && tr0.dIn ? 'پس از ورود، قیمت ' + fa(cl) + ' به حد ضرر ' + fa(lv.stop) + ' رسیده؛ سیگنال بسته شد.' : 'ابطال پیش از ورود: قیمت ' + fa(cl) + ' از محدودهٔ ورود عبور کرد و زیر سطح ابطال ' + fa(lv.stop) + ' رفت؛ طرح کنار گذاشته شد.') : p.st === 'invalid' ? 'ابطال ساختار: ' + (p.why || '') + '. طرح قبلی کنار گذاشته شد؛ تا شکل‌گیری تنظیم تازه سیگنالی نیست.'
+      : 'سیگنال ثبت‌شدهٔ قبلی بسته شده: ' + ({ expired: 'افق زمانی آن تمام شد' + (tr.dIn ? ' بدون رسیدن به هدف' : ' و تأیید ورود رخ نداد'), stopped: 'پس از ورود به حد ضرر رسید', invalid: 'پیش از ورود باطل شد (بسته‌شدن زیر سطح ابطال یا ازبین‌رفتن شرایط فرصت)', t3: 'به هدف سوم رسید' }[tr.st] || tr.st) + '. تا تنظیم تازه سیگنالی نیست.'; }
     else if (g.code === 'nobt' || g.code === 'review' || g.code === 'down') { o.st = 'rej'; o.why = 'دروازهٔ اعتبار ' + (g.fa || '') + ': ' + g.status + (g.chk ? ' — ' + String((g.chk.filter(function (c) { return !c.ok; })[0] || {}).t || '').replace(/[.؛\s]+$/, '') : '') + '. تا رفع این مورد سیگنال تأییدشده نیست.'; }
     else if (o.en === 'missed') { o.st = 'review'; o.why = 'قیمت فعلی ' + fa(cl) + ' از سقف محدودهٔ ورود ' + z0 + ' عبور کرده (' + pct(o.dist, 1) + ')؛ ورود در محدودهٔ قبلی دیگر ممکن نیست و از این قیمت بازده به ریسک ' + fa(o.rr, 1) + ' است. تعقیب قیمت توصیه نمی‌شود؛ با اصلاح به محدوده یا تأیید شکست و تثبیت مقاومتی تازه (فقط با استراتژی آزموده‌شده) دوباره ارزیابی می‌شود.'; }
     else if (o.en === 'above') { o.st = 'review'; o.why = 'قیمت ' + fa(cl) + ' بالاتر از محدودهٔ ورود ' + z0 + ' است (' + pct(o.dist, 1) + ')؛ محدوده جابه‌جا نمی‌شود. ورود فقط در پولبک به محدوده؛ بازده به ریسک از قیمت فعلی ' + fa(o.rr, 1) + '.'; }
@@ -26341,6 +26345,14 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       upConf: b.confirm, upTxt: b.confirmTxt, dnConf: d.confirm, dnTxt: d.confirmTxt, inv: d.invalid, dnTp: d.tp || [], floor: null, ceil: null, sup: [], res: [], tzT: [], win: null, stage: stageOf(t), tzConf: null, tzInv: null, tzStop: null, after: [] };
     if (t) { o.sup = t.sup || []; o.res = t.res || []; if (t.zone) { if (t.side === 'down') o.floor = t.zone; else o.ceil = t.zone; o.tzT = (t.T || []).map(function (q) { return q.p; }); o.tzConf = t.conf; o.tzInv = t.inv; o.tzStop = t.stop; o.after = t.after || []; o.pZone = t.pZone; o.pFake = t.pFake; o.nTz = t.n; } }
     if (pt && pt.tg && pt.tg[0] && pt.tg[0].w) o.win = { from: pt.tg[0].w.from, to: pt.tg[0].w.to, T1: pt.tg[0].p };
+    // a buy zone far above today's price is not a buy zone: it is a breakout plan that only exists once price gets there.
+    // Beyond max(2 ATR, 5%) the zone, its stop and its targets are withheld and only the confirmation level is shown with its distance.
+    var px = x.last, atr = S.atr, gap = isF(px) && px > 0 ? Math.max(isF(atr) ? 2 * atr : 0, 0.05 * px) : NaN;
+    if (o.buy && isF(gap) && o.buy[0] - px > gap) { o.far = { lo: o.buy[0], hi: o.buy[1], dist: o.buy[0] / px - 1, stop: o.stop };
+      o.farTxt = 'طرح خرید فعلاً وجود ندارد: شرط آن بسته‌شدن بالای ' + fa(o.upConf || o.buy[0]) + ' است که ' + pct(o.buy[0] / px - 1, 1) + ' بالاتر از قیمت فعلی ' + fa(px) + ' است. محدودهٔ ورود، حد ضرر و هدف فقط پس از نزدیک شدن قیمت به این سطح ساخته می‌شوند.';
+      o.buy = null; o.stop = null; o.tp = []; }
+    // the same guard for a sell plan far below the price, and bear targets that equal today's price
+    if (isF(px)) o.dnTp = (o.dnTp || []).filter(function (q) { return isF(q) && q < px * 0.995; });
     return o;
   }
   function centralBuild(R0, DC) {
@@ -26358,7 +26370,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         tz: x.tz && x.tz.zone ? { side: x.tz.side, lo: x.tz.zone[0], hi: x.tz.zone[1], conf: x.tz.conf, inv: x.tz.inv, st: x.tz.state, stFa: x.tz.stFa } : null };
       var rec = by[x.key], rc = rcOf(x, rec), hv = x.hzs || {};
       rec.tier = tierOf(x, rec); rec.tierFa = TIERFA[rec.tier]; rec.rc = rc ? rc.k : null; rec.rcFa = rc ? RCFA[rc.k] : ''; rec.rcWhy = rc ? rc.t : ''; rec.name = x.name; rec.date = x.date; rec.age = x.age;
-      rec.L = levelsOf(x); rec.hzv = {}; ['s', 'm', 'l'].forEach(function (h) { if (hv[h]) rec.hzv[h] = { view: hv[h].view, code: hv[h].code, fa: hv[h].fa, status: hv[h].status }; });
+      rec.L = levelsOf(x); if (rec.L.far) { rec.lo = rec.hi = rec.stop = rec.rr = NaN; rec.tp = []; rec.farTxt = rec.L.farTxt; }
+      // data sanity: a price that is not positive, or plan levels more than 5x away from it, mean the series is corrupt — no signal is shown on it
+      var Lq = rec.L, odd = function (v) { return isF(v) && (v > rec.px * 5 || v < rec.px / 5); };
+      if (!(rec.px > 1) || odd(Lq.buy && Lq.buy[0]) || odd(Lq.upConf) || odd(rec.stop) || odd(Lq.dnConf)) { rec.st = 'nodata'; rec.stFa = ST6.nodata; rec.why = 'دادهٔ قیمت ناسازگار است (قیمت ' + fa(rec.px) + ' با سطوح محاسبه‌شده از تاریخچه هم‌خوان نیست)؛ تا اصلاح داده هیچ سطح یا سیگنالی نمایش داده نمی‌شود.';
+        rec.lo = rec.hi = rec.stop = rec.rr = NaN; rec.tp = []; rec.rank = null; rec.act = 'none'; rec.actFa = ACT8.none; rec.dataBad = true; rec.tier = 'none'; rec.tierFa = TIERFA.none;
+        rec.L = { buy: null, stop: null, tp: [], upConf: null, dnConf: null, inv: null, dnTp: [], floor: null, ceil: null, sup: [], res: [], tzT: [], after: [] }; } rec.hzv = {}; ['s', 'm', 'l'].forEach(function (h) { if (hv[h]) rec.hzv[h] = { view: hv[h].view, code: hv[h].code, fa: hv[h].fa, status: hv[h].status }; });
       rec.days = x.hz && isF(x.hz.days) ? x.hz.days : null; rec.liqOK = x.c ? x.c.liqOK !== false : true;
       // directive 22: strength, validity date and data state are part of the one central signal (pages read them, never recompute them)
       rec.strength = isF(rec.conf) ? (rec.conf >= 70 ? 'قوی' : rec.conf >= 55 ? 'متوسط' : 'ضعیف') : null; rec.deskRank = rec.rank; rec.hzc = 'M';
@@ -26412,6 +26429,8 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         var e0 = c.entry, d0 = isF(c.entry) && isF(c.stop) ? c.entry - c.stop : NaN; c.lo = lo; c.hi = hi; c.entry = isF(c.entry) ? Math.min(hi, Math.max(lo, c.entry)) : (lo + hi) / 2; c.stop = Lr.stop;
         var T = (Lr.tp || []).filter(isF); if (T.length) { c.tp1 = T[0]; if (T[1] != null) c.tp2 = T[1]; if (T[2] != null) c.tp3 = T[2]; }
         var d1 = c.entry - c.stop; if (d1 > 0) { c.rr1 = (c.tp1 - c.entry) / d1; c.rr2 = (c.tp2 - c.entry) / d1; if (isF(c.posPct) && c.posPct > 0 && d0 > 0) { c.posPct = c.posPct * (d0 / d1) * (c.entry / e0); var eqA = Number(c.eq) || NaN; if (isF(c.units) && isF(eqA)) c.units = Math.floor(eqA * c.posPct / c.entry); } } }
+      else if (Lr.far || r.dataBad) { c.lv0 = { lo: c.lo, hi: c.hi, entry: c.entry, stop: c.stop, tp1: c.tp1, tp2: c.tp2, tp3: c.tp3, rr2: c.rr2, posPct: c.posPct };
+        c.lo = c.hi = c.entry = c.stop = c.tp1 = c.tp2 = c.tp3 = c.rr1 = c.rr2 = NaN; c.posPct = 0; c.units = NaN; if (c.why) c.why.unshift(r.dataBad ? r.why : Lr.farTxt); }
       if ((c.type === 'long' || c.type === 'short') && r.st !== 'ok') {
         c.candidate = c.candidate || { type: c.type, typeFa: c.typeFa, strength: c.strength, conf: c.conf, status: c.status };
         c.type = 'hold'; c.status = 'وضعیت مرکزی: ' + r.stFa; c.why.unshift('موتور مرکزی: ' + r.stFa + ' — ' + r.why);
@@ -30228,7 +30247,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function marketTable(ctx, S, A, opt) {
     opt = opt || {}; var lim = S.lim || 60, shown = A.slice(0, lim);
     var rows = shown.map(function (r) { var L = r.L || {}, w = L.win, tp = (L.tp || []).filter(isF), dn = (L.floor && L.tzT && L.tzT.length ? L.tzT : L.dnTp || []).filter(isF);
-      return [star(ctx, r), cmpBox(ctx, S, r), symBtn(ctx, S, r), opt.grp ? r.grpFa : CLS[r.cls] || r.cls, pxTime(r), r.st4Fa || '—', L.floor ? zone(L.floor) : '—', L.ceil ? zone(L.ceil) : '—', L.buy ? zone(L.buy) : '—',
+      return [star(ctx, r), cmpBox(ctx, S, r), symBtn(ctx, S, r), opt.grp ? r.grpFa : CLS[r.cls] || r.cls, pxTime(r), r.st4Fa || '—', L.floor ? zone(L.floor) : '—', L.ceil ? zone(L.ceil) : '—', L.buy ? zone(L.buy) : L.far ? 'فعلاً ندارد (سطح تأیید ' + pct(L.far.dist, 1) + ' بالاتر از قیمت)' : '—',
         (isF(L.upConf) ? '↑ ' + n(L.upConf) : '↑ —') + ' / ' + (isF(L.dnConf) ? '↓ ' + n(L.dnConf) : '↓ —'), isF(L.stop) ? n(L.stop) : '—', (tp.length ? '↑ ' + tp.slice(0, 2).map(function (v) { return n(v); }).join('، ') : '') + (dn.length ? (tp.length ? ' · ' : '') + '↓ ' + dn.slice(0, 2).map(function (v) { return n(v); }).join('، ') : '') || '—',
         w && w.from ? sh(w.from) + ' تا ' + sh(w.to) : '—', TRFA[trendOf(r)], isF(r.conf) ? fa(r.conf, 0) + '٪' + (r.grade ? ' · ' + r.grade : '') : '—', (actionOf(r) || [0, 0, r.actFa])[2] + ' · ' + (r.execFa || ''), r.pri ? fa(r.pri.s, 0) : '—']; });
     var more = A.length > lim ? h('button', { class: 'btn ghost', type: 'button', text: 'نمایش ' + fa(Math.min(60, A.length - lim), 0) + ' مورد بیشتر (از ' + fa(A.length, 0) + ')', onclick: function () { S.lim = lim + 60; ctx.rerender(); } }) : null;
@@ -30717,11 +30736,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611211210) */
+/* PWA: offline cache + app updates (version 202611211301) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611211210';
+  window.HUB_APP_VERSION = '202611211301';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
