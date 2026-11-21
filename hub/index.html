@@ -10855,8 +10855,19 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
      and fund of the market watch that is missing is added (active, marked «added by the registry»). Returns the number added. */
   function syncWatch(S, R) {
     R = R || get(); if (!R || !R.ins || !S || !Array.isArray(S.watch)) return 0;
-    var byCode = {}, bySym = {}, added = 0; S.watch.forEach(function (w) { if (w.insCode) byCode[w.insCode] = w; bySym[w.symbol] = w; });
+    var byCode = {}, bySym = {}, added = 0, mwSym = {}; S.watch.forEach(function (w) { if (w.insCode) byCode[w.insCode] = w; bySym[w.symbol] = w; });
+    Object.keys(R.ins).forEach(function (c) { mwSym[R.ins[c].sym] = R.ins[c]; });
+    /* secondary listings of the same issuer (2026-11-21): the market watch also lists the issuer's other boards under its symbol plus a digit
+       — «وکار3», «شپنا3», «کابگن2» … with the same company name and only scattered block trades (measured: 499 of the 873 instruments
+       the registry first added; most with < 260 sessions, some with none). One issuer is one asset: the main symbol carries the analysis,
+       the secondary listing is not added (and is set aside if an earlier update added it). Digits 3-9: base symbol present is enough;
+       digit 2: the names must also match (some «…2» symbols are separate funds). */
+    var normN = function (x) { return String(x || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[\s‌.\-()]+/g, ''); };
+    var dupOf = function (sym, name) { var m = /^(.+?)([2-9])$/.exec(sym || ''); if (!m) return null; var b = mwSym[m[1]] || bySym[m[1]]; if (!b) return null; return m[2] !== '2' || normN(b.name) === normN(name) ? m[1] : null; };
+    var nDup = 0; S.watch.forEach(function (w) { if (w.src !== 'registry' || w.dupOf) return; var d = dupOf(w.symbol, w.name); if (d) { w.active = false; w.dupOf = d; w.inactiveWhy = 'نماد فرعیِ همان ناشر (بازار یا تابلوی دیگر) — تحلیل از نماد اصلی «' + d + '»'; if (S.data && S.data[w.symbol]) delete S.data[w.symbol]; nDup++; } });
+    R.nDupOff = nDup;
     Object.keys(R.ins).forEach(function (code) { var o = R.ins[code], w = byCode[code] || bySym[o.sym];
+      if (!w && dupOf(o.sym, o.name)) return;
       if (!w) { w = { symbol: o.sym, name: o.name, insCode: code, sector: '', market: o.flow === 1 ? 'بورس' : o.flow === 2 ? 'فرابورس' : o.flow === 4 ? 'بازار پایه' : '', board: o.board || '', ftype: '', lim: null, active: true, src: 'registry', addedAt: R.date }; S.watch.push(w); added++; }
       if (!w.insCode) w.insCode = code; w.cs = o.cs; w.csName = o.csName; w.csAt = R.date;
       if (o.type === 'fund') { w.ftype = o.ftype || 'other'; w.ftSrc = o.ftSrc; w.nav = o.nav; w.navD = o.navD; } });
@@ -11472,7 +11483,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     // shares and funds: the watch list of the stock store (insCode is the stable id); the registry adds the official industry and fund type
     if (SS && SS.watch) SS.watch.forEach(function (w) { if (!w.symbol) return; var d = SS.data && SS.data[w.symbol], px = d && d.px || [], ri = w.insCode && R && R.ins ? R.ins[w.insCode] : null;
       add('s:' + w.symbol, { insCode: w.insCode || null, sym: w.symbol, name: w.name || (ri && ri.name) || w.symbol, market: w.market || (ri ? ({ 1: 'بورس', 2: 'فرابورس', 4: 'بازار پایه' })[ri.flow] || '' : ''), cls: w.ftype || /صندوق/.test(w.sector || '') ? 'fund' : 'stock',
-        ind: w.csName || w.sector || '', indCode: w.cs || '', type: w.ftype ? 'fund-' + w.ftype : ri ? 'yVal-' + ri.yVal : '', active: w.active !== false, src: 'TSETMC', rows: px.length, last: px.length ? px[px.length - 1].date : null, idStable: !!w.insCode }); });
+        ind: w.csName || w.sector || '', indCode: w.cs || '', type: w.ftype ? 'fund-' + w.ftype : ri ? 'yVal-' + ri.yVal : '', active: w.active !== false, inWhy: w.inactiveWhy || '', src: 'TSETMC', rows: px.length, last: px.length ? px[px.length - 1].date : null, idStable: !!w.insCode }); });
     ['hub.sig-gold.v1', 'hub.sig-fx.v1'].forEach(function (k) { var T = S.get(k, null); if (!T || !T.ins) return; T.ins.forEach(function (x) { if (!x.key) return; var rows = T.data && T.data[x.key] || [];
       add('g:' + x.key, { sym: x.series, name: x.series, market: 'بازار آزاد (TGJU)', cls: /^price_(dollar|eur|aed|gbp|try|cny)|tether|usdt/i.test(x.key) ? 'fx' : 'gold', ind: k === 'hub.sig-gold.v1' ? 'طلا و سکه' : 'ارز', type: x.type || '', active: x.active !== false, src: 'TGJU', rows: rows.length, last: rows.length ? rows[rows.length - 1].date : null, idStable: true }); }); });
     if (Hub.globalMkt && Hub.globalMkt.SER) Hub.globalMkt.SER.forEach(function (x) { add('x:' + String(x.id).replace(/^g:/, ''), { sym: x.name, name: x.name, market: 'بازار جهانی', cls: x.intl ? 'intl' : x.mk === 'crypto' ? 'crypto' : x.mk === 'rates' ? 'rate' : 'commodity', ind: x.mk || '', active: true, src: x.src || 'جهانی', idStable: true }); });
@@ -11480,7 +11491,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var C = S.get(CKEY, null); if (C && C.by) Object.keys(C.by).forEach(function (k) { if (!map[k]) { var r = C.by[k]; add(k, { sym: r.sym, name: r.sym, cls: r.cls, active: true, src: r.cls === 'option' ? 'TSETMC' : '', idStable: false }); } });
     var OUT = {}; ((C && C.outside) || []).forEach(function (q) { OUT[q.sym] = q.why; });
     Object.keys(A).forEach(function (aid) { var a = A[aid], r = C && C.by ? a.keys.map(function (k) { return C.by[k]; }).filter(Boolean)[0] : null; a.inCentral = !!r; a.clsFa = CLSFA[a.cls] || a.cls || '';
-      a.cover = !a.active ? 'غیرفعال' : !r && OUT[a.sym] ? 'خارج از موتور: ' + OUT[a.sym] : r ? (r.st === 'nodata' ? 'در موتور، دادهٔ ناکافی' : 'تحت پوشش موتور مرکزی') : a.cls === 'fund' && /fixed/.test(a.type || '') ? 'خارج از موتور فنی (صندوق درآمد ثابت؛ معیار بازده)' : isF(a.rows) && a.rows < 30 ? 'تاریخچه کمتر از ۳۰ جلسه' : 'در موتور مرکزی نیست'; });
+      a.cover = !a.active ? 'غیرفعال' + (a.inWhy ? ': ' + a.inWhy : '') : !r && OUT[a.sym] ? 'خارج از موتور: ' + OUT[a.sym] : r ? (r.st === 'nodata' ? 'در موتور، دادهٔ ناکافی' : 'تحت پوشش موتور مرکزی') : a.cls === 'fund' && /fixed/.test(a.type || '') ? 'خارج از موتور فنی (صندوق درآمد ثابت؛ معیار بازده)' : isF(a.rows) && a.rows < 30 ? 'تاریخچه کمتر از ۳۰ جلسه' : 'در موتور مرکزی نیست'; });
     MAP = map; var M = { at: Date.now(), n: Object.keys(A).length, A: A, map: map }; try { S.set(AKEY, M); } catch (e) { /* ignore */ } return M; }
   function master() { var S = st(), M = S && S.get(AKEY, null); if (!M) M = buildMaster(); else if (!MAP) MAP = M.map; return M; }
 
@@ -22892,7 +22903,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var wasLive = keep.meta && keep.meta.source && !/synthetic|Illustrative/i.test(keep.meta.source);
       if (wasLive && Hub.histMerge) { try { var rep = []; S.data = Hub.histMerge.mergeStore(S.tool, keep.data, S.data, rep);
         S.meta.histLog = { at: Date.now(), kept: rep.filter(function (x) { return x.kind === 'kept'; }).length, missing: rep.filter(function (x) { return x.kind === 'missing'; }).length, unit: rep.filter(function (x) { return x.kind === 'unit'; }).map(function (x) { return x.path + ' (' + x.old + '→' + x.fresh + ', ' + (x.kept === 'old' ? 'تاریخچهٔ قبلی حفظ شد' : 'سری تازه') + ')'; }).slice(0, 10) }; } catch (e2) { /* never lose the fresh data because of the guard */ } }
-      return errs || [];
+      // information (ℹ …) is not a failure: it goes to meta.notes, and only real errors make an update «partly failed»
+      var all = errs || [], info = all.filter(function (x) { return /^ℹ /.test(String(x)); }), real = all.filter(function (x) { return !/^ℹ /.test(String(x)); });
+      S.meta.notes = info.map(function (x) { return String(x).slice(2); }); real.notes = S.meta.notes; return real;
     }, function (e) { var o = keep; S.data = o.data; S.meta = o.meta; throw e; });
   }
   function maxAgeH() { var m = (Hub.util && Hub.util.store.get('hub.marketdata.v1', null)) || {}; return Number(m.maxAgeH) > 0 ? Number(m.maxAgeH) : 24; }
@@ -22964,7 +22977,11 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
           else if (IG) IG.mark('tse', w.symbol, { at: Date.now(), need: 'none', added: 0, revised: 0 });
           return ctFor(c, old && old.ct, px).then(function (ct) { return [px, ct, c]; }); }); })
         .then(function (r) { var old = data[w.symbol], px = old && r[0] === old.px ? r[0].slice() : r[0], ct = (r[1] || []).slice(-90), rec = { px: px, ct: ct }; if (old && old.nav) rec.nav = old.nav; addLive(r[2], px, ct, w, rec); data[w.symbol] = rec; })
-        .catch(function (e) { errs.push(w.symbol + ': ' + e.message); if (IG) IG.mark('tse', w.symbol, { err: String(e.message).slice(0, 120), errAt: Date.now() }); })
+        .catch(function (e) {
+          // an instrument the registry added that has no daily history at TSETMC is not a failed update: it is set aside with the reason
+          // (checked again in a week) instead of being reported as an error on every update
+          if (w.src === 'registry' && /empty|no data/i.test(String(e.message)) && !(data[w.symbol] && data[w.symbol].px && data[w.symbol].px.length)) { w.active = false; w.inactiveWhy = 'TSETMC برای این نماد تاریخچهٔ معاملهٔ روزانه نداد (بدون معامله یا تازه درج‌شده)'; w.retryAt = Date.now() + 7 * 864e5; stats.noHist = (stats.noHist || 0) + 1; return; }
+          errs.push(w.symbol + ': ' + e.message); if (IG) IG.mark('tse', w.symbol, { err: String(e.message).slice(0, 120), errAt: Date.now() }); })
         .then(function () { done++; progress && progress(done, list.length, w.symbol); return one(); });
     };
     var step = function () { var deep = list.some(function (w) { var d = data[w.symbol]; return !d || !d.px || d.px.length < 100; }), ps = []; for (var k = 0; k < Math.min(deep ? 3 : 6, list.length); k++) ps.push(one()); return Promise.all(ps); };
@@ -22990,7 +23007,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var usdP = function () { var old = data._usd || [], len = old.length >= 200 ? 40 : 0;
       return Hub.data.tgju('price_dollar_rl', len).then(function (r) { if (r.length) data._usd = (Hub.histMerge && old.length ? Hub.histMerge.mergeSeries(old, r) : r).slice(-Math.max(Math.round(P.HistoryDays) || 0, Hub.tradeEngine && Hub.tradeEngine.HIST ? Hub.tradeEngine.HIST.max : 1250)); }, function () { /* keep the stored series */ }); };
     var regR = null;
-    return stg('دیده‌بان بازار و فهرست شاخص‌ها', function () { return tse.session ? tse.session(true).then(function (x) { sess = x; return RG ? RG.refresh(sess).then(function (R) { regR = R; if (R && R.errs) R.errs.forEach(function (m) { errs.push(m); }); var a = RG.syncWatch(S, R); if (a) errs.push((isFa() ? a + ' نماد/صندوق از دیده‌بان بازار به فهرست اضافه شد (تاریخچهٔ اولیهٔ آن‌ها همین بار دریافت می‌شود).' : a + ' instruments added from the market watch.')); }, function (e) { errs.push('ثبت نمادها: ' + e.message); }) : null; }, function (e) { errs.push((isFa() ? 'جلسهٔ امروز (دیده‌بان بازار): ' : 'today\'s session (market watch): ') + e.message); }) : null; })
+    return stg('دیده‌بان بازار و فهرست شاخص‌ها', function () { return tse.session ? tse.session(true).then(function (x) { sess = x; return RG ? RG.refresh(sess).then(function (R) { regR = R; if (R && R.errs) R.errs.forEach(function (m) { errs.push(m); }); var a = RG.syncWatch(S, R); if (a) errs.push('ℹ ' + (isFa() ? a + ' نماد/صندوق تازه از دیده‌بان بازار به فهرست اضافه شد (تاریخچهٔ اولیه همین بار دریافت می‌شود).' : a + ' instruments added from the market watch.')); if (R && R.nDupOff) errs.push('ℹ ' + R.nDupOff + ' نماد فرعیِ ناشرانِ موجود (همان شرکت در بازار یا تابلوی دیگر، مثل «وکار3») کنار گذاشته شد؛ تحلیل از نماد اصلی.'); }, function (e) { errs.push('ثبت نمادها: ' + e.message); }) : null; }, function (e) { errs.push((isFa() ? 'جلسهٔ امروز (دیده‌بان بازار): ' : 'today\'s session (market watch): ') + e.message); }) : null; })
       .then(function () { list = S.watch.filter(function (w) { return w.active !== false && w.symbol && (!only || only.indexOf(w.symbol) >= 0); }); })
       .then(function () { return stg('شاخص‌ها (افزایشی)', function () { return indices(regR); }); })
       .then(function () { cal = tradingCal(data, sess); return stg('سهام و صندوق‌ها (افزایشی)', function () { return step(); }); })
@@ -25588,6 +25605,27 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (h === 'm') return cl > I.s50[t] && I.s50[t] > I.s200[t] ? 'up' : cl < I.s50[t] && I.s50[t] < I.s200[t] ? 'down' : 'flat';
     return X.n < 270 ? 'none' : cl > I.s200[t] && I.s200[t] > I.s200[t - 20] && cl > X.c[t - 250] ? 'up' : cl < I.s200[t] && I.s200[t] < I.s200[t - 20] ? 'down' : 'flat';
   }
+  /* trendEv (2026-11-21): the trend label with its evidence and its current sub-state, so no page shows a bare «صعودی» while the price
+     has been falling for days. The label keeps its rule (above); the sub-state is a separate, stated description of the last sessions:
+       pullback — label up, and the close is below its 10-session average or the last 3 closes fell (n sessions, % off the 20-session high)
+       bounce   — label down, and the close is above its 10-session average or the last 3 closes rose
+     Both are descriptions of the series, not forecasts (the index direction model has no proven skill — see «پیش‌بینی شاخص کل»). */
+  function trendEv(X, I, t, h) {
+    var v = trendView(X, I, t, h), c = X.c, cl = c[t], f = function (x) { return fa(x, Math.abs(x) < 100 ? 2 : 0); }, pc = function (x) { return (x >= 0 ? '+' : '−') + fa(Math.abs(x) * 100, 1) + '٪'; };
+    var s10 = 0, k10 = 0; for (var i = Math.max(0, t - 9); i <= t; i++) { s10 += c[i]; k10++; } s10 /= k10;
+    var dn = 0, up = 0; for (var j = t; j > 0 && c[j] < c[j - 1]; j--) dn++; for (var j2 = t; j2 > 0 && c[j2] > c[j2 - 1]; j2--) up++;
+    var hi20 = maxC(c, t - 19, t), lo20 = minC(c, t - 19, t), sub = null, subTxt = '';
+    // the counter-move test is scaled to the horizon: short = below SMA10 or 3+ down closes; medium = below SMA20; long = below SMA50
+    var ref = h === 's' ? s10 : h === 'm' ? I.s20[t] : I.s50[t], refN = h === 's' ? '۱۰' : h === 'm' ? '۲۰' : '۵۰', ok = isFinite(ref);
+    if (v === 'up' && ok && (cl < ref || (h === 's' && dn >= 3))) { sub = 'pullback'; subTxt = 'در اصلاح: ' + fa(dn, 0) + ' جلسهٔ پیاپی منفی، ' + pc(cl / hi20 - 1) + ' از سقف ۲۰ جلسه' + (cl < ref ? '، زیر میانگین ' + refN + ' روزه (' + f(ref) + ')' : ''); }
+    else if (v === 'down' && ok && (cl > ref || (h === 's' && up >= 3))) { sub = 'bounce'; subTxt = 'در برگشت: ' + fa(up, 0) + ' جلسهٔ پیاپی مثبت، ' + pc(cl / lo20 - 1) + ' از کف ۲۰ جلسه' + (cl > ref ? '، بالای میانگین ' + refN + ' روزه (' + f(ref) + ')' : ''); }
+    var ev = h === 's' ? 'پایانی ' + f(cl) + (cl > I.s20[t] ? ' بالای' : ' زیر') + ' میانگین ۲۰ روزه ' + f(I.s20[t]) + '؛ شیب ۵ جلسهٔ آن ' + pc(I.s20[t] / I.s20[t - 5] - 1)
+      : h === 'm' ? 'پایانی ' + (cl > I.s50[t] ? 'بالای' : 'زیر') + ' میانگین ۵۰ روزه ' + f(I.s50[t]) + '؛ میانگین ۵۰ ' + (I.s50[t] > I.s200[t] ? 'بالای' : 'زیر') + ' میانگین ۲۰۰ (' + f(I.s200[t]) + ')'
+      : X.n < 270 ? 'تاریخچه کمتر از ۲۷۰ جلسه' : 'پایانی ' + (cl > I.s200[t] ? 'بالای' : 'زیر') + ' میانگین ۲۰۰ روزه؛ شیب ۲۰ جلسهٔ آن ' + pc(I.s200[t] / I.s200[t - 20] - 1) + '؛ نسبت به ۲۵۰ جلسه پیش ' + pc(cl / c[t - 250] - 1);
+    var RULE = { s: 'قاعده: صعودی = پایانی بالای میانگین ۲۰ روزه و میانگین در ۵ جلسه بالا رفته؛ نزولی = عکس آن؛ وگرنه خنثی', m: 'قاعده: صعودی = پایانی بالای میانگین ۵۰ و میانگین ۵۰ بالای ۲۰۰؛ نزولی = عکس؛ وگرنه خنثی', l: 'قاعده: صعودی = بالای میانگین ۲۰۰ روزهٔ رو به بالا و بالاتر از ۲۵۰ جلسه پیش؛ نزولی = زیر میانگین ۲۰۰ رو به پایین؛ وگرنه خنثی' };
+    var LB = { up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: 'دادهٔ کم' };
+    return { v: v, sub: sub, fa: LB[v] + (sub === 'pullback' ? ' (در اصلاح)' : sub === 'bounce' ? ' (در برگشت)' : ''), subTxt: subTxt, ev: ev, rule: RULE[h] };
+  }
   function maxC(c, a, b) { var m = -Infinity; for (var i = Math.max(0, a); i <= b; i++) if (c[i] > m) m = c[i]; return m; }
   function minC(c, a, b) { var m = Infinity; for (var i = Math.max(0, a); i <= b; i++) if (c[i] < m) m = c[i]; return m; }
   /* ---------------- turning points (directive 9): probable bottom zone in a downtrend, probable top zone in an uptrend ----------------
@@ -25830,13 +25868,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var res = uniq([maxC(X.c, t - 60, t - 1), maxC(X.c, t - 120, t - 1), X.n > 251 ? maxC(X.c, t - 250, t - 1) : NaN].filter(function (v) { return isF(v) && v > up * 1.002; }).sort(function (p, q) { return p - q; }));
     var sup = uniq([minC(X.c, t - 60, t - 1), minC(X.c, t - 120, t - 1), I.s200[t]].filter(function (v) { return isF(v) && v < dn * 0.998; }).sort(function (p, q) { return q - p; }));
     var MC = Hub.mktCal, chk = MC ? MC.levels(cl, up, dn, atr, { src: 'بالاترین/پایین‌ترین مقدار پایانی ۲۰ جلسهٔ پیش از ' + dFa, upAt: cl > up ? dFa : null, dnAt: cl < dn ? dFa : null }) : null;
-    var win = MC ? MC.window('index', X.d[t], HZN.m.win, X.d) : null, tr = { s: trendView(X, I, t, 's'), m: trendView(X, I, t, 'm'), l: trendView(X, I, t, 'l') };
+    var win = MC ? MC.window('index', X.d[t], HZN.m.win, X.d) : null, tr = { s: trendView(X, I, t, 's'), m: trendView(X, I, t, 'm'), l: trendView(X, I, t, 'l') }; var trx = { s: trendEv(X, I, t, 's'), m: trendEv(X, I, t, 'm'), l: trendEv(X, I, t, 'l') };
     var dom = tr.m !== 'flat' && tr.m !== 'none' ? tr.m : tr.s;
     var act = chk && chk.state === 'above' ? (tr.m === 'up' ? 'روند میان‌مدت صعودی و سطح تأیید صعودی شکسته شده: خرید سهام فقط با سیگنال معتبر خود هر سهم؛ مرجع ریسک سبد: بسته‌شدن زیر ' + fa(dn) + '.' : 'سطح تأیید صعودی شکسته شده ولی روند میان‌مدت هنوز صعودی نیست: فقط سیگنال‌های معتبر تک‌سهم، بدون افزایش وزن کلی سهام.')
       : chk && chk.state === 'below' ? 'سطح تأیید نزولی شکسته شده: خرید تازه نکنید، حد ضرر موقعیت‌های باز را اجرا کنید و وزن سهام را تا بسته‌شدن دوباره بالای ' + fa(dn) + ' کاهش دهید.'
       : 'بین دو سطح: تا بسته‌شدن بالای ' + fa(up) + ' یا زیر ' + fa(dn) + ' جهت بازار تأیید نشده است؛ تصمیم را به سیگنال‌های معتبر تک‌سهم محدود کنید.';
     return { tz: tz, name: name, ok: true, sample: !!sample, last: cl, date: X.d[t], dateFa: dFa, chg1: cl / X.c[t - 1] - 1, chg5: X.n > 5 ? cl / X.c[t - 5] - 1 : NaN, chg20: X.n > 20 ? cl / X.c[t - 20] - 1 : NaN, atr: atr,
-      tr: tr, dom: dom, up: up, dn: dn, res: res, sup: sup, chk: chk, win: win, rg: R.RG[t], n: X.n,
+      tr: tr, trx: trx, dom: dom, up: up, dn: dn, res: res, sup: sup, chk: chk, win: win, rg: R.RG[t], n: X.n,
       bull: 'صعودی: تأیید با یک بسته‌شدن بالای ' + fa(up) + (res.length ? '؛ اهداف ' + res.slice(0, 2).map(function (v) { return fa(v) + ' (' + pc(v / cl - 1) + ')'; }).join(' و ') : '؛ مقاومت بالاتری در ۲۵۰ جلسه نیست') + '؛ ابطال: بسته‌شدن دوباره زیر ' + fa(dn) + '.',
       bear: 'نزولی: تأیید با یک بسته‌شدن زیر ' + fa(dn) + (sup.length ? '؛ اهداف ' + sup.slice(0, 2).map(function (v) { return fa(v) + ' (' + pc(v / cl - 1) + ')'; }).join(' و ') : '؛ حمایت پایین‌تری در ۱۲۰ جلسه و میانگین ۲۰۰ نیست') + '؛ ابطال: بسته‌شدن دوباره بالای ' + fa(up) + '.', act: act };
   }
@@ -26064,7 +26102,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     one('ارز', ['price_dollar_rl', 'crypto-tether-irr', 'price_eur', 'price_aed']); one('طلا و سکه', ['geram18', 'sekee', 'ons', 'geram24', 'mesghal']);
     var GM = Hub.globalMkt ? Hub.globalMkt.rowsAll() : [], pickS = function (ids) { for (var i = 0; i < ids.length; i++) { var o = GM.filter(function (g) { return g.id === ids[i]; })[0]; if (o && o.rows.length >= 30) return o; } return null; };
     [['رمزارز (بیت‌کوین)', ['g:btc', 'lv:crypto-bitcoin']], ['نفت (برنت)', ['g:brent', 'lv:oil_brent']], ['نرخ بهرهٔ آمریکا (بازده ۱۰ ساله)', ['g:ust10']], ['فلزات صنعتی (مس)', ['g:copper']]].forEach(function (q) {
-      var o = pickS(q[1]); if (!o) return mk.push({ name: q[0], dir: 'none', note: 'داده دریافت نشده؛ «به‌روزرسانی همهٔ بخش‌ها» را بزنید' + (/g:(brent|ust10|copper)/.test(q[1][0]) ? ' (برای نفت، اوراق و مس کلید Alpha Vantage لازم است)' : '') });
+      var o = pickS(q[1]); if (!o) return mk.push({ name: q[0], dir: 'none', note: 'داده دریافت نشده؛ «به‌روزرسانی همهٔ بخش‌ها» را بزنید' + (/g:brent/.test(q[1][0]) ? ' (برای نفت کلید Alpha Vantage یا TGJU لازم است)' : /g:copper/.test(q[1][0]) ? ' (منبع مس: CNBC)' : '') });
       var v = seriesView(o); mk.push({ name: q[0], dir: v.dir, note: v.why + ' · ' + v.src + ' · داده تا ' + shamsi(v.date) + (v.prob.length ? ' · احتمال بالاتر بودن ۲۰ روز: ' + pct(v.prob[v.prob.length - 1].p, 0) + (v.prob[v.prob.length - 1].skill ? '' : ' (نرخ پایه)') : ''), view: v }); });
     if (!db) best.why += ' (اعتبارسنجی اجرا نشده: رتبه‌بندی فقط بر پایهٔ قدرت پیش‌بینی است، بدون شواهد بک‌تست.)'; else if (X.valState === 'stale') best.why += ' (شواهد بک‌تست مربوط به تنظیمات قبلی است؛ دوباره اعتبارسنجی کنید.)';
     best.urgent = urgent;
@@ -26423,7 +26461,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var zmap = {}; list.forEach(function (z) { zmap[z.a.key] = z; });
     var cards = list.map(function (z) { return card(z, E); }).filter(Boolean).concat(E.classes.option !== false ? optionCards(U.opt, E) : []);
     var zmap0 = {}; list.forEach(function (z) { zmap0[z.a.key] = z; });
-    if (E.classes.global !== false && Hub.globalMkt) { try { var GMr = Hub.globalMkt.rowsAll(), gdef = [['g:btc', 'lv:crypto-bitcoin', 'crypto', 'بیت‌کوین'], ['g:eth', null, 'crypto', 'اتریوم'], ['g:brent', 'lv:oil_brent', 'commodity', 'نفت برنت'], ['g:wti', null, 'commodity', 'نفت WTI'], ['g:ng', null, 'commodity', 'گاز طبیعی']].concat(Hub.globalMkt.SER.filter(function (x) { return x.intl; }).map(function (x) { return ['g:' + x.id, null, 'intl', x.name]; }));
+    if (E.classes.global !== false && Hub.globalMkt) { try { var GMr = Hub.globalMkt.rowsAll(), gdef = [['g:btc', 'lv:crypto-bitcoin', 'crypto', 'بیت‌کوین'], ['g:eth', null, 'crypto', 'اتریوم'], ['g:brent', 'lv:oil_brent', 'commodity', 'نفت برنت'], ['g:wti', null, 'commodity', 'نفت WTI'], ['g:ng', null, 'commodity', 'گاز طبیعی'], ['g:silver', null, 'commodity', 'نقره'], ['g:copper', null, 'commodity', 'مس']].concat(Hub.globalMkt.SER.filter(function (x) { return x.intl; }).map(function (x) { return ['g:' + x.id, null, 'intl', x.name]; }));
       gdef.forEach(function (q) { var o = GMr.filter(function (g) { return g.id === q[0]; })[0] || (q[1] && GMr.filter(function (g) { return g.id === q[1]; })[0]); if (!o) return;
         var rr = o.rows.filter(function (r) { return isF(r.close) && r.close > 0; }); if (rr.length < 120) return;
         var gaps = rr.slice(-60).map(function (r, i, A) { return i ? d2days(r.date) - d2days(A[i - 1].date) : 1; }).sort(function (a, b) { return a - b; }); if (gaps[Math.floor(gaps.length / 2)] > 4) return;   // daily series only
@@ -26505,7 +26543,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { prep: prep, indexView: indexView, poolKey: poolKey, TIERFA: TIERFA, RCFA: RCFA, CAUSEFA: CAUSEFA, POOLFA: POOLFA, ptAnalysis: ptAnalysis, ptCalib: ptCalib, goldLink: goldLink, toWeekly: toWeekly, PTKEY: PTKEY, FAV: FAV, ADV: ADV, PTW: PTW, turnZones: turnZones, tzCalib: tzCalib, tzCases: tzCases, tzPivots: tzPivots, tzText: tzText, TZH: TZH, actOf: actOf, ACT8: ACT8, centralBuild: centralBuild, consistency: consistency, trendView: trendView, validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { trendEv: trendEv, prep: prep, indexView: indexView, poolKey: poolKey, TIERFA: TIERFA, RCFA: RCFA, CAUSEFA: CAUSEFA, POOLFA: POOLFA, ptAnalysis: ptAnalysis, ptCalib: ptCalib, goldLink: goldLink, toWeekly: toWeekly, PTKEY: PTKEY, FAV: FAV, ADV: ADV, PTW: PTW, turnZones: turnZones, tzCalib: tzCalib, tzCases: tzCases, tzPivots: tzPivots, tzText: tzText, TZH: TZH, actOf: actOf, ACT8: ACT8, centralBuild: centralBuild, consistency: consistency, trendView: trendView, validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -26893,7 +26931,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         if (i >= list.length) { busy = false; S.lastAll = Date.now(); ctx.recompute(); paint(); return Promise.resolve(); }
         var f = list[i], St = load(f), line = h('p', { class: 'small', 'data-notr': '1', text: (F() ? FAT[f.id] : f.title) + ' … ' }); log.appendChild(line);
         return SG.safeFetch(f.fetch, St, function (a, b, k) { line.textContent = (F() ? FAT[f.id] : f.title) + ' … ' + a + ' / ' + b + ' · ' + k; })
-          .then(function (errs) { save(f, St); line.className = 'small ' + (errs.length ? 'warn-t' : 'good-t'); line.textContent = (F() ? FAT[f.id] : f.title) + ': ' + T('updated', 'به‌روز شد') + (errs.length ? ' · ' + T('partly failed: ', 'بخشی ناموفق: ') + SG.summErr(errs) : ''); })
+          .then(function (errs) { save(f, St); line.className = 'small ' + (errs.length ? 'warn-t' : 'good-t'); line.textContent = (F() ? FAT[f.id] : f.title) + ': ' + T('updated', 'به‌روز شد') + (errs.length ? ' · ' + T('partly failed: ', 'بخشی ناموفق: ') + SG.summErr(errs) : errs.notes && errs.notes.length ? ' · ' + errs.notes.join(' · ') : ''); })
           .catch(function (e) { line.className = 'small crit-t'; line.textContent = (F() ? FAT[f.id] : f.title) + ': ' + T('failed — ', 'ناموفق — ') + e.message; })
           .then(function () { paint(); return step(i + 1); });
       };
@@ -27601,7 +27639,12 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     { id: 'ng', name: 'گاز طبیعی (هنری هاب)', mk: 'energy', unit: 'دلار/میلیون BTU', src: 'Alpha Vantage', av: ['NATURAL_GAS', { interval: 'daily' }], avDays: 1, fresh: 6 },
     { id: 'ust10', name: 'بازده اوراق ۱۰ سالهٔ آمریکا', mk: 'rates', unit: '٪', src: 'وزارت خزانه‌داری آمریکا', tr: '10 Yr', av: ['TREASURY_YIELD', { interval: 'daily', maturity: '10year' }], avDays: 3, fresh: 6 },
     { id: 'ffr', name: 'نرخ بهرهٔ فدرال', mk: 'rates', unit: '٪', src: 'فدرال رزرو نیویورک', nyfed: 1, av: ['FEDERAL_FUNDS_RATE', { interval: 'daily' }], avDays: 3, fresh: 6 },
-    { id: 'copper', name: 'مس', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['COPPER', { interval: 'monthly' }], avDays: 7, fresh: 45 },
+    /* silver and copper as their own markets (2026-11-21): daily bars of the COMEX front-month futures from CNBC (the only daily source that
+       answers from the user's network; Alpha Vantage gives copper monthly only). Futures, not spot: the roll between contracts shows as a
+       small jump on the roll day. Copper is quoted in $/lb and kept in $/t (× 2,204.62); the monthly Alpha Vantage copper is no longer
+       stored under this id because a daily and a monthly series cannot share one history. */
+    { id: 'silver', name: 'نقره (اونس، آتی COMEX)', mk: 'metals', unit: 'دلار/اونس', src: 'CNBC', cn: '@SI.1', fresh: 5 },
+    { id: 'copper', name: 'مس (آتی COMEX)', mk: 'metals', unit: 'دلار/تن', src: 'CNBC', cn: '@HG.1', cnMul: 2204.62262, fresh: 5 },
     { id: 'alu', name: 'آلومینیوم', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['ALUMINUM', { interval: 'monthly' }], avDays: 7, fresh: 45 },
     /* world equity indices (directive 19 · 2-3). Source changed 2026-11-21: Yahoo Finance and FRED's fredgraph do not answer from the
        user's network (timeouts measured on the user's PC, direct and through the local proxy). CNBC's public chart service answers, with
@@ -27660,7 +27703,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var L = [], inc = sinceOf(old);
     if (s.cg) L.push({ name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/coins/' + s.cg + '/market_chart?vs_currency=usd&days=' + (inc ? Math.min(365, inc.days) : 365) + '&interval=daily', parse: cgRows });
     // CNBC daily bars (world indices): the 1Y file holds about two years of daily bars (≈ 500; measured 2026-11-21 — the shorter ranges return the same file)
-    if (s.cn) L.push({ name: 'CNBC (' + s.cn + ')', url: 'https://ts-api.cnbc.com/harmony/app/charts/1Y.json?symbol=' + encodeURIComponent(s.cn), parse: cnRows });
+    if (s.cn) L.push({ name: 'CNBC (' + s.cn + ')', url: 'https://ts-api.cnbc.com/harmony/app/charts/1Y.json?symbol=' + encodeURIComponent(s.cn), parse: function (j) { var r = cnRows(j), m = s.cnMul || 1; return m === 1 ? r : r.map(function (x) { return { date: x.date, open: x.open * m, high: x.high * m, low: x.low * m, close: x.close * m }; }); } });
     // U.S. Treasury daily par yield curve (official): this year's file each run, the five years before it on the first load
     if (s.tr) { var y0 = new Date().getUTCFullYear(), ys = inc ? (inc.days > 300 || new Date().getUTCMonth() === 0 ? [y0 - 1, y0] : [y0]) : [y0 - 5, y0 - 4, y0 - 3, y0 - 2, y0 - 1, y0], prs = trRows(s.tr);
       L.push({ name: 'وزارت خزانه‌داری آمریکا', fn: function () { return Promise.all(ys.map(function (y) { return D.webText(trUrl(y), 'U.S. Treasury').then(prs, function (e) { if (y === y0) throw e; return []; }); })).then(function (A) { return [].concat.apply([], A); }); }, parse: function (r) { return r; } }); }
@@ -27727,7 +27770,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var L = seriesSources(s, D, avDueS(s) ? k : null, S.data[s.id]); if (!L.length) { errs.push(s.name + ': منبع بدون کلید ندارد و کلید Alpha Vantage وارد نشده'); return one(); }
       return any(L, s.name).then(function (rows) { return s.ku && (!S.data[s.id] || S.data[s.id].length < 700) ? deepen(s, rows) : rows; }).then(function (rows) {
         // upsert by date into the stored history (Hub.ingest: revisions logged, a re-run adds nothing)
-        var old = S.data[s.id] || [], IG = Hub.ingest, src = rows._src; if (IG) { var a = IG.apply('global', s.id, old, rows, null); rows = a.rows; IG.note({ rowsAdded: a.added, revised: a.revised.length }); } else if (Hub.histMerge && old.length) rows = Hub.histMerge.mergeSeries(old, rows);
+        var old = S.data[s.id] || [], IG = Hub.ingest, src = rows._src;
+        // a daily source replacing a monthly one (copper): the monthly rows are not mixed into the daily history
+        if (s.cn && old.length > 5) { var gp = old.slice(-12).map(function (r, q, A) { return q ? (Date.UTC(Math.floor(r.date / 1e4), Math.floor(r.date / 100) % 100 - 1, r.date % 100) - Date.UTC(Math.floor(A[q - 1].date / 1e4), Math.floor(A[q - 1].date / 100) % 100 - 1, A[q - 1].date % 100)) / 864e5 : 1; }).sort(function (a, b) { return a - b; }); if (gp[Math.floor(gp.length / 2)] > 10) old = []; } if (IG) { var a = IG.apply('global', s.id, old, rows, null); rows = a.rows; IG.note({ rowsAdded: a.added, revised: a.revised.length }); } else if (Hub.histMerge && old.length) rows = Hub.histMerge.mergeSeries(old, rows);
         if (src) try { Object.defineProperty(rows, '_src', { value: src, enumerable: false }); } catch (e) { /* ignore */ }
         S.data[s.id] = rows.slice(-3000); S.at[s.id] = now; S.srcOf[s.id] = rows._src || L[0].name; if (/Alpha Vantage/.test(rows._src || '')) { avUsed = true; S.avAtS[s.id] = now; } }, function (e) { var m = String(e.message || e); errs.push(m.indexOf(s.name + ':') === 0 ? m : s.name + ': ' + m); }).then(one); };
     var snaps = [
@@ -28372,7 +28417,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       var tryOnce = function (k) { return SG.safeFetch(f.fetch, St, function (a, b, q) { say(i, NAME(f) + ' … ' + fa(a, 0) + ' / ' + fa(b, 0) + ' · ' + q); })
         .catch(function (e) { if (k > 0) throw e; say(i, NAME(f) + ': خطا (' + e.message + ')؛ تلاش دوباره …', 'warn-t'); return new Promise(function (r) { setTimeout(r, 2000); }).then(function () { St = loadFeed(f); return tryOnce(1); }); }); };
       return tryOnce(0)
-        .then(function (errs) { U.store.set(f.storeKey, St); var n = seriesN(St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : '', { n: recvN(St, errs, t0), fail: errs.length, upd: UPD.id }); if (errs.length) parts++; UPD.st[f.id] = 'proc'; say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
+        .then(function (errs) { U.store.set(f.storeKey, St); var n = seriesN(St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : (errs.notes && errs.notes.length ? errs.notes.join(' · ') : ''), { n: recvN(St, errs, t0), fail: errs.length, upd: UPD.id }); if (errs.length) parts++; UPD.st[f.id] = 'proc'; say(i, NAME(f) + (errs.length ? ': به‌روز شد، بخشی ناموفق — ' + SG.summErr(errs) : ': به‌روز شد'), errs.length ? 'warn-t' : 'good-t'); },
           function (e) { fails++; flog(f.id, false, e.message, { n: 0, fail: seriesN(St), upd: UPD.id }); UPD.st[f.id] = 'err'; say(i, NAME(f) + ': ناموفق، دادهٔ قبلی حفظ شد (جدید معرفی نمی‌شود) — ' + e.message, 'crit-t'); });
     }); }, Promise.resolve()).then(function () {
       // news feeds (economy section) and the live market inputs of the valuation models that were used before
@@ -28541,7 +28586,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var A = U.store.get(AKEY, null); if (!A || !A.on || UPD.busy) return; if (Hub.smartRefresh && Hub.smartRefresh.active()) return;   // the market-aware scheduler supersedes the fixed interval var last = U.store.get('hub.autoupd.last', 0); if (Date.now() - last < (A.min || 60) * 60e3) return;
     U.store.set('hub.autoupd.last', Date.now()); var sn = {}, stale = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn[f.id]) return false; sn[f.id] = 1; var st = feedState(f); return st.live && isFinite(st.age) && st.age * 60 >= (A.min || 60); });
     if (!stale.length) return; if (A.calc) { updateEverything({ S: null, rerender: function () {} }); return; }
-    stale.reduce(function (p, f) { return p.then(function () { var St = loadFeed(f), t0 = Date.now() - 1000; return SG.safeFetch(f.fetch, St, function () {}).then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : '', { n: recvN(St, errs, t0), fail: errs.length, auto: true }); }, function (e) { flog(f.id, false, e.message, { auto: true }); }); }); }, Promise.resolve()).then(function () { TE.clearCache(); });
+    stale.reduce(function (p, f) { return p.then(function () { var St = loadFeed(f), t0 = Date.now() - 1000; return SG.safeFetch(f.fetch, St, function () {}).then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : (errs.notes && errs.notes.length ? errs.notes.join(' · ') : ''), { n: recvN(St, errs, t0), fail: errs.length, auto: true }); }, function (e) { flog(f.id, false, e.message, { auto: true }); }); }); }, Promise.resolve()).then(function () { TE.clearCache(); });
   } catch (e) { /* the timer must never break the page */ } }, 5 * 60e3);
   TK.define({ id: 'data-center', title: 'Data update center', sections: ['data'], priority: -100, version: 1, storeKey: 'hub.dataCenter.v1', noFile: true,
     summary: 'One command updates every data source and re-runs everything that depends on it.', sample: function () { return { version: 1 }; }, run: function () { return { checks: [] }; },
@@ -28929,9 +28974,9 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     // ---- A · markets at a glance: one row per key asset, trend on three horizons, change, data time
     var ARW = { up: '▲ صعودی', down: '▼ نزولی', flat: '◆ خنثی', none: '— دادهٔ کم' }, zOf = function (x) { return X.zmap && X.zmap[x.key]; };
     var chgOf = function (x, k) { var z = zOf(x); if (!z) return NaN; var c = z.R.X.c, n = z.R.X.n; return n > k ? c[n - 1] / c[n - 1 - k] - 1 : NaN; };
-    var trOf = function (x) { var z = zOf(x); if (!z) return null; var R = z.R, t = R.X.n - 1; return { s: TE.trendView(R.X, R.I, t, 's'), m: TE.trendView(R.X, R.I, t, 'm'), l: TE.trendView(R.X, R.I, t, 'l') }; };
+    var trOf = function (x) { var z = zOf(x); if (!z) return null; var R = z.R, t = R.X.n - 1; var o = { s: TE.trendView(R.X, R.I, t, 's'), m: TE.trendView(R.X, R.I, t, 'm'), l: TE.trendView(R.X, R.I, t, 'l') }; if (TE.trendEv) o.x = { s: TE.trendEv(R.X, R.I, t, 's'), m: TE.trendEv(R.X, R.I, t, 'm'), l: TE.trendEv(R.X, R.I, t, 'l') }; return o; };
     var ageTxt = function (h0) { return isFinite(h0) ? (h0 < 1 ? 'کمتر از ۱ ساعت پیش' : h0 < 48 ? fa(h0, 0) + ' ساعت پیش' : fa(h0 / 24, 0) + ' روز پیش' + (h0 > 96 ? ' ⚠ قدیمی' : '')) : '—'; };
-    var trTxt = function (q) { return q ? [q.s, q.m, q.l].map(function (v) { return ARW[v] || '—'; }).join(' / ') : '—'; };
+    var trTxt = function (q, X2) { var x = X2 || (q && q.x); return q ? ['s', 'm', 'l'].map(function (k) { var e = x && x[k]; return (ARW[q[k]] || '—') + (e && e.sub ? (e.sub === 'pullback' ? ' (در اصلاح)' : ' (در برگشت)') : ''); }).join(' / ') : '—'; };
     var row1 = function (mk, x, note) { var q = trOf(x), dom = q ? (q.m !== 'flat' && q.m !== 'none' ? q.m : q.s) : null; return [mk, x.sym, nd(x, x.last) + ' (' + x.date + ')', pct(chgOf(x, 1), 1) + ' / ' + pct(chgOf(x, 5), 1), trTxt(q), dom ? ARW[dom] : '—', ageTxt(x.age), note || '']; };
     var byCls = {}; K.items.forEach(function (x) { (byCls[x.cls] = byCls[x.cls] || []).push(x); });
     var find = function (re) { return K.items.filter(function (x) { return re.test(x.sym + ' ' + (x.name || '')); })[0]; };
@@ -28954,7 +28999,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
       ps.push(ctx.panel('شاخص‌های بورس', V.map(function (v) { var q = v.chk || {};
         return h('div', null, [h('h4', { text: v.name + (v.sample ? ' (دادهٔ نمونه)' : '') }), table(['مؤلفه', 'مقدار'], [
           ['مقدار فعلی (تاریخ)', fa(v.last) + ' (' + v.dateFa + ')'], ['تغییر روزانه / ۵ / ۲۰ جلسه', pct(v.chg1, 2) + ' / ' + pct(v.chg5, 1) + ' / ' + pct(v.chg20, 1)],
-          ['روند کوتاه / میان / بلند', trTxt(v.tr)], ['مقاومت‌ها (بالاترین ۶۰ / ۱۲۰ / ۲۵۰ جلسه)', v.res.length ? v.res.map(function (x) { return fa(x) + ' (' + pct(x / v.last - 1, 1) + ')'; }).join(' · ') : 'بالاتر از سطح تأیید مقاومتی نیست'],
+          ['روند کوتاه / میان / بلند', trTxt(v.tr, v.trx)], ['شواهد روند (کوتاه · میان · بلند)', v.trx ? ['s', 'm', 'l'].map(function (k) { var e = v.trx[k]; return e.fa + ': ' + e.ev + (e.subTxt ? ' — ' + e.subTxt : ''); }).join(' | ') + '. ' + v.trx.s.rule + '. این برچسب‌ها توصیف ساختار گذشته‌اند، نه پیش‌بینی.' : '—'], ['مقاومت‌ها (بالاترین ۶۰ / ۱۲۰ / ۲۵۰ جلسه)', v.res.length ? v.res.map(function (x) { return fa(x) + ' (' + pct(x / v.last - 1, 1) + ')'; }).join(' · ') : 'بالاتر از سطح تأیید مقاومتی نیست'],
           ['حمایت‌ها (پایین‌ترین ۶۰ / ۱۲۰ جلسه، میانگین ۲۰۰)', v.sup.length ? v.sup.map(function (x) { return fa(x) + ' (' + pct(x / v.last - 1, 1) + ')'; }).join(' · ') : 'پایین‌تر از سطح تأیید حمایتی نیست'],
           ['سطح تأیید صعودی (فاصله)', fa(v.up) + ' (' + pct(q.dUp, 1) + ') — بالاترین مقدار پایانی ۲۰ جلسهٔ پیش از ' + v.dateFa], ['سطح تأیید نزولی (فاصله)', fa(v.dn) + ' (' + pct(q.dDn, 1) + ') — پایین‌ترین مقدار پایانی ۲۰ جلسهٔ پیش از ' + v.dateFa],
           ['وضعیت تحقق', (q.fa || '—') + (q.checks && q.checks.length ? ' ⚠ ' + q.checks.join('؛ ') : '')], ['سناریوی صعودی', v.bull], ['سناریوی نزولی', v.bear],
@@ -29809,7 +29854,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     kpis: function (ctx) { var X = function () { return ctx.R.X; }; return [
       ['Mode', function () { return X().mode.fa.split(' (')[0]; }, function () { return 'خروجی: زبانهٔ «خروجی حالت انتخابی»'; }],
       ['Buy signals', function () { return fa(X().counts.long, 0); }, function () { return 'قوی ' + fa(X().counts.strong, 0) + ' · بستن ' + fa(X().counts.close, 0); }],
-      ['Index regime', function () { return X().market ? TE.REG[X().market.rg] : '—'; }, function () { return 'شاخص کل بورس'; }],
+      ['Index regime', function () { return X().market ? TE.REG[X().market.rg] : '—'; }, function () { var v = (X().idxv || [])[0], e = v && v.trx && v.trx.s; return 'شاخص کل بورس (میان‌مدت: ADX ≥ ۲۰ و قیمت بالای میانگین ۵۰ روزهٔ رو به بالا)' + (e && e.sub ? ' — کوتاه‌مدت ' + e.fa + ': ' + e.subTxt : ''); }],
       ['Portfolio', function () { return fa(X().pf.pick.length, 0) + ' خرید · ' + fa(X().pf.watch.length, 0) + ' انتظار'; }, function () { return 'ریسک کل ' + pct(X().pf.heat, 2) + ' · نقد ' + pct(X().pf.cash, 0); }],
       ['Account risk', function () { return X().risk.state.split(/[:(]/)[0].trim(); }, function () { return isFinite(X().risk.dd) ? 'افت ' + pct(X().risk.dd, 1) : 'سرمایه را وارد کنید'; }]]; },
     tabs: [{ group: 'Intelligent trading', items: [['dash', 'داشبورد', dashTab], ['run', 'اجرا، تنظیمات و داده', runTab], ['plan', 'خروجی حالت انتخابی', planTab], ['sig', 'سیگنال‌ها', sigTab], ['mk', 'بازارها و موتور مرکزی', mkTab], ['pf', 'ساخت سبد', pfTab], ['pos', 'پایش موقعیت‌ها', posTab], ['risk', 'مدیریت ریسک', riskTab], ['models', 'بانک مدل‌ها', modelsTab], ['bt', 'بک‌تست', btTab], ['learn', 'یادگیری و بازبینی', learnTab], ['scen', 'سناریوهای آزمون', scenTab], ['report', 'گزارش', reportTab]] },
@@ -30337,7 +30382,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function idxCard(ctx, v, F) { if (!v || !v.ok) return ctx.panel(v ? v.name : 'شاخص', [P(v && v.why || 'دادهٔ شاخص در دسترس نیست.')]);
     var tz = v.tz, tr = function (k) { return ({ up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: '—' })[v.tr[k]] || v.tr[k]; };
     var H = F && F.H ? F.H.filter(function (q) { return q.ok; }) : [];
-    var rows = [['مقدار و تاریخ', fa(v.last, 0) + ' (' + v.dateFa + ') · تغییر ۱، ۵ و ۲۰ جلسه: ' + [v.chg1, v.chg5, v.chg20].map(function (x) { return pct(x, 1); }).join('، ')], ['روند کوتاه / میان / بلند', tr('s') + ' / ' + tr('m') + ' / ' + tr('l')],
+    var rows = [['مقدار و تاریخ', fa(v.last, 0) + ' (' + v.dateFa + ') · تغییر ۱، ۵ و ۲۰ جلسه: ' + [v.chg1, v.chg5, v.chg20].map(function (x) { return pct(x, 1); }).join('، ')], ['روند کوتاه / میان / بلند', v.trx ? v.trx.s.fa + ' / ' + v.trx.m.fa + ' / ' + v.trx.l.fa : tr('s') + ' / ' + tr('m') + ' / ' + tr('l')], ['شواهد روند', v.trx ? ['s', 'm', 'l'].map(function (k) { var e = v.trx[k]; return ({ s: 'کوتاه', m: 'میان', l: 'بلند' })[k] + ': ' + e.ev + (e.subTxt ? ' — ' + e.subTxt : ''); }).join(' | ') + '. قاعده‌ها: ' + v.trx.s.rule + '؛ ' + v.trx.m.rule + '؛ ' + v.trx.l.rule + '. توصیف ساختار است، نه پیش‌بینی.' : '—'],
       ['کف یا سقف احتمالی', tz && tz.zone ? (tz.side === 'down' ? 'کف ' : 'سقف ') + fa(tz.zone[0], 0) + '–' + fa(tz.zone[1], 0) + ' · ' + (tz.stFa || '') + (isF(tz.conf) ? ' · تأیید برگشت: بسته‌شدن ' + (tz.side === 'down' ? 'بالای ' : 'زیر ') + fa(tz.conf, 0) : '') + (isF(tz.pZone) ? ' · احتمال رسیدن به محدوده (برون‌نمونه) ' + pct(tz.pZone, 0) : '') : 'برآورد نشده'],
       ['سطح تأیید صعود / نزول', fa(v.up, 0) + ' / ' + fa(v.dn, 0)], ['مقاومت‌ها / حمایت‌ها', (v.res.map(function (x) { return fa(x, 0); }).join('، ') || '—') + ' / ' + (v.sup.map(function (x) { return fa(x, 0); }).join('، ') || '—')],
       ['سناریوی صعودی', v.bull], ['سناریوی نزولی', v.bear], ['احتمال ادامهٔ رشد (بالاتر بودن پس از ۵ و ۲۰ جلسه)', H.length ? H.map(function (q) { return fa(q.h, 0) + ' جلسه: ' + pct(q.p, 0) + (q.skill ? '' : ' (برابر نرخ پایه؛ مهارت پیش‌بینی ندارد)'); }).join(' · ') : 'برآورد نشده'],
@@ -30672,11 +30717,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611211132) */
+/* PWA: offline cache + app updates (version 202611211210) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611211132';
+  window.HUB_APP_VERSION = '202611211210';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
