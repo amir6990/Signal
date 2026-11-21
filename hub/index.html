@@ -10354,7 +10354,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function diagnose(onRow) {
     var T = [['TSETMC · اطلاعات نماد (فولاد)', TSE + 'Instrument/GetInstrumentInfo/46348559193224090'], ['TSETMC · قیمت روزانه', TSE + 'ClosingPrice/GetClosingPriceDailyList/46348559193224090/5'], ['TSETMC · حقیقی/حقوقی', TSE + 'ClientType/GetClientTypeHistory/46348559193224090'],
       ['TSETMC · شاخص کل', TSE + 'Index/GetIndexB2History/32097828799138957'], ['TSETMC · تابلوی اختیار معامله', TSE + 'Instrument/GetInstrumentOptionMarketWatch/0'], ['TGJU · دلار', 'https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl'],
-      ['TGJU · قیمت لحظه‌ای', 'https://call.tgju.org/ajax.json'], ['FRED · نفت برنت (CSV)', 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU&cosd=2026-01-01'], ['Yahoo · نفت برنت', 'https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?range=5d&interval=1d'],
+      ['TGJU · قیمت لحظه‌ای', 'https://call.tgju.org/ajax.json'], ['خزانه‌داری آمریکا · بازده اوراق', 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv'], ['CNBC · S&P 500', 'https://ts-api.cnbc.com/harmony/app/charts/1M.json?symbol=.SPX'], ['فدرال رزرو نیویورک · EFFR', 'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/5.json'],
       ['نوبیتکس (apiv2)', 'https://apiv2.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls'], ['والکس', 'https://api.wallex.ir/v1/markets'], ['Bitget · Funding', 'https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=BTCUSDT&productType=usdt-futures'],
       ['rss2json (خبرها)', 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent('https://www.irna.ir/rss/tp/20')], ['رله allorigins', 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2026-10-01')], ['رله codetabs', 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2026-10-01')]];
     var out = [], go = function (i) {
@@ -27596,30 +27596,31 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   var SER = [
     { id: 'btc', name: 'بیت‌کوین (BTC)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'bitcoin', ku: 'BTC-USDT', fresh: 2 },
     { id: 'eth', name: 'اتریوم (ETH)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'ethereum', ku: 'ETH-USDT', fresh: 2 },
-    { id: 'brent', name: 'نفت برنت', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['BRENT', { interval: 'daily' }], yh: 'BZ=F', fr: 'DCOILBRENTEU', fresh: 6 },
-    { id: 'wti', name: 'نفت WTI', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['WTI', { interval: 'daily' }], yh: 'CL=F', fr: 'DCOILWTICO', fresh: 6 },
-    { id: 'ng', name: 'گاز طبیعی (هنری هاب)', mk: 'energy', unit: 'دلار/میلیون BTU', src: 'Alpha Vantage', av: ['NATURAL_GAS', { interval: 'daily' }], yh: 'NG=F', fr: 'DHHNGSP', fresh: 6 },
-    { id: 'ust10', name: 'بازده اوراق ۱۰ سالهٔ آمریکا', mk: 'rates', unit: '٪', src: 'Alpha Vantage', av: ['TREASURY_YIELD', { interval: 'daily', maturity: '10year' }], yh: '^TNX', fr: 'DGS10', fresh: 6 },
-    { id: 'ffr', name: 'نرخ بهرهٔ فدرال', mk: 'rates', unit: '٪', src: 'Alpha Vantage', av: ['FEDERAL_FUNDS_RATE', { interval: 'daily' }], fred: 'DFF', fresh: 6 },
-    { id: 'copper', name: 'مس', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['COPPER', { interval: 'monthly' }], yh: 'HG=F', yhMul: 2204.62262, fr: 'PCOPPUSDM', fresh: 45 },
-    { id: 'alu', name: 'آلومینیوم', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['ALUMINUM', { interval: 'monthly' }], yh: 'ALI=F', fr: 'PALUMUSDM', fresh: 45 },
-    /* world equity indices (directive 19 · 2-3). Yahoo Finance chart API (no key; Yahoo's terms allow personal, non-commercial use)
-       first on the PC; FRED (St. Louis Fed) where it carries the index — SP500, NASDAQCOM, NASDAQ100, DJIA, NIKKEI225 — first on the phone.
-       FRED's S&P and Dow Jones series are limited by the licensor to the last 10 years; the others have no FRED series. */
-    { id: 'spx', name: 'S&P 500', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^GSPC', fr: 'SP500', fresh: 5, intl: 1 },
-    { id: 'ixic', name: 'Nasdaq Composite', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^IXIC', fr: 'NASDAQCOM', fresh: 5, intl: 1 },
-    { id: 'ndx', name: 'Nasdaq 100', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^NDX', fr: 'NASDAQ100', fresh: 5, intl: 1 },
-    { id: 'dji', name: 'Dow Jones Industrial', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^DJI', fr: 'DJIA', fresh: 5, intl: 1 },
-    { id: 'rut', name: 'Russell 2000', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^RUT', fresh: 5, intl: 1 },
-    { id: 'dax', name: 'DAX', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^GDAXI', fresh: 5, intl: 1 },
-    { id: 'ftse', name: 'FTSE 100', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^FTSE', fresh: 5, intl: 1 },
-    { id: 'cac', name: 'CAC 40', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^FCHI', fresh: 5, intl: 1 },
-    { id: 'n225', name: 'Nikkei 225', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^N225', fr: 'NIKKEI225', fresh: 5, intl: 1 },
-    { id: 'hsi', name: 'Hang Seng', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^HSI', fresh: 5, intl: 1 },
-    { id: 'sse', name: 'Shanghai Composite', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '000001.SS', fresh: 5, intl: 1 },
-    { id: 'eem', name: 'بازارهای نوظهور (ETF EEM)', mk: 'intl', unit: 'دلار', src: 'Yahoo', yh: 'EEM', fresh: 5, intl: 1 },
-    { id: 'tasi', name: 'بورس عربستان (TASI)', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: '^TASI.SR', fresh: 5, intl: 1 },
-    { id: 'xu100', name: 'بورس استانبول (BIST 100)', mk: 'intl', unit: 'واحد', src: 'Yahoo', yh: 'XU100.IS', fresh: 5, intl: 1 }];
+    { id: 'brent', name: 'نفت برنت', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['BRENT', { interval: 'daily' }], avDays: 1, fresh: 6 },
+    { id: 'wti', name: 'نفت WTI', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['WTI', { interval: 'daily' }], avDays: 1, fresh: 6 },
+    { id: 'ng', name: 'گاز طبیعی (هنری هاب)', mk: 'energy', unit: 'دلار/میلیون BTU', src: 'Alpha Vantage', av: ['NATURAL_GAS', { interval: 'daily' }], avDays: 1, fresh: 6 },
+    { id: 'ust10', name: 'بازده اوراق ۱۰ سالهٔ آمریکا', mk: 'rates', unit: '٪', src: 'وزارت خزانه‌داری آمریکا', tr: '10 Yr', av: ['TREASURY_YIELD', { interval: 'daily', maturity: '10year' }], avDays: 3, fresh: 6 },
+    { id: 'ffr', name: 'نرخ بهرهٔ فدرال', mk: 'rates', unit: '٪', src: 'فدرال رزرو نیویورک', nyfed: 1, av: ['FEDERAL_FUNDS_RATE', { interval: 'daily' }], avDays: 3, fresh: 6 },
+    { id: 'copper', name: 'مس', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['COPPER', { interval: 'monthly' }], avDays: 7, fresh: 45 },
+    { id: 'alu', name: 'آلومینیوم', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['ALUMINUM', { interval: 'monthly' }], avDays: 7, fresh: 45 },
+    /* world equity indices (directive 19 · 2-3). Source changed 2026-11-21: Yahoo Finance and FRED's fredgraph do not answer from the
+       user's network (timeouts measured on the user's PC, direct and through the local proxy). CNBC's public chart service answers, with
+       a CORS header, from the PC and the phone: daily bars of about the last two years (1Y range), the stored history is extended by
+       upsert. It is an unofficial endpoint (no published API terms) — personal use; if it stops answering the series keeps its last data. */
+    { id: 'spx', name: 'S&P 500', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.SPX', fresh: 5, intl: 1 },
+    { id: 'ixic', name: 'Nasdaq Composite', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.IXIC', fresh: 5, intl: 1 },
+    { id: 'ndx', name: 'Nasdaq 100', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.NDX', fresh: 5, intl: 1 },
+    { id: 'dji', name: 'Dow Jones Industrial', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.DJI', fresh: 5, intl: 1 },
+    { id: 'rut', name: 'Russell 2000', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.RUT', fresh: 5, intl: 1 },
+    { id: 'dax', name: 'DAX', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.GDAXI', fresh: 5, intl: 1 },
+    { id: 'ftse', name: 'FTSE 100', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.FTSE', fresh: 5, intl: 1 },
+    { id: 'cac', name: 'CAC 40', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.FCHI', fresh: 5, intl: 1 },
+    { id: 'n225', name: 'Nikkei 225', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.N225', fresh: 5, intl: 1 },
+    { id: 'hsi', name: 'Hang Seng', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.HSI', fresh: 5, intl: 1 },
+    { id: 'sse', name: 'Shanghai Composite', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.SSEC', fresh: 5, intl: 1 },
+    { id: 'eem', name: 'بازارهای نوظهور (ETF EEM)', mk: 'intl', unit: 'دلار', src: 'CNBC', cn: 'EEM', fresh: 5, intl: 1 },
+    { id: 'tasi', name: 'بورس عربستان (TASI)', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.TASI', fresh: 5, intl: 1 },
+    { id: 'xu100', name: 'بورس استانبول (BIST 100)', mk: 'intl', unit: 'واحد', src: 'CNBC', cn: '.XU100', fresh: 5, intl: 1 }];
   var MKFA = { crypto: 'رمزارز', energy: 'انرژی', rates: 'نرخ بهره', metals: 'فلزات', intl: 'شاخص‌های جهانی' };
   function sample() { return { version: 1, tool: 'global-markets', meta: { title: 'Global markets', asOf: '', source: 'Illustrative synthetic data — press Fetch' }, data: {}, snap: {}, at: {} }; }
   function avRows(j) {   // {data:[{date:'2026-11-10', value:'74.1'}]}; '.' marks a missing day
@@ -27635,6 +27636,16 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     r.timestamp.forEach(function (t, i) { var c = q.close && q.close[i]; if (!isF(c) || !(c > 0)) return; var d = gint(new Date((t + off) * 1000)); by[d] = { date: d, close: c * (mul || 1) }; });
     return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return a.date - b.date; });
   }
+  /* CNBC chart service: {barData:{priceBars:[{open,high,low,close,tradeTime:'YYYYMMDDhhmmss'}]}} */
+  function cnRows(j) { var b = j && j.barData && j.barData.priceBars; if (!Array.isArray(b)) throw new Error('پاسخ CNBC قالب مورد انتظار را ندارد');
+    var by = {}; b.forEach(function (x) { var d = +String(x.tradeTime || '').slice(0, 8), c = Number(x.close); if (!(d > 19000000) || !isF(c) || !(c > 0)) return; var h = Number(x.high), l = Number(x.low); by[d] = { date: d, open: Number(x.open) || c, high: isF(h) && h > 0 ? h : c, low: isF(l) && l > 0 ? l : c, close: c }; });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, c) { return a.date - c.date; }); }
+  /* U.S. Treasury, Daily Treasury Par Yield Curve Rates (official, CSV with CORS): Date,"1 Mo",…,"10 Yr",… newest first, dates MM/DD/YYYY */
+  function trRows(col) { return function (t) { var L = String(t || '').split(/\r?\n/).filter(Boolean); if (L.length < 2) throw new Error('پاسخ خزانه‌داری آمریکا خالی است');
+    var hd = L[0].split(',').map(function (x) { return x.replace(/"/g, '').trim(); }), ix = hd.indexOf(col); if (ix < 0) throw new Error('ستون ' + col + ' در پاسخ خزانه‌داری نیست');
+    var out = []; L.slice(1).forEach(function (l) { var c = l.split(','), m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(c[0] || ''), v = Number(c[ix]); if (m && isF(v)) out.push({ date: +(m[3] + m[1] + m[2]), close: v }); });
+    return out.sort(function (a, b) { return a.date - b.date; }); }; }
+  function trUrl(y) { return 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/' + y + '/all?type=daily_treasury_yield_curve&field_tdr_date_value=' + y + '&page&_format=csv'; }
   function fredRows(t) { // FRED CSV: observation_date,DFF
     var out = []; String(t || '').split(/\r?\n/).forEach(function (l) { var m = /^(\d{4})-(\d{2})-(\d{2}),([-0-9.]+)/.exec(l); if (m) out.push({ date: +(m[1] + m[2] + m[3]), close: Number(m[4]) }); });
     if (out.length < 5) throw new Error('پاسخ FRED قالب مورد انتظار را ندارد'); return out; }
@@ -27648,13 +27659,13 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function seriesSources(s, D, k, old) {
     var L = [], inc = sinceOf(old);
     if (s.cg) L.push({ name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/coins/' + s.cg + '/market_chart?vs_currency=usd&days=' + (inc ? Math.min(365, inc.days) : 365) + '&interval=daily', parse: cgRows });
-    if (s.yh) ['query1', 'query2'].forEach(function (h) { L.push({ name: 'Yahoo Finance (' + s.yh + ')', url: 'https://' + h + '.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(s.yh) + '?range=' + (inc ? yRange(inc.days) : s.intl ? '10y' : '5y') + '&interval=1d', parse: function (j) { return yhRows(j, s.yhMul); } }); });
-    // FRED (St. Louis Fed) CSV: same series from the official primary data (EIA daily oil and gas; Treasury 10y; IMF monthly metals, $/t). Daily oil/gas lag about a week.
-    if (s.fr) L.push({ name: 'FRED (' + s.fr + ')', text: true, url: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + s.fr + '&cosd=' + (inc ? inc.from : (new Date().getUTCFullYear() - (s.intl ? 10 : 6)) + '-01-01'), parse: fredRows });
-    if (s.fred) { L.push({ name: 'FRED (' + s.fred + ')', text: true, url: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + s.fred, parse: fredRows });
-      L.push({ name: 'NY Fed (EFFR)', url: 'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/500.json', parse: nyfedRows }); }
-    // phone (https page, no server of ours): Yahoo sends no CORS header, so the official FRED CSV goes first there
-    if (D.https) { var isFr = function (x) { return /^FRED/.test(x.name); }; L = L.filter(isFr).concat(L.filter(function (x) { return !isFr(x); })); }
+    // CNBC daily bars (world indices): the 1Y file holds about two years of daily bars (≈ 500; measured 2026-11-21 — the shorter ranges return the same file)
+    if (s.cn) L.push({ name: 'CNBC (' + s.cn + ')', url: 'https://ts-api.cnbc.com/harmony/app/charts/1Y.json?symbol=' + encodeURIComponent(s.cn), parse: cnRows });
+    // U.S. Treasury daily par yield curve (official): this year's file each run, the five years before it on the first load
+    if (s.tr) { var y0 = new Date().getUTCFullYear(), ys = inc ? (inc.days > 300 || new Date().getUTCMonth() === 0 ? [y0 - 1, y0] : [y0]) : [y0 - 5, y0 - 4, y0 - 3, y0 - 2, y0 - 1, y0], prs = trRows(s.tr);
+      L.push({ name: 'وزارت خزانه‌داری آمریکا', fn: function () { return Promise.all(ys.map(function (y) { return D.webText(trUrl(y), 'U.S. Treasury').then(prs, function (e) { if (y === y0) throw e; return []; }); })).then(function (A) { return [].concat.apply([], A); }); }, parse: function (r) { return r; } }); }
+    // NY Fed effective federal funds rate (official API, CORS) — up to 500 recent days
+    if (s.nyfed) L.push({ name: 'NY Fed (EFFR)', url: 'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/' + (inc ? Math.min(500, inc.days + 5) : 500) + '.json', parse: nyfedRows });
     // Brent also from TGJU (oil_brent — the series the Iran-economy section already reads; TGJU answers from the phone)
     if (s.id === 'brent' && D.tgju) L.push({ name: 'TGJU (oil_brent)', fn: function () { return D.tgju('oil_brent'); }, parse: function (r) { return (r || []).map(function (x) { return { date: x.date, close: x.close }; }); } });
     if (s.av && k) L.push({ name: 'Alpha Vantage', url: 'https://www.alphavantage.co/query?function=' + s.av[0] + Object.keys(s.av[1]).map(function (p) { return '&' + p + '=' + s.av[1][p]; }).join('') + '&apikey=' + encodeURIComponent(k), parse: avRows });
@@ -27702,18 +27713,23 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   function fetchAll(S, progress) {
     var D = Hub.data, errs = [], k = D.keys().av, now = Date.now(); S.data = S.data || {}; S.snap = S.snap || {}; S.at = S.at || {}; S.srcOf = S.srcOf || {};
     // daily series refresh every run (free sources); Alpha Vantage only as a fallback, at most every 12 hours (free-tier cap)
-    var avDue = !S.avAt || now - S.avAt > 12 * 3600e3, list = SER.filter(function (s) { return s.cg || s.yh || s.fred || (s.av && avDue); }), i = 0, avUsed = false;
+    // Alpha Vantage (free tier ≈ 25 calls a day) is asked per series only when that series is due: daily data once a day, the
+    // Treasury / NY Fed series every 3 days as a cross-check, monthly metals weekly. A series not due keeps its last data — that is not
+    // a failure, so it is not reported as one.
+    S.avAtS = S.avAtS || {}; var avDue = !S.avAt || now - S.avAt > 12 * 3600e3, avDueS = function (s) { return !!k && !!s.av && (!S.avAtS[s.id] || now - S.avAtS[s.id] > (s.avDays || 1) * 864e5 * 0.9); };
+    var list = SER.filter(function (s) { return s.cg || s.cn || s.tr || s.nyfed || s.id === 'brent' || avDueS(s); }), i = 0, avUsed = false;
+    S.avWait = SER.filter(function (s) { return s.av && !s.cg && !s.cn && !s.tr && !s.nyfed && s.id !== 'brent' && !avDueS(s) && k; }).map(function (s) { return { id: s.id, name: s.name, next: S.avAtS[s.id] + (s.avDays || 1) * 864e5 * 0.9 }; });
     if (Hub.ingest) Hub.ingest.begin('بازارهای جهانی: ' + list.length + ' سری');
     // one run shares a skip-list: a source host that timed out is not waited for again; on the phone each source gets 9 s at most
     var skip = {}, ms = D.https ? 9000 : 25000;
     var any = function (L, src) { return D.webAny ? D.webAny(L, src, { ms: ms, skip: skip }) : D.web(L[0].url, src).then(L[0].parse); };
     var one = function () { if (i >= list.length) return Promise.resolve(); var s = list[i++]; progress && progress(i, list.length, s.name);
-      var L = seriesSources(s, D, avDue ? k : null, S.data[s.id]); if (!L.length) { errs.push(s.name + ': منبع بدون کلید ندارد و کلید Alpha Vantage وارد نشده'); return one(); }
+      var L = seriesSources(s, D, avDueS(s) ? k : null, S.data[s.id]); if (!L.length) { errs.push(s.name + ': منبع بدون کلید ندارد و کلید Alpha Vantage وارد نشده'); return one(); }
       return any(L, s.name).then(function (rows) { return s.ku && (!S.data[s.id] || S.data[s.id].length < 700) ? deepen(s, rows) : rows; }).then(function (rows) {
         // upsert by date into the stored history (Hub.ingest: revisions logged, a re-run adds nothing)
         var old = S.data[s.id] || [], IG = Hub.ingest, src = rows._src; if (IG) { var a = IG.apply('global', s.id, old, rows, null); rows = a.rows; IG.note({ rowsAdded: a.added, revised: a.revised.length }); } else if (Hub.histMerge && old.length) rows = Hub.histMerge.mergeSeries(old, rows);
         if (src) try { Object.defineProperty(rows, '_src', { value: src, enumerable: false }); } catch (e) { /* ignore */ }
-        S.data[s.id] = rows.slice(-3000); S.at[s.id] = now; S.srcOf[s.id] = rows._src || L[0].name; if (/Alpha Vantage/.test(rows._src || '')) avUsed = true; }, function (e) { var m = String(e.message || e); errs.push(m.indexOf(s.name + ':') === 0 ? m : s.name + ': ' + m); }).then(one); };
+        S.data[s.id] = rows.slice(-3000); S.at[s.id] = now; S.srcOf[s.id] = rows._src || L[0].name; if (/Alpha Vantage/.test(rows._src || '')) { avUsed = true; S.avAtS[s.id] = now; } }, function (e) { var m = String(e.message || e); errs.push(m.indexOf(s.name + ':') === 0 ? m : s.name + ': ' + m); }).then(one); };
     var snaps = [
       D.web('https://api.coingecko.com/api/v3/global', 'CoinGecko').then(function (j) { var d = j.data || {}; S.snap.cgGlobal = { mcap: d.total_market_cap && d.total_market_cap.usd, dom: d.market_cap_percentage && d.market_cap_percentage.btc, chg: d.market_cap_change_percentage_24h_usd, at: now }; }, function (e) { errs.push('CoinGecko (بازار کل): ' + e.message); }),
       any(irxSources(), 'رمزارز به ریال').then(function (o) { o.at = now; S.snap.nbx = o; }, function (e) { errs.push(e.message); }),
@@ -27753,7 +27769,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var X = function (a, b, tol, label, why) { var A = lastOf(a), B = lastOf(b); if (!A || !B) return null; var diff = A.close / B.close - 1; return { label: label, a: A.close, b: B.close, diff: diff, ok: Math.abs(diff) <= tol, tol: tol, why: why, dates: [A.date, B.date] }; };
     var G = U.store.get(KEY, null), nb = G && G.snap && G.snap.nbx, cross = [
       X('tg:price_dollar_rl', 'tg:crypto-tether-irr', 0.04, 'دلار آزاد (TGJU) در برابر تتر (TGJU)', 'تتر معمولاً نزدیک دلار آزاد معامله می‌شود؛ اختلاف بیش از ۴٪ غیرعادی است'),
-      X('tg:geram18', 'tg:geram24', NaN, '', ''), X('lv:oil_brent', 'g:brent', 0.03, 'نفت برنت: TGJU در برابر منبع جهانی (Yahoo/Alpha Vantage)', 'دو منبع مستقل؛ تفاوت تاریخ و نوع قیمت (لحظه‌ای/تسویه) هم اختلاف می‌سازد'),
+      X('tg:geram18', 'tg:geram24', NaN, '', ''), X('lv:oil_brent', 'g:brent', 0.03, 'نفت برنت: TGJU در برابر منبع جهانی (Alpha Vantage)', 'دو منبع مستقل؛ تفاوت تاریخ و نوع قیمت (لحظه‌ای/تسویه) هم اختلاف می‌سازد'),
       X('lv:crypto-bitcoin', 'g:btc', 0.03, 'بیت‌کوین: TGJU در برابر CoinGecko', 'دو منبع مستقل؛ زمان ثبت قیمت متفاوت است')].filter(function (c) { return c && c.label; });
     var g18 = lastOf('tg:geram18'), g24 = lastOf('tg:geram24'); if (g18 && g24) { var d0 = g18.close / (g24.close * 0.75) - 1; cross.push({ label: 'طلای ۱۸ عیار در برابر ۷۵٪ طلای ۲۴ عیار', a: g18.close, b: g24.close * 0.75, diff: d0, ok: Math.abs(d0) <= 0.015, tol: 0.015, why: 'عیار ۱۸ = ۷۵٪ عیار ۲۴؛ اختلاف بیش از ۱٫۵٪ یعنی یکی از دو سری مشکل دارد' }); }
     var usdt = lastOf('tg:crypto-tether-irr'); if (nb && nb.usdtRls && isF(nb.usdtRls.last) && usdt) { var d1 = usdt.close / nb.usdtRls.last - 1; cross.push({ label: 'تتر: TGJU در برابر نوبیتکس', a: usdt.close, b: nb.usdtRls.last, diff: d1, ok: Math.abs(d1) <= 0.03, tol: 0.03, why: 'دو منبع داخلی مستقل؛ نوبیتکس آخرین معامله است و TGJU قیمت پایانی/تأخیری' }); }
@@ -27762,7 +27778,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
   }
   var HIER = [['دلار، یورو، درهم بازار آزاد ایران', 'TGJU', 'تتر TGJU و نوبیتکس (کنترل اختلاف)'], ['طلا و سکه داخلی', 'TGJU', 'سازگاری ۱۸ و ۲۴ عیار؛ ارزش ذاتی از اونس × دلار'], ['اونس جهانی طلا', 'TGJU', 'Alpha Vantage (GOLD_SILVER_SPOT)'],
     ['بورس (شاخص، نمادها، اختیار)', 'TSETMC', '—'], ['بیت‌کوین و اتریوم (دلاری)', 'CoinGecko', 'TGJU و نوبیتکس BTC-USDT'], ['رمزارز به ریال', 'نوبیتکس', 'والکس، بیت‌پین (اگر نوبیتکس جواب ندهد)'], ['مشتقات بیت‌کوین (Funding، OI)', 'OKX (عمومی)', 'Bitget، KuCoin، MEXC (OKX به IP ایران جواب نمی‌دهد)'],
-    ['نفت برنت و WTI، گاز، مس، آلومینیوم', 'Yahoo Finance (قرارداد آتی نزدیک، بدون کلید)', 'Alpha Vantage با کلید شما؛ برنت TGJU'], ['بازده اوراق آمریکا و نرخ فدرال', 'Yahoo (^TNX) و FRED (DFF)', 'فدرال رزرو نیویورک (EFFR)، Alpha Vantage'], ['نرخ بدون ریسک ریالی', 'TSETMC (قیمت اخزا ← بازده)', '—']];
+    ['نفت برنت', 'TGJU (هر بار)', 'Alpha Vantage با کلید شما (روزی یک بار)'], ['نفت WTI و گاز طبیعی (هنری هاب)', 'Alpha Vantage با کلید شما (روزی یک بار؛ دادهٔ EIA)', '—'], ['مس و آلومینیوم (ماهانه)', 'Alpha Vantage (هفته‌ای یک بار؛ دادهٔ ماهانه)', '—'], ['بازده اوراق ۱۰ سالهٔ آمریکا', 'وزارت خزانه‌داری آمریکا (رسمی، روزانه)', 'Alpha Vantage'], ['نرخ بهرهٔ فدرال', 'فدرال رزرو نیویورک (EFFR، رسمی)', 'Alpha Vantage'], ['شاخص‌های جهانی سهام (۱۴)', 'CNBC (سرویس نمودار، غیررسمی)', '— (Yahoo و FRED از شبکهٔ شما جواب نمی‌دهند)'], ['نرخ بدون ریسک ریالی', 'TSETMC (قیمت اخزا ← بازده)', '—']];
   // intermarket: 60- and 250-day correlations of daily returns on common dates (correlation is not causation)
   function corr(a, b, n) { var A = {}, out = []; a.forEach(function (r, i) { if (i) A[r.date] = Math.log(r.close / a[i - 1].close); }); b.forEach(function (r, i) { if (i && A[r.date] != null) out.push([A[r.date], Math.log(r.close / b[i - 1].close)]); }); out = out.slice(-n); if (out.length < Math.min(40, n * 0.6)) return NaN;
     var mx = 0, my = 0; out.forEach(function (p) { mx += p[0]; my += p[1]; }); mx /= out.length; my /= out.length; var sxy = 0, sx = 0, sy = 0; out.forEach(function (p) { sxy += (p[0] - mx) * (p[1] - my); sx += (p[0] - mx) * (p[0] - mx); sy += (p[1] - my) * (p[1] - my); }); return sx > 0 && sy > 0 ? sxy / Math.sqrt(sx * sy) : NaN; }
@@ -28837,7 +28853,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     if (sn.fng) rows.push(['شاخص ترس و طمع رمزارز', fa(sn.fng.v, 0) + ' (' + sn.fng.label + ')', 'alternative.me']);
     var errs = G && G.lastErrs || [];
     out.push(ctx.panel('بازارهای جهانی و رمزارز', [rows.length ? table(['شاخص', 'مقدار', 'منبع'], rows) : h('p', { class: 'muted', text: 'هنوز دریافت نشده؛ «به‌روزرسانی همهٔ بخش‌ها» را بزنید.' }),
-      h('p', { class: 'small muted', text: 'نفت برنت و WTI، گاز، مس و آلومینیوم و بازده ۱۰ سالهٔ آمریکا از Yahoo Finance (قرارداد آتی نزدیک، بدون کلید)، نرخ فدرال از FRED؛ Alpha Vantage با کلید شما فقط پشتیبان است. همه قیمت پایانی روزند، نه لحظه‌ای. داده لیکوییدیشن و آن‌چین منبع عمومی بدون کلید ندارد و دریافت نمی‌شود.' }),
+      h('p', { class: 'small muted', text: 'نفت برنت از TGJU؛ WTI، گاز طبیعی، مس و آلومینیوم از Alpha Vantage با کلید شما (روزی یا هفته‌ای یک بار)؛ بازده ۱۰ سالهٔ آمریکا از وزارت خزانه‌داری آمریکا و نرخ فدرال از فدرال رزرو نیویورک (هر دو رسمی)؛ شاخص‌های جهانی از سرویس نمودار CNBC. Yahoo و FRED از شبکهٔ شما جواب نمی‌دهند و حذف شدند. همه قیمت پایانی روزند، نه لحظه‌ای.' }),
       errs.length ? h('details', null, [h('summary', { text: 'خطاهای آخرین دریافت (' + fa(errs.length, 0) + ')' }), list(errs)]) : null]));
     var IM = GMK.intermarket();
     out.push(ctx.panel('همبستگی بین‌بازاری', [IM.length ? table(['جفت', 'همبستگی ۶۰ روز', 'همبستگی ۲۵۰ روز', 'وضعیت'], IM.map(function (r) { return [r.label, isFinite(r.c60) ? fa(r.c60, 2) : '—', isFinite(r.c250) ? fa(r.c250, 2) : '—', r.brk ? chip('تغییر رابطه (بیش از ۰٫۴)', 'fit-cond') : '—']; })) : h('p', { class: 'muted', text: 'دادهٔ کافی برای جفت‌ها نیست.' }),
@@ -30196,12 +30212,32 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return ctx.panel('بهترین فرصت‌های کل بازار (همهٔ بازارها در یک رتبه‌بندی)', [P('رتبه بر پایهٔ امتیاز قابل توضیح (سطح تأیید، شواهد بک‌تست، اطمینان، بازده به ریسک، نزدیکی به ورود، هم‌جهتی افق‌ها، نقدشوندگی، نوسان) با کسر برای هم‌گروهی و همبستگی بالا. رتبهٔ اول توصیهٔ قطعی یا تضمین بازده نیست؛ تا وقتی «وضعیت» تأییدشده نیست، خرید نیست.', 'small muted'),
       A.length ? table(['رتبه', 'نماد', 'بازار / گروه', 'قیمت', 'وضعیت', 'محدودهٔ ورود', 'حد ضرر', 'هدف ۱ / ۲', 'R:R', 'امتیاز', 'چرا این رتبه (جزئیات با نگه‌داشتن نشانگر یا انتخاب نماد)'], A.map(function (r) { var L = r.L || {}, tp = L.tp || [];
         return [fa(r.rank, 0), symBtn(ctx, S, r), (CLS[r.cls] || r.cls) + (r.cls === 'stock' || r.cls === 'fund' ? ' · ' + r.grpFa : ''), n(r.px, r), r.tierFa + ' · ' + r.execFa, L.buy ? zone(L.buy) : L.floor ? 'کف ' + zone(L.floor) : '—', isF(L.stop) ? n(L.stop) : '—', [tp[0], tp[1]].filter(isF).map(function (v) { return n(v); }).join(' / ') || '—', isF(r.rr) ? fa(r.rr, 1) : '—', fa(r.pri.s, 0), priShort(r, true)]; })) : P('هیچ دارایی فرصت خرید (تأییدشده، در انتظار تأیید یا نزدیک کف) ندارد.')]); }
+  /* all actions in priority order, with filters on action, market and central status (user request 2026-11-21). Groups: exit and stop →
+     confirmed buy → take profit → buy / sell after a confirmation → waiting / floor; inside a group the one central order (Hub.central.cmp). */
+  var AGRP = [['exit', 'خروج و حد ضرر'], ['buy', 'خرید تأییدشده'], ['tp', 'ذخیرهٔ سود'], ['cond', 'خرید یا فروش پس از تأیید'], ['wait', 'انتظار برای تأیید یا کف']];
+  function agrpOf(r) { var c = r.cats || []; if (r.act === 'close' || r.act === 'sell' || r.act === 'reduce' || c.indexOf('close') >= 0 || c.indexOf('reduce') >= 0) return 0; if (r.tier === 'ok') return 1; if (r.held && c.indexOf('tp') >= 0) return 2;
+    if (r.act === 'wait' || r.sell === 'inZone' || r.sell === 'confirmed') return 3; if (r.tier === 'wait' || r.tier === 'floor') return 4; return -1; }
+  function actionsPanel(ctx, S, R) {
+    var F0 = S.af = S.af || { act: 'all', cls: 'all', st: 'all' }, all = R.recs.map(function (r) { return { r: r, g: agrpOf(r) }; }).filter(function (x) { return x.g >= 0; });
+    var cnt = function (k, v) { return all.filter(function (x) { return (k === 'act' ? x.r.actFa : k === 'cls' ? x.r.cls : x.r.st) === v; }).length; };
+    var uniq = function (f) { var o = {}; all.forEach(function (x) { o[f(x.r)[0]] = f(x.r)[1]; }); return Object.keys(o).map(function (k) { return [k, o[k]]; }); };
+    var sel = function (k, lab, opts) { var s = h('select', { class: 'f-sel', 'aria-label': lab }, [h('option', { value: 'all', text: 'همه' })].concat(opts.map(function (o) { return h('option', { value: o[0], text: o[1] + ' (' + fa(cnt(k, o[0]), 0) + ')' }); }))); s.value = F0[k]; s.addEventListener('change', function () { F0[k] = s.value; S.alim = 60; ctx.rerender(); }); return h('label', { class: 'small' }, [lab + ' ', s]); };
+    var L = all.filter(function (x) { var r = x.r; return (F0.act === 'all' || r.actFa === F0.act) && (F0.cls === 'all' || r.cls === F0.cls) && (F0.st === 'all' || r.st === F0.st); })
+      .sort(function (a, b) { return a.g - b.g || Hub.central.cmp(a.r, b.r); }), lim = S.alim || 60;
+    var rows = L.slice(0, lim).map(function (x) { var r = x.r, Lr = r.L || {}, p = Hub.central.present(r);
+      return [r.actFa, symBtn(ctx, S, r), CLS[r.cls] || r.cls, n(r.px, r), Lr.buy ? zone(Lr.buy) : NC, isF(Lr.upConf) ? n(Lr.upConf, r) : NC, isF(Lr.stop) ? n(Lr.stop, r) : NC, p.tp.length ? n(p.tp[0], r) : NC, isF(r.rr) ? faD(r.rr.toFixed(1)) : '—', isF(r.conf) ? fa(r.conf, 0) + '٪' : '—', r.stFa, isF(r.rank) ? fa(r.rank, 0) : isF(r.rankCls) ? 'اختیار #' + fa(r.rankCls, 0) : '—', AGRP[x.g][1]]; });
+    return ctx.panel('اقدام‌ها به ترتیب اولویت — ' + fa(L.length, 0) + (L.length < all.length ? ' از ' + fa(all.length, 0) : ''), [
+      P('ترتیب: ' + AGRP.map(function (g) { return g[1]; }).join(' ← ') + '؛ درون هر گروه همان رتبهٔ مرکزی که همهٔ بخش‌ها نشان می‌دهند. فقط ردیف‌های «خرید تأییدشده» سیگنال قطعی‌اند؛ بقیه پیش‌سیگنال‌اند.', 'small muted'),
+      h('div', { class: 'row-ctl', style: 'flex-wrap:wrap;gap:.5rem' }, [sel('act', 'اقدام', uniq(function (r) { return [r.actFa, r.actFa]; })), sel('cls', 'بازار', ORD.filter(function (c) { return cnt('cls', c); }).map(function (c) { return [c, CLS[c]]; })),
+        sel('st', 'وضعیت مرکزی', uniq(function (r) { return [r.st, r.stFa]; })), h('button', { class: 'btn ghost', type: 'button', text: 'پاک کردن فیلترها', onclick: function () { S.af = { act: 'all', cls: 'all', st: 'all' }; ctx.rerender(); } })]),
+      L.length ? table(['اقدام', 'نماد', 'بازار', 'قیمت', 'محدودهٔ ورود', 'تأیید صعود', 'حد ضرر', 'هدف ۱', 'R:R', 'اطمینان', 'وضعیت مرکزی', 'رتبهٔ مرکزی', 'گروه'], rows) : P('با این فیلترها موردی نیست.'),
+      L.length > lim ? h('button', { class: 'btn ghost', type: 'button', text: 'نمایش ' + fa(Math.min(60, L.length - lim), 0) + ' مورد بیشتر', onclick: function () { S.alim = lim + 60; ctx.rerender(); } }) : null]); }
   function nearConfPanel(ctx, S, R) { var A = R.recs.filter(function (r) { var L = r.L || {}; return r.tier === 'wait' && isF(L.upConf) && isF(r.px) && r.px < L.upConf && L.upConf / r.px - 1 <= 0.03 || r.tier === 'floor' && r.tzState === 'inZone'; })
       .sort(function (a, b) { return (b.pri ? b.pri.s : 0) - (a.pri ? a.pri.s : 0); }).slice(0, 15);
     return ctx.panel('فرصت‌های نزدیک به تأیید', [P('در انتظار تأیید با فاصلهٔ کمتر از ۳٪ تا سطح تأیید صعود، یا داخل محدودهٔ کف احتمالی. هنوز سیگنال خرید نیستند.', 'small muted'),
       A.length ? table(['نماد', 'بازار', 'قیمت', 'شرط تأیید', 'فاصله', 'امتیاز'], A.map(function (r) { var L = r.L || {}, lv = r.tier === 'floor' ? L.tzConf : L.upConf; return [symBtn(ctx, S, r), CLS[r.cls] || r.cls, n(r.px, r), isF(lv) ? 'بسته‌شدن بالای ' + n(lv) : '—', isF(lv) && isF(r.px) ? pct(lv / r.px - 1, 1) : '—', r.pri ? fa(r.pri.s, 0) : '—']; })) : P('موردی نیست.')]); }
   function dash18(ctx) { var S = ctx.S, R = ctx.R; if (!R.C) return ctx.panel('مرکز داشبورد معاملاتی', [P('حکم مرکزی هنوز محاسبه نشده است. ابتدا داده‌ها را به‌روزرسانی کنید.'), Hub.dataCenterLink ? Hub.dataCenterLink('') : null]);
-    return ctx.group([selPanel(ctx, S, R), allocBTPanel(ctx, R), allocPanel(ctx, R), bestPanel(ctx, S, R, 15), nearConfPanel(ctx, S, R), overview(ctx, R), statusPanel(ctx, R)].filter(Boolean)); }
+    return ctx.group([selPanel(ctx, S, R), allocBTPanel(ctx, R), allocPanel(ctx, R), bestPanel(ctx, S, R, 15), actionsPanel(ctx, S, R), nearConfPanel(ctx, S, R), overview(ctx, R), statusPanel(ctx, R)].filter(Boolean)); }
 
   /* ---------------- section 2: the action inbox (directive 18 · 3) ---------------- */
   var CATS = ['all', 'buy', 'sell', 'scale', 'hold', 'wait', 'tp', 'reduce', 'close', 'change', 'risk'];
@@ -30285,7 +30321,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     return ctx.group([selPanel(ctx, S, R), A.length ? marketPage(ctx, 'کالا و انرژی (فقط تحلیل؛ در بازار داخلی مستقیم قابل معامله نیست)', A, {}) : ctx.panel('کالا و انرژی', [P('داده‌ای در محاسبه نیست.')]),
       IN.length ? marketPage(ctx, 'شاخص‌های جهانی (روند، کف و سقف؛ فقط تحلیل)', IN, {}) : null,
       ctx.panel('منابع شاخص‌های جهانی', [table(['شاخص', 'منبع اول / پشتیبان', 'وضعیت', 'آخرین داده'], SER.map(function (x) { var rows = GLs && GLs.data && GLs.data[x.id] || [], L = rows[rows.length - 1];
-        return [x.name, 'Yahoo Finance (' + x.yh + ')' + (x.fr ? ' / FRED (' + x.fr + ')' : ''), rows.length ? fa(rows.length, 0) + ' روز' + (GLs.srcOf && GLs.srcOf[x.id] ? ' از ' + GLs.srcOf[x.id] : '') : 'هنوز دریافت نشده', L ? sh(L.date) : '—']; })),
+        return [x.name, 'CNBC (' + x.cn + ')', rows.length ? fa(rows.length, 0) + ' روز' + (GLs.srcOf && GLs.srcOf[x.id] ? ' از ' + GLs.srcOf[x.id] : '') : 'هنوز دریافت نشده', L ? sh(L.date) : '—']; })),
         P((miss.length ? fa(miss.length, 0) + ' شاخص هنوز در موتور نیست (یا دریافت نشده یا کمتر از ۱۲۰ روز داده دارد). ' : '') + 'مجوز: داده‌های Yahoo برای استفادهٔ شخصی و غیرتجاری؛ سری‌های S&P و داوجونز در FRED به ۱۰ سال اخیر محدودند (شرط ناشر شاخص). روی گوشی Yahoo فقط از مسیر واسط عمومی در دسترس است؛ FRED مستقیم جواب می‌دهد.', 'small muted')])].filter(Boolean)); }
 
   // Tehran exchange: indices, stocks by industry, funds by type (directive 18 · 2-4, 5)
@@ -30636,11 +30672,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611201834) */
+/* PWA: offline cache + app updates (version 202611211132) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611201834';
+  window.HUB_APP_VERSION = '202611211132';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
