@@ -26370,7 +26370,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
         tz: x.tz && x.tz.zone ? { side: x.tz.side, lo: x.tz.zone[0], hi: x.tz.zone[1], conf: x.tz.conf, inv: x.tz.inv, st: x.tz.state, stFa: x.tz.stFa } : null };
       var rec = by[x.key], rc = rcOf(x, rec), hv = x.hzs || {};
       rec.tier = tierOf(x, rec); rec.tierFa = TIERFA[rec.tier]; rec.rc = rc ? rc.k : null; rec.rcFa = rc ? RCFA[rc.k] : ''; rec.rcWhy = rc ? rc.t : ''; rec.name = x.name; rec.date = x.date; rec.age = x.age;
-      rec.L = levelsOf(x); if (rec.L.far) { rec.lo = rec.hi = rec.stop = rec.rr = NaN; rec.tp = []; rec.farTxt = rec.L.farTxt; }
+      rec.L = levelsOf(x); if (rec.L.far) { rec.lo = rec.hi = rec.stop = rec.rr = NaN; rec.tp = []; rec.farTxt = rec.L.farTxt; if (/محدودهٔ ورود/.test(rec.why)) { var wq = rec.why.split('؛'); rec.why = rec.L.farTxt + (wq.length > 1 ? ' ' + wq.slice(1).join('؛').trim() : ''); } }
       // data sanity: a price that is not positive, or plan levels more than 5x away from it, mean the series is corrupt — no signal is shown on it
       var Lq = rec.L, odd = function (v) { return isF(v) && (v > rec.px * 5 || v < rec.px / 5); };
       if (!(rec.px > 1) || odd(Lq.buy && Lq.buy[0]) || odd(Lq.upConf) || odd(rec.stop) || odd(Lq.dnConf)) { rec.st = 'nodata'; rec.stFa = ST6.nodata; rec.why = 'دادهٔ قیمت ناسازگار است (قیمت ' + fa(rec.px) + ' با سطوح محاسبه‌شده از تاریخچه هم‌خوان نیست)؛ تا اصلاح داده هیچ سطح یا سیگنالی نمایش داده نمی‌شود.';
@@ -27851,7 +27851,7 @@ Hub.ocrDigits = {"G": 12, "nIn": 148, "nH": 128, "classes": ["(", ")", ",", "-",
     var P = [['tg:price_dollar_rl', 'tg:geram18', 'دلار و طلای ۱۸'], ['tg:price_dollar_rl', 'tse:total', 'دلار و شاخص کل'], ['tg:ons', 'tg:geram18', 'اونس و طلای ۱۸'], ['lv:oil_brent', 'tse:total', 'نفت برنت و شاخص کل'], ['g:brent', 'tse:total', 'نفت برنت (AV) و شاخص کل'], ['g:btc', 'tg:crypto-tether-irr', 'بیت‌کوین و تتر'], ['g:ust10', 'tg:ons', 'بازده اوراق آمریکا و اونس'], ['g:btc', 'g:eth', 'بیت‌کوین و اتریوم']];
     return P.filter(function (p) { return A[p[0]] && A[p[1]]; }).map(function (p) { var c60 = corr(A[p[0]], A[p[1]], 60), c250 = corr(A[p[0]], A[p[1]], 250); return { label: p[2], c60: c60, c250: c250, brk: isF(c60) && isF(c250) && Math.abs(c60 - c250) >= 0.4 }; });
   }
-  Hub.globalMkt = { KEY: KEY, SER: SER, MKFA: MKFA, rowsAll: rowsAll, deepen: deepen, kuRows: kuRows, health: health, HIER: HIER, intermarket: intermarket, store: function () { return U.store.get(KEY, null); } };
+  Hub.globalMkt = { KEY: KEY, SER: SER, MKFA: MKFA, rowsAll: rowsAll, deepen: deepen, kuRows: kuRows, health: health, HIER: HIER, intermarket: intermarket, fetchAll: fetchAll, store: function () { return U.store.get(KEY, null); } };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* js/models/efi.js */
@@ -30736,11 +30736,11 @@ Hub.start();
 
 <div id="pwa-bar" role="status"><span id="pwa-msg"></span><button type="button" id="pwa-go">به‌روزرسانی</button></div>
 <script>
-/* PWA: offline cache + app updates (version 202611211301) */
+/* PWA: offline cache + app updates (version 202611211307) */
 (function () {
   var bar = document.getElementById('pwa-bar'), msg = document.getElementById('pwa-msg'), go = document.getElementById('pwa-go');
   function show(t, btn) { msg.textContent = t; go.style.display = btn ? '' : 'none'; bar.style.display = 'flex'; if (!btn) setTimeout(function () { bar.style.display = 'none'; }, 4000); }
-  window.HUB_APP_VERSION = '202611211301';
+  window.HUB_APP_VERSION = '202611211307';
   if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     function waiting(w) { show('نسخهٔ جدید برنامه آماده است.', true); go.onclick = function () { w.postMessage('skip'); }; }
