@@ -84,7 +84,8 @@
     var q = h('input', { class: 'f-text nav-search', type: 'search', placeholder: 'Find a tool', 'aria-label': 'Find a tool' }), M = MAN();
     if (M) nav.appendChild(h('a', { href: 'index.html', class: 'nav-link top hub-link' }, [h('span', { text: 'درگاه مرکزی (Hub)' })]));
     nav.appendChild(link('home', MOD ? 'Overview' : 'All modules', null, true));
-    [['trade-center', 'مرکز داشبورد معاملاتی'], ['data-center', 'مرکز به‌روزرسانی داده‌ها']].forEach(function (x) { if (byId(x[0]) && (!MOD || modOf(x[0]) === MOD || !M)) nav.appendChild(link(x[0], x[1], null, true)); else if (M && M.tools[x[0]]) nav.appendChild(xlink(x[0], x[1], true)); });
+    // module page: only this module (its own tools); the hub and the single-file build keep the system-wide links
+    if (!MOD) [['trade-center', 'مرکز داشبورد معاملاتی'], ['data-center', 'مرکز به‌روزرسانی داده‌ها']].forEach(function (x) { if (byId(x[0])) nav.appendChild(link(x[0], x[1], null, true)); else if (M && M.tools[x[0]]) nav.appendChild(xlink(x[0], x[1], true)); });
     nav.appendChild(q);
     var groups = [];
     var addGrp = function (sid, label, items) {
@@ -95,18 +96,22 @@
       head.addEventListener('click', function () { var v = !grp.classList.contains('open'); set(v); open[sid] = v; try { localStorage.setItem('hub.nav.open', JSON.stringify(open)); } catch (e) { /* ignore */ } });
       set(sid === MOD || !!open[sid]); groups.push({ grp: grp, set: set, sid: sid });
       nav.appendChild(grp); };
-    SECTIONS.forEach(function (s) {
-      if (M && s.id !== MOD) {   // another module: its tools are links to that module's page
+    // a module page lists its own module only: exactly the tools the manifest assigns to it (the same list as its home page)
+    var own = MOD && M ? (M.modules.filter(function (x) { return x.id === MOD; })[0] || { tools: [] }).tools.map(byId).filter(Boolean) : null;
+    if (own) { var ord = inSection(MOD).map(function (t) { return t.id; }), ix = function (t) { var i = ord.indexOf(t.id); return i < 0 ? 999 : i; }; own.sort(function (a, b) { return ix(a) - ix(b); }); }
+    if (own) addGrp(MOD, secLabel(MOD), own.map(function (t) { return link(t.id, t.title, t.status); }));
+    if (!own) SECTIONS.forEach(function (s) {
+      if (M && s.id !== MOD) {   // the hub: each module's tools are links to that module's page
         var mm = M.modules.filter(function (x) { return x.id === s.id; })[0]; if (!mm || !mm.tools.length) return;
         addGrp(s.id, s.label, mm.tools.map(function (id) { return xlink(id, M.tools[id].t); })); return; }
-      var list = inSection(s.id); if (!list.length) return;
+      var list = inSection(s.id).filter(function (t) { return !MOD || !M || modOf(t.id) === MOD; }); if (!list.length) return;
       addGrp(s.id, s.label, list.map(function (t) { return link(t.id, t.title, t.status); }));
     });
     q.addEventListener('input', function () {
       var v = q.value.trim().toLowerCase();
       groups.forEach(function (g) { var any = false; g.grp.querySelectorAll('.nav-link').forEach(function (a) { var hit = !v || a.textContent.toLowerCase().indexOf(v) >= 0; a.style.display = hit ? '' : 'none'; any = any || hit; }); g.grp.style.display = any ? '' : 'none'; if (v) g.set(any); });
     });
-    nav.appendChild(h('div', { class: 'nav-grp open' }, [h('div', { class: 'nav-sec static' }, [h('span', { text: 'System' })]), h('div', { class: 'nav-body' }, [link('data-sources', 'Data sources & keys', null)])]));
+    if (!MOD) nav.appendChild(h('div', { class: 'nav-grp open' }, [h('div', { class: 'nav-sec static' }, [h('span', { text: 'System' })]), h('div', { class: 'nav-body' }, [link('data-sources', 'Data sources & keys', null)])]));
     markActive();
   }
   // a tool on another page of the system
@@ -153,6 +158,7 @@
   function renderHome(el) {
     var M = MAN();
     if (M && !MOD) return renderHub(el, M);
+    if (M && MOD) return renderModuleHome(el, M);
     var ready = tools.filter(function (t) { return t.status === 'ready'; });
     var planned = tools.filter(function (t) { return t.status === 'planned'; }).sort(function (a, b) { return a.priority - b.priority; });
     el.appendChild(h('header', { class: 'page-head' }, [
@@ -169,8 +175,16 @@
         h('ul', { class: 'sec-tools' }, list.map(function (t) { return h('li', null, [h('a', { href: '#' + t.id, text: t.title }), t.summary ? h('span', { class: 'muted', text: t.summary }) : null]); }))]));
     });
     el.appendChild(grid);
-    if (M && MOD) el.appendChild(h('section', { class: 'panel' }, [h('h2', { text: 'ماژول‌های دیگر سیستم' }), h('ul', { class: 'sec-tools' }, M.modules.filter(function (x) { return x.id !== MOD; }).map(function (x) { return h('li', null, [h('a', { href: x.file, text: secLabel(x.id) }), h('span', { class: 'muted', text: ' · ' + x.tools.length + ' ابزار' })]); }).concat([h('li', null, [h('a', { href: 'index.html', text: 'درگاه مرکزی (Hub)' })])]))]));
     marketCheck(el);
+  }
+  /* home of a module page: only this module's tools (the other modules are reached from the hub) */
+  function renderModuleHome(el, M) {
+    var mm = M.modules.filter(function (x) { return x.id === MOD; })[0], ids = mm ? mm.tools : [];
+    el.appendChild(h('header', { class: 'page-head' }, [h('p', { class: 'eyebrow' }, [h('a', { href: 'index.html', text: 'درگاه مرکزی (Hub)' })]), h('h1', { text: secLabel(MOD) })]));
+    var ord = inSection(MOD).map(function (t) { return t.id; }), ix = function (t) { var i = ord.indexOf(t.id); return i < 0 ? 999 : i; };
+    var list = ids.map(byId).filter(Boolean).sort(function (a, b) { return ix(a) - ix(b); });
+    el.appendChild(h('section', { class: 'sec-grid', 'aria-label': secLabel(MOD) }, [h('div', { class: 'sec-card', id: 'sec-' + MOD }, [h('h2', { text: secLabel(MOD) }),
+      h('ul', { class: 'sec-tools' }, list.map(function (t) { return h('li', null, [h('a', { href: '#' + t.id, text: t.title }), t.summary ? h('span', { class: 'muted', text: t.summary }) : null]); }))])]));
   }
   /* the hub: a gateway to the module pages; it hosts no tool */
   function renderHub(el, M) {
@@ -358,6 +372,7 @@
     initTheme();
     if (root.HUB_ONLY) { document.body.classList.add('single-tool'); var br = document.querySelector('.brand'); if (br) br.setAttribute('href', '#' + root.HUB_ONLY); }
     renderNav();
+    if (MOD && MAN()) try { var tl = secLabel(MOD); document.title = (Hub.i18n && Hub.i18n.t ? Hub.i18n.t(tl) : tl) + ' · مرکز مدل‌ها'; } catch (e) { /* ignore */ }
     var mb = document.getElementById('menu-btn');
     if (mb) mb.addEventListener('click', function () { document.body.classList.toggle('nav-open'); });
     // crash-loop guard (phones): if the last two starts never reached a stable page, open on the home page in safe mode
@@ -380,6 +395,10 @@
   }
 
   Hub.register = register; Hub.toolById = byId;
+  /* link to the data update centre (trading page); shared by every section — moved here from trading-engine.js so a page
+     that only links to the centre does not load the trading engine */
+  Hub.goDataCenter = function () { location.hash = '#data-center'; };
+  Hub.dataCenterLink = function (why) { return h('div', { class: 'row-ctl' }, [h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی از «مرکز مدیریت داده‌ها»', onclick: function () { Hub.goDataCenter(); } }), h('span', { class: 'small muted', text: why || 'همهٔ داده‌ها فقط از یک مرکز به‌روز می‌شوند و همهٔ بخش‌ها از همان دادهٔ مشترک می‌خوانند.' })]); };
   Hub.app = { home: home, parentOf: parentOf, tools: function () { return tools.slice(); }, SECTIONS: SECTIONS, PLACE: PLACE, module: function () { return MOD; }, urlOf: urlOf, go: go };
   Hub.SECTIONS = SECTIONS;
   // back button: previous page in this session, or the overview when there is none

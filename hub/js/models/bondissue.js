@@ -285,7 +285,34 @@
     return { wb: b.wb, rows: { fyr: fyr, kr: kr } };
   }
 
-  Hub.tools = Hub.tools || {}; Hub.tools.bondIssue = { sample: sample, blank: blank, run: run, build: build, schedule: schedule, flows: flows, xirr: xirr, migrate: migrate };
+  /* moved from financing.js (same code): Financing and Sukuk Issuance Capacity both price a sukuk with this engine */
+  function numF(v) { var x = Number(v); return isFinite(x) ? x : 0; }
+  /* cost of a sukuk issue with the ytm method (Bond Issue engine): dated cash flows on the Shamsi calendar,
+     business-day adjusted; SEO rate = coupons + fees flagged "in SEO rate"; true issuer cost = all fees; XIRR act/365 */
+  function biState(S, amount) {
+    var num = numF;
+    var BI = Hub.tools.bondIssue, k = S.sk, x = BI.sample();
+    x.bond = { amount: amount > 0 ? amount : 1000000, issueDate: k.issueDate, years: Math.max(1, Math.round(num(S.q.tenor)) || 1), freq: num(k.freq) || 4, coupon: num(k.coupon) };
+    x.cal = JSON.parse(JSON.stringify(k.cal)); x.fees = JSON.parse(JSON.stringify(k.fees)); x.cap = num(k.cap);
+    x.settings.principal = k.principal || 'bullet'; x.settings.couponConv = k.couponConv || 'equal'; x.alt.loanRate = num(S.q.bankRate);
+    return x;
+  }
+  function sukukCost(S, amount) {
+    var num = numF;
+    var BI = Hub.tools && Hub.tools.bondIssue; if (!BI || !S.sk) return null;
+    try {
+      var x = biState(S, amount), rates = function (st) { var sc = BI.schedule(st); return { sc: sc, seo: BI.xirr(BI.flows(sc, 'seo')), all: BI.xirr(BI.flows(sc, 'all')), bare: BI.xirr(BI.flows(sc, 'bare')) }; };
+      var R = rates(x), cap = num(S.sk.cap);
+      var maxUnder = function (g, lo, hi) { if (!(g(lo) <= cap)) return NaN; if (g(hi) <= cap) return hi; for (var i = 0; i < 80; i++) { var m = (lo + hi) / 2; if (g(m) <= cap) lo = m; else hi = m; } return lo; };
+      var withC = function (c) { var y = JSON.parse(JSON.stringify(x)); y.bond.coupon = c; return rates(y).seo; };
+      var withF = function (f) { var y = JSON.parse(JSON.stringify(x)); y.fees.forEach(function (fe) { if (fe.seo) fe.pct = num(fe.pct) * f; }); return rates(y).seo; };
+      var up = R.sc.fees.filter(function (e) { return e.date === R.sc.d0; }).reduce(function (a, e) { return a + e.amount; }, 0);
+      var lr = num(S.q.bankRate), loanEff = Math.pow(1 + lr / 12, 12) - 1;
+      return { amount: x.bond.amount, years: x.bond.years, seo: R.seo, all: R.all, bare: R.bare, cap: cap, overCap: R.seo > cap, maxCoupon: maxUnder(withC, 0, 2), feeScale: maxUnder(withF, 0, 5),
+        net: x.bond.amount - up, loanEff: loanEff, sc: R.sc, shifts: R.sc.shifts.length };
+    } catch (e) { return { error: e.message }; }
+  }
+  Hub.tools = Hub.tools || {}; Hub.tools.bondIssue = { sample: sample, blank: blank, run: run, build: build, schedule: schedule, flows: flows, xirr: xirr, migrate: migrate, biState: biState, sukukCost: sukukCost };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tools.bondIssue;
   if (!root.document || !Hub.toolkit) return;
 

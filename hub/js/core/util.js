@@ -192,7 +192,20 @@
     }).join('\r\n');
   }
 
-  Hub.util = { parseNum: parseNum, normaliseDigits: normaliseDigits, fmt: fmt, fmtNum: fmtNum, fmtPct: fmtPct, fmtX: fmtX,
+  /* large assets (PDF worker, OCR engine, Persian OCR data) loaded only when a PDF is read: inline in the old single-file build
+     (<script type="text/plain" id=…>); on a page opened from disk, one shared copy in vendor/asset-<id>.js (a script tag works over
+     file://, a fetch does not); on a served page, the file itself from vendor/ */
+  var ASSETS = {};
+  function asset(id, file) {
+    if (ASSETS[id]) return ASSETS[id];
+    var el = root.document && document.getElementById(id); if (el) return (ASSETS[id] = Promise.resolve(el.textContent));
+    var VB = root.HUB_VENDOR || 'vendor/';
+    if (root.location && root.location.protocol === 'file:') return (ASSETS[id] = new Promise(function (res) {
+      var s = document.createElement('script'); s.src = VB + 'asset-' + id + '.js';
+      s.onload = function () { res((root.HUB_ASSET || {})[id] || null); }; s.onerror = function () { res(null); }; document.head.appendChild(s); }));
+    return (ASSETS[id] = root.fetch ? root.fetch(VB + file).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; }) : Promise.resolve(null));
+  }
+  Hub.util = { asset: asset, parseNum: parseNum, normaliseDigits: normaliseDigits, fmt: fmt, fmtNum: fmtNum, fmtPct: fmtPct, fmtX: fmtX,
     toInput: toInput, fromInput: fromInput, getPath: getPath, setPath: setPath, clone: clone, h: h, clear: clear,
     /* phone profile: a phone browser keeps the full five-year history only for the core watch list; the rest of a market-wide list keeps
        300 sessions (short and medium horizons work, the long horizon says «داده ناکافی»). Override: localStorage hub.lite = '1' / '0'. */

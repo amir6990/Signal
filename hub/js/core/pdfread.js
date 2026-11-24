@@ -21,6 +21,8 @@
     if (!L.GlobalWorkerOptions.workerSrc) {
       var inl = document.getElementById('pdfjs-worker');
       if (inl) L.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([inl.textContent], { type: 'text/javascript' }));
+      else if (root.location && root.location.protocol === 'file:' && !root.PDFJS_WORKER_SRC && Hub.util && Hub.util.asset)   // page opened from disk: shared copy in vendor/
+        return Hub.util.asset('pdfjs-worker', 'pdf.worker.min.js').then(function (t) { if (!L.GlobalWorkerOptions.workerSrc) L.GlobalWorkerOptions.workerSrc = t ? URL.createObjectURL(new Blob([t], { type: 'text/javascript' })) : 'vendor/pdf.worker.min.js'; return L; });
       else L.GlobalWorkerOptions.workerSrc = root.PDFJS_WORKER_SRC || 'vendor/pdf.worker.min.js';
     }
     // hosted page: load the worker code into the page itself (pdf.js then runs it on the main thread),

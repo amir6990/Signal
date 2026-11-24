@@ -42,29 +42,11 @@
         { name: 'Offering adviser and other (مشاور عرضه و سایر)', pct: 0.015, unit: '%', basis: 'o', timing: '0', delay: 3, seo: true },
         { name: 'Side-letter excess (مازاد الحاقیه)', pct: 0.066, unit: '%', basis: 'o', timing: '0', delay: 3, seo: false }] };
   }
-  /* cost of a sukuk issue with the ytm method (Bond Issue engine): dated cash flows on the Shamsi calendar,
-     business-day adjusted; SEO rate = coupons + fees flagged "in SEO rate"; true issuer cost = all fees; XIRR act/365 */
-  function biState(S, amount) {
-    var BI = Hub.tools.bondIssue, k = S.sk, x = BI.sample();
-    x.bond = { amount: amount > 0 ? amount : 1000000, issueDate: k.issueDate, years: Math.max(1, Math.round(num(S.q.tenor)) || 1), freq: num(k.freq) || 4, coupon: num(k.coupon) };
-    x.cal = JSON.parse(JSON.stringify(k.cal)); x.fees = JSON.parse(JSON.stringify(k.fees)); x.cap = num(k.cap);
-    x.settings.principal = k.principal || 'bullet'; x.settings.couponConv = k.couponConv || 'equal'; x.alt.loanRate = num(S.q.bankRate);
-    return x;
-  }
-  function sukukCost(S, amount) {
-    var BI = Hub.tools && Hub.tools.bondIssue; if (!BI || !S.sk) return null;
-    try {
-      var x = biState(S, amount), rates = function (st) { var sc = BI.schedule(st); return { sc: sc, seo: BI.xirr(BI.flows(sc, 'seo')), all: BI.xirr(BI.flows(sc, 'all')), bare: BI.xirr(BI.flows(sc, 'bare')) }; };
-      var R = rates(x), cap = num(S.sk.cap);
-      var maxUnder = function (g, lo, hi) { if (!(g(lo) <= cap)) return NaN; if (g(hi) <= cap) return hi; for (var i = 0; i < 80; i++) { var m = (lo + hi) / 2; if (g(m) <= cap) lo = m; else hi = m; } return lo; };
-      var withC = function (c) { var y = JSON.parse(JSON.stringify(x)); y.bond.coupon = c; return rates(y).seo; };
-      var withF = function (f) { var y = JSON.parse(JSON.stringify(x)); y.fees.forEach(function (fe) { if (fe.seo) fe.pct = num(fe.pct) * f; }); return rates(y).seo; };
-      var up = R.sc.fees.filter(function (e) { return e.date === R.sc.d0; }).reduce(function (a, e) { return a + e.amount; }, 0);
-      var lr = num(S.q.bankRate), loanEff = Math.pow(1 + lr / 12, 12) - 1;
-      return { amount: x.bond.amount, years: x.bond.years, seo: R.seo, all: R.all, bare: R.bare, cap: cap, overCap: R.seo > cap, maxCoupon: maxUnder(withC, 0, 2), feeScale: maxUnder(withF, 0, 5),
-        net: x.bond.amount - up, loanEff: loanEff, sc: R.sc, shifts: R.sc.shifts.length };
-    } catch (e) { return { error: e.message }; }
-  }
+  /* cost of a sukuk issue with the ytm method: computed by the Bond Issue engine (bondissue.js), where it now lives so that
+     the sukuk-capacity tool on the bonds page can use it without loading this tool */
+  function biState(S, amount) { return Hub.tools.bondIssue.biState(S, amount); }
+  function sukukCost(S, amount) { var BI = Hub.tools && Hub.tools.bondIssue; return BI && BI.sukukCost ? BI.sukukCost(S, amount) : null; }
+
   var PURPOSE = { wc: L('Working capital / raw materials', 'سرمایه در گردش / مواد اولیه'), capex: L('Machinery and equipment (capex)', 'ماشین‌آلات و تجهیزات'), project: L('New project / plant', 'طرح یا کارخانهٔ جدید'),
     refi: L('Refinance existing debt', 'بازتأمین بدهی موجود'), acq: L('Acquisition', 'تملک شرکت دیگر'), repair: L('Repair the balance sheet (losses, leverage)', 'اصلاح ترازنامه (زیان، اهرم)') };
 
@@ -265,7 +247,7 @@
     var G = b.sheet('Inputs and gates', [2, 60, 30]); G.title('Your answers and the gates');
     Object.keys(S.q).forEach(function (k, i) { G.put(1, 4 + i, k); G.put(2, 4 + i, S.q[k], 'in'); });
     (R.gates || []).forEach(function (g, i) { G.put(1, 6 + Object.keys(S.q).length + i, tx(g), 'wrap'); });
-    if (S.advice && S.advice.json) { var C = b.sheet('Claude advice', [2, 46, 110]); C.title('Funding solution (draft for your judgement)'); Hub.tools.studio.flatten(S.advice.json, '').forEach(function (r, i) { C.put(1, 4 + i, r[0]); C.put(2, 4 + i, r[1], 'wrap'); }); }
+    if (S.advice && S.advice.json) { var C = b.sheet('Claude advice', [2, 46, 110]); C.title('Funding solution (draft for your judgement)'); Hub.aiText.flatten(S.advice.json, '').forEach(function (r, i) { C.put(1, 4 + i, r[0]); C.put(2, 4 + i, r[1], 'wrap'); }); }
     return b.wb;
   }
 
@@ -395,9 +377,9 @@
           .then(function (j) { S.advice = { json: j, at: new Date().toLocaleString() }; ctx.rerender(); })
           .catch(function (e) { go.disabled = false; st.textContent = e && e.code === 'offline' ? 'Claude is not reachable from this copy (it works inside the claude.ai artifact, or here with your Anthropic API key on Data sources & keys). Use Copy prompt, paste it into Claude, then paste the JSON answer below.' : 'Failed: ' + (e && e.message || e); });
       } });
-      var copy = h('button', { class: 'btn ghost', type: 'button', text: 'Copy prompt', onclick: function () { Hub.copyPrompt(advicePrompt(S, R, lang(S)), ans); } });
-      var imp = h('button', { class: 'btn ghost', type: 'button', text: 'Import answer', onclick: function () { try { S.advice = { json: Hub.tools.studio.parseJSON(ans.value), at: new Date().toLocaleString() }; ctx.rerender(); } catch (e) { U.toast(e.message, 'crit'); } } });
-      var out = S.advice && S.advice.json ? Hub.tools.studio.render(S.advice.json) : h('p', { class: 'muted', text: 'Not run yet.' });
+      var copy = h('button', { class: 'btn ghost', type: 'button', text: 'Copy prompt', onclick: function () { Hub.aiText.copy(advicePrompt(S, R, lang(S)), ans); } });
+      var imp = h('button', { class: 'btn ghost', type: 'button', text: 'Import answer', onclick: function () { try { S.advice = { json: Hub.aiText.parseJSON(ans.value), at: new Date().toLocaleString() }; ctx.rerender(); } catch (e) { U.toast(e.message, 'crit'); } } });
+      var out = S.advice && S.advice.json ? Hub.aiText.render(S.advice.json) : h('p', { class: 'muted', text: 'Not run yet.' });
       return ctx.group([ctx.panel('Funding solution (AI or local)', [h('p', { class: 'muted', text: 'Claude receives the statements, your answers, the debt capacity and the screening, and returns a recommended structure, alternatives, what does not fit, preparations, a roadmap, risks and the regulations to verify. A draft for your judgement.' }),
         h('div', { class: 'row-ctl' }, [go, loc, copy]), st, h('details', null, [h('summary', { text: 'Offline: import an answer' }), ans, h('div', { class: 'row-ctl' }, [imp])])]),
         ctx.panel('Solution' + (S.advice ? ' · ' + S.advice.at : ''), [out])]);

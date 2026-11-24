@@ -20,7 +20,7 @@
   function sample() { return { version: 1, tool: 'sukuk-capacity', x: R.sample(), coupon: 0.23, fin: R.finDefaults(), rateMode: 'coupon', rateManual: 0.30, amort: 'bullet', sources: {} }; }
   // rate used to size the issue: your own rate, the coupon, or the true issuer cost from the ytm method (Financing Solutions terms)
   function ytmCost(S) {
-    var FI = Hub.tools.financing; if (!FI || !FI.sukukCost) return NaN;
+    var FI = Hub.tools.bondIssue; if (!FI || !FI.sukukCost) return NaN;   // the ytm-method cost lives in the Bond Issue engine
     var st = U.store.get('hub.financing.v1', null), sk = st && st.sk ? st.sk : FI.skDefault();
     var k = FI.sukukCost({ sk: sk, q: { tenor: Math.max(1, Math.round(num(S.x.tenorMonths) / 12)), bankRate: 0.3, need: 1000000 } }, 1000000);
     return k && isFinite(k.all) ? k.all : NaN;

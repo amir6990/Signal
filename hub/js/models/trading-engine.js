@@ -16,8 +16,7 @@
   var MODE = [['signal', 'فقط سیگنال (Signal-Only)'], ['portfolio', 'ساخت سبد (Portfolio Construction)'], ['monitor', 'پایش موقعیت‌ها (Position Monitoring)'], ['full', 'سیستماتیک کامل (Full Systematic)']];
   var CLS = { stock: 'سهم', fund: 'صندوق', gold: 'طلا و سکه', fx: 'ارز', option: 'اختیار معامله' };
   var TYPEC = { long: 'fit-rec', short: 'fit-no', close: 'fit-no', hold: 'sev-info' };
-  var FEEDIDS = ['sig-stocks', 'sig-gold', 'sig-fx', 'sig-options'];
-  var FAT = { 'sig-stocks': 'سهام و صندوق‌ها (TSETMC)', 'sig-gold': 'طلا و سکه (TGJU)', 'sig-fx': 'ارز و تتر (TGJU)', 'sig-options': 'اختیار معامله (TSETMC)' };
+  var FEEDIDS = SG.FEEDIDS, FAT = SG.FAT;   // feed list and names: signals.js (shared with the pages that show data ages)
 
   function ensure(S) {
     var d = TE.defaults(); if (!S.e) S.e = d;
@@ -36,9 +35,7 @@
   function chip(t, cls) { return h('span', { class: 'sev ' + (cls || 'sev-info'), 'data-notr': '1', text: t }); }
   function px(x, c) { return fa(x, c && (c.cls === 'fx' || c.unit === 'دلار') && Math.abs(x) < 100 ? 2 : 0); }
   function isArtifact() { return /claude\.ai|claudeusercontent|anthropic/.test(location.host); }
-  function feed(id) { return SG.feeds.filter(function (f) { return f.id === id; })[0]; }
-  function loadFeed(f) { var s = U.store.get(f.storeKey, null); return s && s.version === 1 ? s : f.sample(); }
-  function feedState(f) { var S = loadFeed(f), live = S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source), age = SG.dataAge(S); return { S: S, live: live, age: age, k: !live ? 'none' : (!isFinite(age) || age > SG.maxAgeH() ? 'stale' : 'fresh') }; }
+  var feed = SG.feed, loadFeed = SG.loadFeed, feedState = SG.feedState;
   function sigText(c) {
     var U2 = c.unit === 'دلار' ? ' دلار' : '';
     if (c.type === 'hold') return (c.candidate ? 'عدم صدور سیگنال — ' : 'نگه‌داری / بدون اقدام — ') + c.sym + ': ' + (c.why[0] || '') + '؛ ' + c.timing;
@@ -161,7 +158,7 @@
   function updPanel(ctx, compact) {
     var b = h('button', { class: 'btn primary', type: 'button', text: UPD.busy ? 'در حال به‌روزرسانی…' : 'به‌روزرسانی همهٔ بخش‌ها (همهٔ داده‌ها + اعتبارسنجی)', disabled: UPD.busy, onclick: function () { updateEverything(ctx); } });
     var log = h('div', { id: 'upd-log', 'aria-live': 'polite' }, UPD.lines.filter(Boolean).map(function (l) { return h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t }); }));
-    var sn = {}, ages = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn[f.id]) return false; sn[f.id] = 1; return true; }).map(function (f) { var st = feedState(f); return (FAT[f.id] || ({ 'sig-temporal': 'تحلیل زمانی', 'long-view': 'اقتصاد ایران', 'sig-global': 'جهانی و رمزارز' })[f.id] || f.title).replace(/ \(.*\)/, '') + ': ' + (st.k === 'none' ? 'نمونه' : SG.ageText(st.age)); }).join(' · ');
+    var ages = SG.agesText();
     var NS = Hub.news && Hub.news.store ? Hub.news.store() : null; if (NS && NS.meta && NS.meta.asOfTs) ages += ' · خبرها: ' + SG.ageText((Date.now() - NS.meta.asOfTs) / 3600e3);
     return h('div', { class: 'upd-box' }, [h('div', { class: 'row-ctl' }, [b]), h('p', { class: 'small muted', text: 'سن داده‌ها: ' + ages }), log]);
   }
@@ -180,8 +177,6 @@
   // latest market date inside a feed's data (yyyymmdd), whatever the layout: arrays of rows or { px: rows }
   function mktDate(S) { var m = 0, walk = function (v) { var rows = Array.isArray(v) ? v : v && Array.isArray(v.px) ? v.px : v && Array.isArray(v.rows) ? v.rows : null; if (rows && rows.length) { var d = +(rows[rows.length - 1].date || (Array.isArray(rows[rows.length - 1]) ? rows[rows.length - 1][0] : 0)); if (d > 19000101 && d < 21000101 && d > m) m = d; } };
     Object.keys((S && S.data) || {}).forEach(function (k) { var v = S.data[k]; walk(v); if (v && typeof v === 'object' && !Array.isArray(v) && !v.px && !v.rows) Object.keys(v).forEach(function (q) { walk(v[q]); }); }); return m; }
-  Hub.goDataCenter = function () { location.hash = '#data-center'; };
-  Hub.dataCenterLink = function (why) { return h('div', { class: 'row-ctl' }, [h('button', { class: 'btn', type: 'button', text: 'به‌روزرسانی از «مرکز مدیریت داده‌ها»', onclick: function () { Hub.goDataCenter(); } }), h('span', { class: 'small muted', text: why || 'همهٔ داده‌ها فقط از یک مرکز به‌روز می‌شوند و همهٔ بخش‌ها از همان دادهٔ مشترک می‌خوانند.' })]); };
   /* ===================== DATA UPDATE CENTER (one page, one command) =====================
      The command fetches every source, checks it, stores it in the shared stores, then re-runs what depends on it
      (back-test and validation, auditor result, caches) and records the outcome per data group. Every other section reads

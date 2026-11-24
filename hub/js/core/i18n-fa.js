@@ -1,5 +1,7 @@
 /* Persian dictionary for the interface (English → فارسی). Exact strings and segments; extend freely. */
 (function (root) { var Hub = root.Hub = root.Hub || {}; Hub.FA = {
+"Data update center": "مرکز به‌روزرسانی داده‌ها",
+"Iran economy: real-economy monitor (PMI, inflation, growth)": "اقتصاد ایران: پایش اقتصاد واقعی (PMI، تورم، رشد)",
 "Write what you know about a company; get the strategy from each framework (Five Forces, PESTEL, SWOT/TOWS, VRIO, value chain, 7S, Business Model Canvas, Ansoff, Rumelt, Blue Ocean, Playing to Win), one conclusion across all of them and a prioritised improvement plan.": "آنچه دربارهٔ شرکت می‌دانید بنویسید؛ تحلیل هر چارچوب (پنج نیروی پورتر، PESTEL، SWOT/TOWS، VRIO، زنجیرهٔ ارزش، 7S مکنزی، بوم مدل کسب‌وکار، انسوف، روملت، اقیانوس آبی، بازی برای بردن)، یک جمع‌بندی واحد و یک برنامهٔ بهبود اولویت‌بندی‌شده بگیرید.",
 "Strategy Studio: company text → all frameworks → solutions": "استودیوی راهبرد: متن شرکت ← همهٔ چارچوب‌ها ← راه‌حل",
 "Value chain (Porter)": "زنجیرهٔ ارزش (پورتر)",

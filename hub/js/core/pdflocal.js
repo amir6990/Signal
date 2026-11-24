@@ -211,7 +211,7 @@
     TP = new Promise(function (res, rej) {
       if (!root.Tesseract) return rej(new Error(T('The OCR engine is not included in this copy.', 'موتور OCR در این نسخه نیست.')));
       // the single-file build carries the engine inline; a module page of the multi-page build fetches the same files from vendor/
-      var VB = root.HUB_VENDOR || 'vendor/', get = function (id, f) { var t = tag(id); return t ? Promise.resolve(t) : root.fetch ? root.fetch(VB + f).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; }) : Promise.resolve(null); };
+      var get = function (id, f) { return Hub.util.asset(id, f); };
       Promise.all([get('tess-worker', 'tess-worker.min.js'), get('tess-core', 'tess-core.js'), get('tess-fas', 'fas.traineddata.gz.b64')]).then(function (A) { start(A[0], A[1], A[2]); }); function start(worker, core, fas) {
       if (!worker || !core || !fas) return rej(new Error(T('The OCR engine is not included in this copy (use the single-file hub).', 'موتور OCR در این نسخه نیست (از فایل تک‌صفحه‌ای هاب استفاده کنید).')));
       var patch = 'var __fas=(function(){var s=atob(' + JSON.stringify(fas.replace(/\s+/g, '')) + '),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;})();' +

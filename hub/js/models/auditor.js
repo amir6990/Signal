@@ -169,7 +169,7 @@
     (R.findings || []).forEach(function (f, i) { [f.sev, tx(f.area), tx(f.title), tx(f.evidence), tx(f.q), tx(f.act), f.ref].forEach(function (v, j) { F.put(1 + j, 5 + i, v || '', 'wrap'); }); });
     var Q = b.sheet('Ratios', [2, 34, 16]); Q.title('Key ratios (last year)'); var k = 4;
     Object.keys(R.ratios || {}).forEach(function (key) { Q.put(1, k, key); Q.put(2, k, isFinite(R.ratios[key]) ? R.ratios[key] : null, 'calc', /Ratio|Cover|Ebitda$|z$/.test(key) ? 'dec' : /dso|dio/.test(key) ? 'int' : 'pct'); k++; });
-    if (S.review && S.review.json) { var C = b.sheet('Claude review', [2, 46, 110]); C.title('Claude review (draft for your judgement)'); Hub.tools.studio.flatten(S.review.json, '').forEach(function (r, i) { C.put(1, 4 + i, r[0]); C.put(2, 4 + i, r[1], 'wrap'); }); }
+    if (S.review && S.review.json) { var C = b.sheet('Claude review', [2, 46, 110]); C.title('Claude review (draft for your judgement)'); Hub.aiText.flatten(S.review.json, '').forEach(function (r, i) { C.put(1, 4 + i, r[0]); C.put(2, 4 + i, r[1], 'wrap'); }); }
     return b.wb;
   }
 
@@ -180,11 +180,7 @@
   /* ======================= UI ======================= */
   var h = U.h, TK = Hub.toolkit;
   var SEVL = { critical: L('Critical', 'بحرانی'), high: L('High', 'زیاد'), medium: L('Medium', 'متوسط'), low: L('Low', 'کم'), info: L('Info', 'اطلاعات') };
-  function copyText(t, ta) {
-    var fb = function () { ta.value = t; ta.select(); U.toast('Clipboard blocked: the prompt is in the box below, copy it from there', 'warn'); };
-    if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { U.toast('Prompt copied: paste it into Claude', 'good'); }, fb); else fb();
-  }
-  Hub.copyPrompt = copyText;
+  var copyText = Hub.aiText.copy;
   function lang(S) { return S.settings.lang === 'auto' ? (fa() ? 'fa' : 'en') : S.settings.lang; }
   /* ---------- the ten-part strict-auditor report, built only from local results (Excel/PDF extraction, rule engine, notes) ---------- */
   var SECMAP = { 3: /^(Arithmetic|Completeness|Cash)$/, 4: /^(Tax|Fixed assets|Inventory|Legal|Dividends|Margins|Unusual movement|Finance cost)$/, 7: /^(Related parties)$/, 8: /^(Earnings quality|Revenue \/ receivables|Receivables|Revenue)$/, 9: /^(Going concern|Going concern \/ legal|Leverage)$/ };
@@ -288,8 +284,8 @@
       } });
       var ans = h('textarea', { class: 'f-area', rows: 3, placeholder: 'Paste Claude’s JSON answer here', 'aria-label': 'Claude answer' });
       var copy = h('button', { class: 'btn ghost', type: 'button', text: 'Copy prompt', onclick: function () { copyText(reviewPrompt(S, R, lang(S), false), ans); } });
-      var imp = h('button', { class: 'btn ghost', type: 'button', text: 'Import answer', onclick: function () { try { S.review = { json: Hub.tools.studio.parseJSON(ans.value), at: new Date().toLocaleString() }; ctx.rerender(); } catch (e) { U.toast(e.message, 'crit'); } } });
-      var out = S.review && S.review.json ? Hub.tools.studio.render(S.review.json) : h('p', { class: 'muted', text: 'Not run yet.' });
+      var imp = h('button', { class: 'btn ghost', type: 'button', text: 'Import answer', onclick: function () { try { S.review = { json: Hub.aiText.parseJSON(ans.value), at: new Date().toLocaleString() }; ctx.rerender(); } catch (e) { U.toast(e.message, 'crit'); } } });
+      var out = S.review && S.review.json ? Hub.aiText.render(S.review.json) : h('p', { class: 'muted', text: 'Not run yet.' });
       return ctx.group([ctx.panel('Strict auditor’s reading (local first; cloud optional)', [h('p', { class: 'muted', text: 'Claude reads every imported line and the automated findings' + (pdf ? ', plus the PDF pages you list (e.g. the notes)' : '') + ', and returns risks, findings with evidence, questions for management, documents to request and adjustments to consider. A draft for your judgement, not an audit opinion.' }),
         h('div', { class: 'row-ctl' }, [loc, h('label', { class: 'muted', text: 'PDF pages to attach' }), pages, go, copy]), st, h('details', null, [h('summary', { text: 'Offline: import an answer' }), ans, h('div', { class: 'row-ctl' }, [imp])])]),
         ctx.panel('Review' + (S.review ? ' · ' + S.review.at : ''), [out])]);
