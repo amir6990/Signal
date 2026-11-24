@@ -45,7 +45,7 @@ let sent = 0, dead = [];
 for (const e of fresh) {
   if (A.quiet(e)) continue;
   const body = [e.mk + ' · ' + (e.act || e.tier || ''), 'قیمت ' + fa(e.px) + (e.zone ? ' · ورود ' + fa(e.zone[0]) + '–' + fa(e.zone[1]) : '') + (isFinite(e.stop) ? ' · حد ضرر ' + fa(e.stop) : '') + (isFinite(e.tp1) ? ' · هدف ۱ ' + fa(e.tp1) : ''), e.next].filter(Boolean).join('\n');
-  const payload = JSON.stringify({ title: e.lvlFa + ' · ' + e.title + ' — ' + e.sym, body, tag: e.id, urgent: e.lvl === 'urgent' || e.lvl === 'critical', url: './#trade-center' });
+  const payload = JSON.stringify({ title: e.lvlFa + ' · ' + e.title + ' — ' + e.sym, body, tag: e.id, urgent: e.lvl === 'urgent' || e.lvl === 'critical', url: './desk.html#trade-center' });
   for (const s of subs) { try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, payload, { TTL: 6 * 3600, urgency: e.lvl === 'urgent' || e.lvl === 'critical' ? 'high' : 'normal' }); sent++; }
     catch (err) { console.log('push failed', err.statusCode || '', String(err.body || err.message).slice(0, 120)); if (err.statusCode === 404 || err.statusCode === 410) dead.push(s.endpoint); } }
 }

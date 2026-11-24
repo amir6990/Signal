@@ -1,0 +1,110 @@
+/* =====================================================================
+ * CENTRAL REFERENCE — directive 22 «Global Data & Signal Consistency Framework» (2026-11-20).  Hub.central
+ *
+ * One asset → one analytic state → one central signal → one set of trading data, in every section.
+ *   asset master    every covered asset with a unique, stable Asset ID (AID) that survives a change of symbol, name, market or class:
+ *                   TSE instruments by their TSETMC insCode (TSE-<insCode>), TGJU series by key (TGJU-<key>), world markets by id
+ *                   (GLB-<id>), options by contract insCode or symbol (OPT-…). Name, symbol, market, class, industry, instrument type,
+ *                   active flag, data source and coverage state are kept with it (store hub.assets.v1).
+ *   signal store    the central record of the last engine run (hub.central.v1, written by tradeengine.centralSave) — the only
+ *                   source any page may show a verdict, level or rank from. Each record carries its AID, signal ID, version, created /
+ *                   updated time, validity date and data state.
+ *   ledger          every version of every signal, by AID (hub.sigledger.v1): what the verdict, levels and rank were and when they
+ *                   changed — so the state at any past moment can be rebuilt.
+ *   presenter       present(rec): the one normalised view of a record (verdict, rank, price, levels, version) that every page uses;
+ *                   pages differ in layout, filters and detail, never in content.
+ *   why-not         whyNot(key): why an asset is not shown as an opportunity (not covered, no data, excluded class, filter …).
+ * Analysis models (the stock workshop score, the gold bubble, the FX spread, the options model …) are inputs of the engine; their own
+ * labels are shown only as «model input», never as a signal.
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+  var Hub = root.Hub = root.Hub || {};
+  var CKEY = 'hub.central.v1', LKEY = 'hub.sigledger.v1', AKEY = 'hub.assets.v1', MAXV = 30;
+  function U() { return Hub.util; }
+  function isF(x) { return typeof x === 'number' && isFinite(x); }
+  function st() { return U() && U().store; }
+
+  /* ---------- asset master ---------- */
+  var CLSFA = { stock: 'سهام', fund: 'صندوق', gold: 'طلا و سکه', fx: 'ارز', crypto: 'رمزارز', commodity: 'کالا و انرژی', intl: 'شاخص جهانی', option: 'اختیار معامله', index: 'شاخص' };
+  var MAP = null;   // legacy key → AID (rebuilt with the master)
+  function aidOf(key, hint) {
+    if (!key) return null; if (MAP && MAP[key]) return MAP[key];
+    var k = String(key), m;
+    if ((m = /^s:(.+)$/.exec(k))) return hint && hint.insCode ? 'TSE-' + hint.insCode : 'TSE-SYM-' + m[1];
+    if ((m = /^g:(.+)$/.exec(k))) return 'TGJU-' + m[1];
+    if ((m = /^x:(.+)$/.exec(k))) return 'GLB-' + m[1];
+    if ((m = /^o:(.+)$/.exec(k))) return hint && hint.insCode ? 'OPT-' + hint.insCode : 'OPT-SYM-' + m[1];
+    if ((m = /^ix:(.+)$/.exec(k))) return 'IDX-' + m[1];
+    return 'KEY-' + k;
+  }
+  function buildMaster() {
+    var S = st(); if (!S) return null; var A = {}, map = {}, add = function (key, o) { if (Hub.universe && Hub.universe.outKey(key)) return; var aid = aidOf(key, o); var a = A[aid] = A[aid] || { aid: aid, keys: [] }; Object.keys(o).forEach(function (q) { if (o[q] != null && o[q] !== '') a[q] = o[q]; }); if (a.keys.indexOf(key) < 0) a.keys.push(key); map[key] = aid; };
+    var R = Hub.tseRegistry && Hub.tseRegistry.get ? Hub.tseRegistry.get() : null, SS = S.get('hub.sigstocks.v1', null);
+    // shares and funds: the watch list of the stock store (insCode is the stable id); the registry adds the official industry and fund type
+    if (SS && SS.watch) SS.watch.forEach(function (w) { if (!w.symbol) return; var d = SS.data && SS.data[w.symbol], px = d && d.px || [], ri = w.insCode && R && R.ins ? R.ins[w.insCode] : null;
+      add('s:' + w.symbol, { insCode: w.insCode || null, sym: w.symbol, name: w.name || (ri && ri.name) || w.symbol, market: w.market || (ri ? ({ 1: 'بورس', 2: 'فرابورس', 4: 'بازار پایه' })[ri.flow] || '' : ''), cls: w.ftype || /صندوق/.test(w.sector || '') ? 'fund' : 'stock',
+        ind: w.csName || w.sector || '', indCode: w.cs || '', type: w.ftype ? 'fund-' + w.ftype : ri ? 'yVal-' + ri.yVal : '', active: w.active !== false, inWhy: w.inactiveWhy || '', src: 'TSETMC', rows: px.length, last: px.length ? px[px.length - 1].date : null, idStable: !!w.insCode }); });
+    ['hub.sig-gold.v1', 'hub.sig-fx.v1'].forEach(function (k) { var T = S.get(k, null); if (!T || !T.ins) return; T.ins.forEach(function (x) { if (!x.key) return; var rows = T.data && T.data[x.key] || [];
+      add('g:' + x.key, { sym: x.series, name: x.series, market: 'بازار آزاد (TGJU)', cls: /^price_(dollar|eur|aed|gbp|try|cny)|tether|usdt/i.test(x.key) ? 'fx' : 'gold', ind: k === 'hub.sig-gold.v1' ? 'طلا و سکه' : 'ارز', type: x.type || '', active: x.active !== false, src: 'TGJU', rows: rows.length, last: rows.length ? rows[rows.length - 1].date : null, idStable: true }); }); });
+    if (Hub.globalMkt && Hub.globalMkt.SER) Hub.globalMkt.SER.forEach(function (x) { add('x:' + String(x.id).replace(/^g:/, ''), { sym: x.name, name: x.name, market: 'بازار جهانی', cls: x.intl ? 'intl' : x.mk === 'crypto' ? 'crypto' : x.mk === 'rates' ? 'rate' : 'commodity', ind: x.mk || '', active: true, src: x.src || 'جهانی', idStable: true }); });
+    // every central record is in the master (options, and anything the engine analysed that the lists above do not name)
+    var C = S.get(CKEY, null); if (C && C.by) Object.keys(C.by).forEach(function (k) { if (!map[k]) { var r = C.by[k]; add(k, { sym: r.sym, name: r.sym, cls: r.cls, active: true, src: r.cls === 'option' ? 'TSETMC' : '', idStable: false }); } });
+    var OUT = {}; ((C && C.outside) || []).forEach(function (q) { OUT[q.sym] = q.why; });
+    Object.keys(A).forEach(function (aid) { var a = A[aid], r = C && C.by ? a.keys.map(function (k) { return C.by[k]; }).filter(Boolean)[0] : null; a.inCentral = !!r; a.clsFa = CLSFA[a.cls] || a.cls || '';
+      a.cover = !a.active ? 'غیرفعال' + (a.inWhy ? ': ' + a.inWhy : '') : !r && OUT[a.sym] ? 'خارج از موتور: ' + OUT[a.sym] : r ? (r.st === 'nodata' ? 'در موتور، دادهٔ ناکافی' : 'تحت پوشش موتور مرکزی') : a.cls === 'fund' && /fixed/.test(a.type || '') ? 'خارج از موتور فنی (صندوق درآمد ثابت؛ معیار بازده)' : isF(a.rows) && a.rows < 30 ? 'تاریخچه کمتر از ۳۰ جلسه' : 'در موتور مرکزی نیست'; });
+    MAP = map; var M = { at: Date.now(), n: Object.keys(A).length, A: A, map: map }; try { S.set(AKEY, M); } catch (e) { /* ignore */ } return M; }
+  function master() { var S = st(), M = S && S.get(AKEY, null); if (!M) M = buildMaster(); else if (!MAP) MAP = M.map; return M; }
+
+  /* ---------- signal ID, version, ledger ---------- */
+  function hashOf(o) { var s = JSON.stringify(o), h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  function r4(x) { return isF(x) ? Number(x.toPrecision(6)) : null; }
+  // the decision content of a signal: a change in any of these is a new version
+  function content(s) { var lv = s.lv || {}; return { st: s.st, act: s.act, tier: s.tier || null, rank: s.rank || null, buy: lv.buy ? [r4(lv.buy[0]), r4(lv.buy[1])] : null, stop: r4(lv.stop), tp: (lv.tp || []).slice(0, 3).map(r4), up: r4(lv.up), dn: r4(lv.dn), inv: r4(lv.inv) }; }
+  /* called by tradeengine.centralSave with the slim records about to be stored: stamps AID, signal ID, version, created / updated time,
+     and appends a ledger entry for every record whose decision content changed. Returns { nNew, nChanged }. */
+  function stamp(slim, at, upd) {
+    var S = st(); if (!S) return null; var L = S.get(LKEY, null) || { v: 1, by: {} }, nNew = 0, nCh = 0; master();
+    Object.keys(slim).forEach(function (k) { var s = slim[k], aid = s.aid || aidOf(k), c = content(s), h = hashOf(c), H = L.by[aid] = L.by[aid] || [], last = H[H.length - 1];
+      s.aid = aid; s.sigId = aid + ':' + (s.hzc || 'M');
+      if (!last || last.h !== h) { var created = last && last.sid === (s.sid || null) && last.created ? last.created : at; H.push({ v: last ? last.v + 1 : 1, at: at, upd: upd || null, h: h, sid: s.sid || null, created: created, key: k, sym: s.sym, px: s.px, c: c }); if (H.length > MAXV) H.splice(0, H.length - MAXV); if (last) nCh++; else nNew++; }
+      var cur = H[H.length - 1]; s.ver = cur.v; s.created = cur.created; s.updAt = at; s.verAt = cur.at; });
+    L.at = at; try { S.set(LKEY, L); } catch (e) { /* ignore */ } return { nNew: nNew, nChanged: nCh }; }
+  function ledger(aid) { var L = st() && st().get(LKEY, null); return L && L.by ? (aid ? L.by[aid] || [] : L.by) : aid ? [] : {}; }
+  // the state of a signal at a past moment (directive 22 · 13): the last version issued at or before `at`
+  function asOf(aid, at) { var H = ledger(aid), o = null; H.forEach(function (x) { if (x.at <= at) o = x; }); return o; }
+
+  /* ---------- the stored central record (the only source of verdicts) ---------- */
+  function get() { var S = st(); return S ? S.get(CKEY, null) : null; }
+  function rec(key) { var C = get(); return C && C.by ? C.by[key] || null : null; }
+  /* present(r): the one normalised view of a central record — full (engine run) or slim (stored) — used by every page */
+  function present(r) {
+    if (!r) return null; var L = r.L || null, lv = r.lv || {};
+    var buy = L ? L.buy : lv.buy, stop = L ? L.stop : lv.stop, tp = L ? L.tp || [] : lv.tp || [], up = L ? L.upConf : lv.up, dn = L ? L.dnConf : lv.dn, inv = L ? L.inv : lv.inv;
+    return { key: r.key || null, aid: r.aid || aidOf(r.key), sym: r.sym, cls: r.cls, st: r.st, stFa: r.stFa, act: r.act, actFa: r.actFa, tier: r.tier || null, tierFa: r.tierFa || null,
+      rank: isF(r.rank) ? r.rank : null, rankCls: isF(r.rankCls) ? r.rankCls : null, pri: r.pri && isF(r.pri.s) ? r.pri.s : isF(r.pri) ? r.pri : null, conf: isF(r.conf) ? r.conf : null, strength: r.strength || null,
+      px: isF(r.px) ? r.px : null, date: r.date || null, hz: r.hz || null, buy: buy && isF(buy[0]) ? [Math.min(buy[0], buy[1]), Math.max(buy[0], buy[1])] : null, stop: isF(stop) ? stop : null,
+      tp: (tp || []).filter(isF).slice(0, 3), up: isF(up) ? up : null, dn: isF(dn) ? dn : null, inv: isF(inv) ? inv : null, rr: isF(r.rr) ? r.rr : lv && isF(lv.rr) ? lv.rr : null,
+      ver: r.ver || null, sigId: r.sigId || null, created: r.created || null, updAt: r.updAt || null, validUntil: r.validUntil || null, dataState: r.dataState || null, why: r.why || '', mv: r.mv || null, exec: r.exec || r.ex || null, xo: r.xo && !r.xo.na ? (r.xo.ty ? r.xo : { ty: r.xo.type, ord: r.xo.order, w: r.xo.worst, fp: r.xo.fillP, rw: r.xo.rrWorst, ok: r.xo.ok, ref: r.xo.ref, rd: r.xo.refDate, at: r.xo.calcAt, txt: r.xo.txt }) : null }; }
+  var TIERORD = { ok: 0, pos: 1, wait: 2, floor: 3, none: 4 };
+  // the one ordering of opportunities: the cross-market rank; then the market rank (options); then tier; then symbol
+  function cmp(a, b) { var ra = isF(a.rank) ? a.rank : 1e9, rb = isF(b.rank) ? b.rank : 1e9; if (ra !== rb) return ra - rb; var ca = isF(a.rankCls) ? a.rankCls : 1e9, cb = isF(b.rankCls) ? b.rankCls : 1e9; if (ca !== cb) return ca - cb;
+    var ta = TIERORD[a.tier] != null ? TIERORD[a.tier] : 5, tb = TIERORD[b.tier] != null ? TIERORD[b.tier] : 5; if (ta !== tb) return ta - tb; return String(a.sym).localeCompare(String(b.sym), 'fa'); }
+  function list(filter) { var C = get(); if (!C || !C.by) return []; return Object.keys(C.by).map(function (k) { var r = C.by[k]; return present(Object.assign({ key: k }, r)); }).filter(filter || function () { return true; }).sort(cmp); }
+  /* why an asset is not shown as an opportunity (directive 22 · 10) */
+  function whyNot(key) {
+    var r = rec(key); if (r) { if (r.tier === 'ok') return null; return r.stFa + ' — ' + (r.rcFa || r.why || '').toString().slice(0, 220); }
+    var M = master(), aid = aidOf(key), a = M && M.A[aid]; if (!a) return 'این دارایی در فهرست مرکزی دارایی‌ها نیست (پوشش داده نمی‌شود).';
+    return a.cover || 'در موتور مرکزی نیست';
+  }
+  function verdictFa(p) { return p ? p.actFa + ' — ' + p.stFa : 'بدون رکورد مرکزی'; }
+  /* the one trend of a series (directive 23 · 7): the central record's labels when the engine analyses it; otherwise the same three
+     rules run on the given rows. Labels are per horizon; momentum, channel readings and the trading verdict are separate concepts. */
+  var TFA = { up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: 'دادهٔ کم' };
+  function trend(key, rows) { var r = key ? rec(key) : null, TE = Hub.tradeEngine;
+    if (r && r.tr) return { src: 'central', date: r.tr.d, s: { v: r.tr.s, sub: r.tr.sb }, m: { v: r.tr.m, sub: r.tr.mb }, l: { v: r.tr.l, sub: r.tr.lb } };
+    var o = TE && TE.trendRows && rows ? TE.trendRows(rows, key) : null; if (!o) return null; return { src: 'rule', date: o.date, s: o.s, m: o.m, l: o.l }; }
+  function trendFa(T) { if (!T) return 'روند: دادهٔ کافی نیست'; var f = function (x) { return (TFA[x.v] || x.v) + (x.sub === 'pullback' ? ' (در اصلاح)' : x.sub === 'bounce' ? ' (در برگشت)' : ''); };
+    return 'روند (قاعدهٔ واحد سیستم) کوتاه: ' + f(T.s) + ' · میان: ' + f(T.m) + ' · بلند: ' + f(T.l); }
+  Hub.central = { trend: trend, trendFa: trendFa, TFA: TFA, CKEY: CKEY, LKEY: LKEY, AKEY: AKEY, CLSFA: CLSFA, aidOf: aidOf, buildMaster: buildMaster, master: master, stamp: stamp, ledger: ledger, asOf: asOf, get: get, rec: rec, present: present, cmp: cmp, list: list, whyNot: whyNot, verdictFa: verdictFa, content: content, hashOf: hashOf };
+})(typeof window !== 'undefined' ? window : globalThis);
