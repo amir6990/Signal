@@ -394,14 +394,16 @@
       var pr = tseProvider._session(); SESS = { t: Date.now(), p: pr }; pr.catch(function () { SESS = null; }); return pr;
     },
     _session: function () {
-      var mw = 'ClosingPrice/GetMarketWatch?market=0&paperTypes[0]=1&paperTypes[1]=2&paperTypes[2]=3&paperTypes[3]=4&paperTypes[4]=5&paperTypes[5]=6&paperTypes[6]=7&paperTypes[7]=8&paperTypes[8]=9&showTraded=false&withBestLimits=false&hEven=0&RefID=0';
+      var mw = 'ClosingPrice/GetMarketWatch?market=0&paperTypes[0]=1&paperTypes[1]=2&paperTypes[2]=3&paperTypes[3]=4&paperTypes[4]=5&paperTypes[5]=6&paperTypes[6]=7&paperTypes[7]=8&paperTypes[8]=9&showTraded=false&withBestLimits=true&hEven=0&RefID=0';   // best limits (order book, 5 levels) — directive 26 · 2: bid / ask in the order ticket
       return Promise.all([tse('MarketData/GetMarketOverview/1'), tse(mw), tse('ClientType/GetClientTypeAll').catch(function () { return null; })]).then(function (r) {
         var o = (r[0] && r[0].marketOverview) || {}, d = n(o.marketActivityDEven), by = {}, ct = {};
         if (!(d > 20000000)) throw new Error('TSETMC: session date missing in the market overview');
         ((r[1] && r[1].marketwatch) || []).forEach(function (m) { if (!m || !m.insCode) return;
           by[String(m.insCode)] = { date: d, close: n(m.pcl), last: n(m.pdv), open: n(m.pf), high: n(m.pmx), low: n(m.pmn), yclose: n(m.py), vol: n(m.qtj), val: n(m.qtc), trades: n(m.ztt), hEven: n(m.hEven),
             // instrument identity carried by the same feed: symbol, name, official industry code (csv), paper type (yVal), flow, board, fund NAV (pRedTran), shares
-            sym: faNorm(m.lva), name: faNorm(m.lvc), cs: String(m.csv == null ? '' : m.csv).trim(), yVal: n(m.yVal), flow: n(m.flow), board: String(m.cGrValCot || '').trim(), nav: n(m.pRedTran), shares: n(m.ztd), upper: n(m.pMax), lower: n(m.pMin) }; });
+            sym: faNorm(m.lva), name: faNorm(m.lvc), cs: String(m.csv == null ? '' : m.csv).trim(), yVal: n(m.yVal), flow: n(m.flow), board: String(m.cGrValCot || '').trim(), nav: n(m.pRedTran), shares: n(m.ztd), upper: n(m.pMax), lower: n(m.pMin),
+            // order book at the time of the request (blDs: pmd / qmd / zmd = bid price / volume / orders, pmo / qmo / zmo = ask; field names checked on the live feed 2026-11-24): top 3 levels
+            bl: Array.isArray(m.blDs) ? m.blDs.slice(0, 3).map(function (q) { return [n(q.pmd), n(q.qmd), n(q.pmo), n(q.qmo)]; }) : null }; });
         ((r[2] && r[2].clientTypeAllDto) || []).forEach(function (c) { if (c && c.insCode) ct[String(c.insCode)] = c; });
         var hh = n(o.marketActivityHEven), tm = hh ? ('0' + Math.floor(hh / 10000)).slice(-2) + ':' + ('0' + Math.floor(hh / 100) % 100).slice(-2) : '';
         return { date: d, hEven: hh, time: tm, state: String(o.marketState || ''), stateFa: o.marketStateTitle || '', open: o.marketState === 'F' || /باز/.test(o.marketStateTitle || ''),

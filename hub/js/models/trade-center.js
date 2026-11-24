@@ -20,7 +20,12 @@
   var ORD = ['stock', 'fund', 'gold', 'fx', 'crypto', 'commodity', 'option'];
   var TIERC = { ok: 'fit-rec', wait: 'sev-warn', floor: 'sev-info', none: 'sev-muted', pos: 'sev-info' };
   var VFA = { up: 'صعودی', down: 'نزولی', flat: 'خنثی', none: 'دادهٔ کم' };
-  var NC = 'دادهٔ کافی برای برآورد نیست (کمتر از ۳۰ جلسه تاریخچه)';
+  // directive 26 · 6: a missing value says WHY — the generic «fewer than 30 sessions» was shown for any missing level, also on long histories
+  var NC = 'برآورد نشد';
+  function ncWhy(r) { if (!r) return NC; var n0 = r.n, u = r.cls === 'crypto' ? ' روز' : ' جلسه';
+    if (isF(n0) && n0 < 30) return 'دادهٔ کافی نیست: تاریخچهٔ این دارایی در این دستگاه ' + fa(n0, 0) + u + ' است (حداقل ۳۰؛ «به‌روزرسانی همه‌چیز» تاریخچه را کامل می‌کند)';
+    if (r.dataState === 'stale') return 'دادهٔ این دارایی کهنه است؛ پس از به‌روزرسانی برآورد می‌شود';
+    return 'برآورد نشد: مدل کف و سقف برای وضعیت فعلی سطحی نساخت و حمایت / مقاومت نزدیکی هم در تاریخچه (' + (isF(n0) ? fa(n0, 0) + u : 'نامعلوم') + ') یافت نشد'; }
   // gold instruments and their gold content (same table as the gold signal tool: grams × purity)
   var GOLDS = [['ons', 'انس طلا'], ['geram18', 'طلای ۱۸ عیار', 1, 0.75], ['geram24', 'طلای ۲۴ عیار', 1, 0.995], ['mesghal', 'مثقال طلا', 4.6083, 0.705], ['sekee', 'سکه امامی', 8.133, 0.9], ['sekeb', 'سکه بهار آزادی', 8.133, 0.9],
     ['nim', 'نیم سکه', 4.0665, 0.9], ['rob', 'ربع سکه', 2.03325, 0.9], ['gerami', 'سکه گرمی', 1.0166, 0.9]];
@@ -87,7 +92,7 @@
     E.winT = L.win && L.win.from ? sh(L.win.from) + ' تا ' + sh(L.win.to) + (isF(L.win.T1) ? ' (هدف ' + n(L.win.T1) + ')' : '') : isF(r.days) && (L.tp || []).filter(isF).length ? 'افق ' + fa(r.days, 0) + ' جلسه' : rwWin(r, (E.tp.v || [])[0]);
     return E; }
   function E2(F) { return F.after.length ? lst(F.after) + (F.afEst ? ' (' + F.afEst + ')' : '') : NC; }
-  function fv(o, f) { if (!o || o.v == null || (Array.isArray(o.v) && !o.v.length)) return NC; var t = f ? f(o.v) : isF(o.v) ? n(o.v) : String(o.v); return t + (o.est ? ' (' + o.est + ')' : ''); }
+  function fv(o, f, r) { if (!o || o.v == null || (Array.isArray(o.v) && !o.v.length)) return r ? ncWhy(r) : NC; var t = f ? f(o.v) : isF(o.v) ? n(o.v) : String(o.v); return t + (o.est ? ' (' + o.est + ')' : ''); }
   function lst(v) { return v.slice(0, 3).map(function (x) { return n(x); }).join(' / '); }
   function fields(r) {
     var L = r.L || {}, tp = L.tp || [], top = Math.max(isF(tp[1]) ? tp[1] : -Infinity, isF(tp[0]) ? tp[0] : -Infinity), w = L.win;
@@ -112,7 +117,7 @@
       ['افق‌ها', ['s', 'm', 'l'].map(function (k) { var v = r.hzv && r.hzv[k]; return v ? v.fa.split(' (')[0] + ': ' + (VFA[v.view] || v.view) : ''; }).filter(Boolean).join(' · ') || NC],
       ['تاریخ داده', (r.date || '—') + (isF(r.age) ? ' (' + fa(r.age, 0) + ' ساعت پیش دریافت شده)' : '')],
       ['ردیابی تصمیم', 'شناسهٔ سیگنال ' + (r.sigId || r.sid || '—') + ' · نسخهٔ ' + (r.ver || '—') + ' · مدل ' + (r.mv || '—') + ' · افق ' + (r.hz || '—') + ' · زمان محاسبه ' + (r.updAt ? new Date(r.updAt).toLocaleString('fa-IR') : '—') + (r.heldPrev ? ' · آخرین حکم معتبر حفظ شد (دادهٔ تازه از کنترل کیفیت عبور نکرد)' : '')],
-      ['اجرای سفارش', r.xo && !r.xo.na ? r.xo.txt + (r.xo.ok ? '' : ' — قابل اجرا نیست: ' + r.xo.whyNot) : r.xo && r.xo.whyNot ? r.xo.whyNot : '—'],
+      ].concat(xoRows(r).map(function (q) { return ['اجرای سفارش — ' + q[0], q[1]]; }), [
       ['روند (قاعدهٔ واحد سیستم)', Hub.central && Hub.central.trendFa ? Hub.central.trendFa(r.trx).replace(/^روند \(قاعدهٔ واحد سیستم\) /, '') : '—'],
       ['سناریوهای ورود جایگزین (آزموده‌نشده)', r.alt && r.alt.list && r.alt.list.length ? r.alt.list.map(function (q) { return q.fa + ': ورود ' + n(q.entry) + ' (' + pct(q.dist, 1) + ')، حد ضرر ' + n(q.stop) + '، اهداف ' + n(q.tp[0]) + ' / ' + n(q.tp[1]) + '، R:R ' + fa(q.rr, 1) + (q.ok ? '' : ' (کمتر از حداقل)'); }).join(' | ') : '—'],
       // directive 18 · 2-2: the remaining items of the per-asset sheet
@@ -123,7 +128,7 @@
       ['درجهٔ اطمینان و اعتبار تحلیل', (isF(r.conf) ? 'اطمینان مدل ' + fa(r.conf, 0) + '٪' : 'اطمینان نامشخص') + (r.grade ? ' · درجهٔ اعتبارسنجی ' + r.grade : '') + (r.bt && r.bt.oos && isF(r.bt.oos.n) ? ' · برون‌نمونه: ' + fa(r.bt.oos.n, 0) + ' معامله، میانگین ' + (isF(r.bt.oos.avgR) ? fa(r.bt.oos.avgR, 2) + 'R' : '—') + (isF(r.bt.oos.pf) ? '، PF ' + fa(r.bt.oos.pf, 2) : '') : ' · شواهد برون‌نمونه ندارد')],
       ['قابلیت اجرا', (r.execFa || '—') + (r.execWhy && r.execWhy.length ? ' — ' + r.execWhy.join(' ') : '')],
       ['چرخهٔ زمانی (موتور مستقل)', r.cyc ? r.cyc.stFa + (r.cyc.win ? ' · پنجرهٔ ' + r.cyc.win.typeFa + ' ' + sh(r.cyc.win.a) + ' تا ' + sh(r.cyc.win.b) + ' (' + r.cyc.hz + ')' : '') + ' · ' + (r.cyc.valid.length ? 'سطح: ' + r.cyc.lvFa : 'روش معتبری برای این بازار نیست؛ هشدار صادر نمی‌شود') : 'محاسبه نشده (اعتبارسنجی چرخه‌ها هنوز اجرا نشده یا تاریخچه کوتاه است)'],
-      ['امتیاز اولویت', r.pri ? fa(r.pri.s, 0) + ' از ۱۰۰ (رتبهٔ ' + fa(r.rank, 0) + ') — ' + priWhy(r) : 'فرصت خرید نیست؛ امتیاز ندارد']];
+      ['امتیاز اولویت', r.pri ? fa(r.pri.s, 0) + ' از ۱۰۰ (رتبهٔ ' + fa(r.rank, 0) + ') — ' + priWhy(r) : 'فرصت خرید نیست؛ امتیاز ندارد']]);
   }
   // the parts of the priority score, largest contributions first, and the penalties
   function priWhy(r) { var OR = Hub.oppRank; if (!r.pri || !OR) return '';
@@ -247,18 +252,34 @@
     var permP = h('div', { class: 'row-ctl' }, [P('اعلان سیستمی (Push در همین دستگاه): ' + ({ granted: 'اجازه داده شده', denied: 'رد شده — از تنظیمات مرورگر/گوشی باز کنید', default: 'هنوز درخواست نشده', unsupported: 'در این مرورگر پشتیبانی نمی‌شود (در آیفون: برنامه را به صفحهٔ اصلی اضافه کنید)' })[perm] + '.', 'small'),
       perm === 'default' ? h('button', { class: 'btn primary', type: 'button', text: 'اجازهٔ ارسال اعلان', onclick: function () { A.requestPermission().then(function () { ctx.rerender(); }); } }) : null,
       h('button', { class: 'btn ghost', type: 'button', text: 'اعلان آزمایشی', onclick: function () { A.deliver([Object.assign(A.card({ key: 'test', sym: 'آزمایش', cls: 'stock', px: NaN, L: {} }), { t: 'info', lvl: 'info', lvlFa: 'اطلاع‌رسانی', title: 'اعلان آزمایشی', side: 'info', next: 'این فقط یک آزمایش است.', reason: 'آزمایش کانال اعلان', at: Date.now(), sid: String(Date.now()) })]).then(function () { ctx.rerender(); }); } })]);
-    var setP = ctx.panel('تنظیمات اعلان', [permP, h('div', null, [cb(s, 'on', 'اعلان‌ها فعال'), cb(s, 'buy', 'خرید'), cb(s, 'sell', 'فروش و خروج'), cb(s, 'pre', 'پیش‌آگاهی (در انتظار تأیید)'), cb(s, 'info', 'تغییر/ابطال'), cb(s, 'sys', 'اعلان سیستمی')]),
+    var setP = ctx.panel('تنظیمات اعلان', [permP, h('div', null, [cb(s, 'on', 'اعلان‌ها فعال'), cb(s, 'buy', 'خرید'), cb(s, 'sell', 'فروش و خروج'), cb(s, 'pre', 'پیش‌آگاهی'), cb(s, 'move', 'حرکت مهم قیمت و شکست سطح'), cb(s, 'info', 'تغییر / ابطال (کم‌اهمیت)'), cb(s, 'sys', 'اعلان سیستمی')]),
       h('div', null, ORD.map(function (c) { return cb(s.cls, c, CLS[c]); })), h('div', null, [num('minConf', 'حداقل اطمینان (٪)'), num('nearPct', 'فاصلهٔ پیش‌آگاهی تا سطح (٪)'), num('quietFrom', 'ساعت سکوت از'), num('quietTo', 'تا')]),
       P('حد ضرر و خروج اضطراری در ساعات سکوت هم ارسال می‌شوند. اعلان تکراری برای همان رویداد ارسال نمی‌شود (پیش‌آگاهی تا ۲۴ ساعت، بقیه تا ۵ روز) مگر وضعیت تغییر کند.', 'small muted')]);
-    var log = S.log.slice().reverse().slice(0, 150);
-    var rows = log.map(function (e) { return [dt(e.at), e.lvlFa, e.title, e.sym + ' (' + (e.mk || '') + ')', n(e.px), e.zone ? zone(e.zone) : '—', isF(e.up) ? n(e.up) : '—', isF(e.stop) ? n(e.stop) : '—', [e.tp1, e.tp2].filter(isF).map(function (v) { return n(v); }).join(' / ') || '—', isF(e.rr) ? fa(e.rr, 1) : '—', e.next || '', (e.reason || '').slice(0, 160), e.inv || '—', e.sys === 'sent' ? 'ارسال شد' : e.sys === 'off' ? 'خاموش' : e.sys ? 'ارسال نشد' : '—', e.key === 'test' ? '—' : A.statusOf(e)]; });
+    var log = S.log.slice().reverse().slice(0, 150), KF = A.KIND || {}, KO = A.KOF || {};
+    var outFa = function (o) { return !o ? '—' : o.k === 'occurred' ? 'رخ داد (' + fa(o.after, 0) + ' جلسه بعد)' : o.k === 'not' ? 'رخ نداد (۱۰ جلسه)' : o.k === 'pending' ? 'در جریان (' + fa(o.n || 0, 0) + ' از ۱۰ جلسه)' : o.k === 'cont' ? 'ادامهٔ حرکت (۵ جلسه ' + pct(o.r5, 1) + ')' : o.k === 'rev' ? 'برگشت (۵ جلسه ' + pct(o.r5, 1) + ')' : '—'; };
+    var rows = log.map(function (e) { var kd = e.kindFa || KF[KO[e.t] || 'notif'] || '—', ck = e.key === 'test' ? { fa: '—' } : A.check ? A.check(e) : { fa: A.statusOf(e) };
+      return [dt(e.at), kd, e.lvlFa, e.title, e.sym + ' (' + (e.mk || '') + ')', n(e.px), e.event || '—', e.hzFa || '—', e.dirFa || '—', e.confFa || (isF(e.conf) ? fa(e.conf, 0) + '٪' : '—'), e.okCond || '—', e.noCond || e.inv || '—', e.next || '', (e.reason || '').slice(0, 200),
+        (e.cenAt ? dt(e.cenAt) : '—') + (e.mver ? ' · ' + e.mver : ''), outFa(e.out), e.sys === 'sent' ? 'ارسال شد' : e.sys === 'off' ? 'خاموش' : e.sys ? 'ارسال نشد' : '—', ck.fa]; });
+    // directive 26 · 3: the two kinds defined where the alerts are read
+    var defP = ctx.panel('دو نوع اعلان', [h('ul', { class: 'studio-l' }, [h('li', null, [h('strong', { text: 'اطلاع‌رسانی: ' }), 'اعلام اتفاقی که رخ داده است — حرکت مهم قیمت، شکست مقاومت یا حمایت، رسیدن قیمت به سطح کلیدی، تأیید یا ابطال سیگنال، فعال‌شدن حد ضرر، تحقق هدف.']),
+      h('li', null, [h('strong', { text: 'پیش‌آگاهی: ' }), 'احتمال رویدادی در آیندهٔ نزدیک بر پایهٔ شواهد فعلی — نزدیک‌شدن به سطح تأیید، ورود به محدودهٔ احتمالی کف یا سقف، پنجرهٔ زمانی حساس. پیش‌آگاهی دستور معامله نیست و شرط تأیید و شرط ابطال آن کنار آن نوشته شده است.']),
+      h('li', { text: 'هر اعلان افق خودش را دارد: طرح خرید و فروش «میان‌مدت (۲ تا ۸ هفته)»، کف و سقف احتمالی «کوتاه‌مدت (پنجرهٔ کف / سقف)»، حرکت قیمت «رویداد گذشته». پیش‌آگاهی سقف کوتاه‌مدت و «انتظار برای تأیید خرید» میان‌مدت می‌توانند هم‌زمان باشند؛ در یک افق و یک محاسبه، دو حکم متناقض خطای سیستم است و در بخش «کنترل سازگاری» گزارش می‌شود.' }),
+      h('li', { text: 'ستون «وضعیت امروز» ادعای هر اعلان را با آخرین حکم مرکزی دوباره می‌سنجد (مثلاً آیا قیمت هنوز در محدودهٔ سقف تازه است)؛ اعلانی که دیگر برقرار نیست «منقضی» نوشته می‌شود.' }),
+      h('li', { text: 'اطمینان: امتیاز قاعده‌محور مدل است، نه احتمال کالیبره‌شده؛ ستون «پیامد» نشان می‌دهد پیش‌آگاهی‌ها واقعاً رخ دادند یا نه (تا ۱۰ جلسه).' })])]);
+    var AU = A.audit ? A.audit() : null, GS = null; try { var Cx = U.store.get('hub.central.v1', null); GS = A.grade ? null : null; } catch (e) { /* ignore */ }
+    var auP = AU ? ctx.panel('کنترل سازگاری اعلان‌ها با حکم مرکزی (۳ روز اخیر)', [P('اعلان فعال ' + fa(AU.n, 0) + ' · منقضی‌شده با محاسبهٔ تازه ' + fa(AU.stale.length, 0) + ' · تناقض در یک افق (خطای سیستمی) ' + fa(AU.conflicts.length, 0) + ' · اختلاف جهت در دو افق متفاوت (مجاز، برچسب‌دار) ' + fa(AU.hz.length, 0), AU.conflicts.length ? 'small bad-t' : 'small'),
+      AU.conflicts.length ? table(['دارایی', 'اعلان', 'افق اعلان', 'حکم مرکزی', 'افق حکم', 'همان محاسبه؟'], AU.conflicts.map(function (q) { return [q.sym, q.alert, q.alertHz, q.verdict, q.verdictHz, q.sameRun ? 'بله' : 'خیر']; })) : null,
+      AU.hz.length ? table(['دارایی', 'اعلان', 'افق اعلان', 'حکم مرکزی', 'افق حکم'], AU.hz.slice(0, 30).map(function (q) { return [q.sym, q.alert, q.alertHz, q.verdict, q.verdictHz]; })) : null]) : null;
+    var GR = {}; S.log.forEach(function (e) { if (!e.out) return; var x = GR[e.t] = GR[e.t] || { title: e.title, n: 0, occurred: 0, not: 0, pending: 0, cont: 0, rev: 0 }; x.n++; x[e.out.k] = (x[e.out.k] || 0) + 1; });
+    var grP = Object.keys(GR).length ? ctx.panel('ارزیابی پیش‌آگاهی‌ها و حرکت‌ها با نتیجهٔ واقعی', [table(['نوع', 'ارزیابی‌شده', 'رخ داد / ادامه', 'رخ نداد / برگشت', 'در جریان', 'نرخ وقوع'], Object.keys(GR).map(function (t) { var x = GR[t], ok = (x.occurred || 0) + (x.cont || 0), no = (x.not || 0) + (x.rev || 0); return [x.title, fa(x.n, 0), fa(ok, 0), fa(no, 0), fa(x.pending || 0, 0), ok + no ? pct(ok / (ok + no), 0) : '—']; })),
+      P('نرخ وقوع فقط بر اعلان‌های همین دستگاه است و تا ۳۰ مورد در هر نوع، شاهد آماری محسوب نمی‌شود.', 'small muted')]) : null;
     var st = S.stats || {}, lp = ctx.panel('تاریخچهٔ اعلان‌ها (' + fa(S.log.length, 0) + ')', [h('div', { class: 'row-ctl' }, [h('button', { class: 'btn ghost', type: 'button', text: 'علامت خوانده‌شده برای همه', onclick: function () { A.markRead(); ctx.rerender(); } })]),
       P('کل اعلان‌ها ' + fa(st.n || 0, 0) + ' · اعلان سیستمی ارسال‌شده ' + fa(st.sys || 0, 0) + ' · ناموفق ' + fa(st.sysFail || 0, 0), 'small muted'),
-      rows.length ? table(['زمان', 'سطح', 'عنوان', 'دارایی', 'قیمت', 'محدودهٔ ورود', 'سطح تأیید', 'حد ضرر', 'اهداف', 'R:R', 'اقدام بعدی', 'دلیل', 'شرط ابطال', 'اعلان سیستمی', 'وضعیت امروز'], rows) : P('هنوز اعلانی ثبت نشده است. اولین محاسبه فقط خط مبنا را ثبت می‌کند؛ از محاسبهٔ بعدی، تغییرها اعلان می‌شوند.')]);
+      rows.length ? table(['زمان', 'نوع', 'اهمیت', 'عنوان', 'دارایی (بازار)', 'قیمت مبنا', 'رویداد', 'افق', 'جهت', 'اطمینان', 'شرط تأیید', 'شرط ابطال', 'اقدام مورد انتظار', 'دلیل', 'زمان تحلیل · نسخهٔ مدل', 'پیامد', 'اعلان سیستمی', 'وضعیت امروز (با حکم فعلی)'], rows) : P('هنوز اعلانی ثبت نشده است. اولین محاسبه فقط خط مبنا را ثبت می‌کند؛ از محاسبهٔ بعدی، تغییرها اعلان می‌شوند.')]);
     var lim = ctx.panel('محدودیت‌ها (صریح)', [h('ul', { class: 'studio-l' }, ['اعلان سیستمی وقتی ارسال می‌شود که هاب باز باشد (زبانهٔ مرورگر، برنامهٔ دسکتاپ یا برنامهٔ صفحهٔ اصلی گوشی). در گوشی، وقتی برنامه بسته یا در پس‌زمینه است، مرورگر زمان‌سنج را متوقف می‌کند؛ با باز شدن برنامه، بررسی جبرانی فوراً اجرا می‌شود.',
       'ارسال به برنامهٔ بسته با اجرای ساعتی GitHub انجام می‌شود (بخش بالا)؛ تأخیر تا یک ساعت، و برای سهام فقط پس از انتشار دادهٔ تازه از کامپیوتر یا گوشی.',
       'قیمت پایش سبک، آخرین معامله در لحظهٔ بررسی است؛ نوسان میان دو بررسی دیده نمی‌شود. تأیید شکست یا برگشت فقط با قیمت پایانی و محاسبهٔ دوباره اعلام می‌شود.', 'ایمیل و پیام‌رسان وصل نیستند.'].map(function (t) { return h('li', { text: t }); }))]);
-    return ctx.group([lp, setP, closedPanel(ctx), lim]); }
+    return ctx.group([defP, lp, auP, grP, setP, closedPanel(ctx), lim]); }
   /* push to a closed app: scheduled GitHub job + Web Push (approved by the owner) */
   function closedPanel(ctx) {
     var WP = Hub.webPush, DS = Hub.dataSync; if (!WP || !DS) return null;
@@ -374,7 +395,7 @@
   function marketTable(ctx, S, A, opt) {
     opt = opt || {}; var lim = S.lim || 60, shown = A.slice(0, lim);
     var rows = shown.map(function (r) { var L = r.L || {}, F = fbOf(r), w = L.win, tp = (L.tp || []).filter(isF), dn = (L.floor && L.tzT && L.tzT.length ? L.tzT : L.dnTp || []).filter(isF); if (!tp.length && F.tp.v && F.tp.v.length) tp = F.tp.v; if (!dn.length) dn = F.dnTp;
-      return [star(ctx, r), cmpBox(ctx, S, r), symBtn(ctx, S, r), opt.grp ? r.grpFa : CLS[r.cls] || r.cls, pxTime(r), r.st4Fa || '—', fv(F.floor, zone), fv(F.ceil, zone), L.buy ? zone(L.buy) : L.far ? 'طرح آزموده‌شده: ' + pct(L.far.dist, 1) + ' بالاتر از قیمت؛ ' + fv(F.buy, zone) : fv(F.buy, zone),
+      return [star(ctx, r), cmpBox(ctx, S, r), symBtn(ctx, S, r), opt.grp ? r.grpFa : CLS[r.cls] || r.cls, pxTime(r), r.st4Fa || '—', fv(F.floor, zone, r), fv(F.ceil, zone, r), L.buy ? zone(L.buy) : L.far ? 'طرح آزموده‌شده: ' + pct(L.far.dist, 1) + ' بالاتر از قیمت؛ ' + fv(F.buy, zone) : fv(F.buy, zone),
         (isF(L.upConf) ? '↑ ' + n(L.upConf) + ' (' + pct(L.upConf / r.px - 1, 1) + ')' : '↑ —') + ' / ' + (isF(L.dnConf) ? '↓ ' + n(L.dnConf) + ' (' + pct(L.dnConf / r.px - 1, 1) + ')' : '↓ —'), isF(L.stop) ? n(L.stop) : fv(F.stop), (tp.length ? '↑ ' + tp.slice(0, 2).map(function (v) { return n(v); }).join('، ') : '') + (dn.length ? (tp.length ? ' · ' : '') + '↓ ' + dn.slice(0, 2).map(function (v) { return n(v); }).join('، ') : '') || '—',
         w && w.from ? sh(w.from) + ' تا ' + sh(w.to) : F.winT || '—', TRFA[trendOf(r)], isF(r.conf) ? fa(r.conf, 0) + '٪' + (r.grade ? ' · ' + r.grade : '') : '—', (actionOf(r) || [0, 0, r.actFa])[2] + ' · ' + (r.execFa || ''), r.pri ? fa(r.pri.s, 0) : '—']; });
     var more = A.length > lim ? h('button', { class: 'btn ghost', type: 'button', text: 'نمایش ' + fa(Math.min(60, A.length - lim), 0) + ' مورد بیشتر (از ' + fa(A.length, 0) + ')', onclick: function () { S.lim = lim + 60; ctx.rerender(); } }) : null;
@@ -400,7 +421,23 @@
       P(A.rule + ' «تأییدشده» یعنی حکم مرکزی؛ «قابل اجرا» یعنی علاوه بر آن نقدشوندگی، نبود صف/توقف و تازگی داده هم برقرار است. نرخ سود بی‌ریسک (درآمد ثابت) در تنظیمات موتور: ' + (isF(R.X && R.X.E && R.X.E.cashRate) ? pct(R.X.E.cashRate, 1) + ' سالانه' : 'وارد نشده') + '.', 'small muted')]); }
   function bestRows(R, k) { return R.recs.filter(function (r) { return isF(r.rank); }).sort(function (a, b) { return a.rank - b.rank; }).slice(0, k || 15); }
   // execution of the order (directive 23 · 1): order price, worst probable fill, fill probability in 3 sessions, R:R at the worst fill
-  function xoCell(r) { var o = r.xo; if (!o || o.na) return '—'; return (o.type === 'stop' ? 'شرطی ' : 'محدود ') + n(o.order, r) + ' · بدترین ' + n(o.worst, r) + ' · احتمال اجرا ' + (isF(o.fillP) ? pct(o.fillP, 0) : '؟') + ' · R:R ' + (isF(o.rrWorst) ? fa(o.rrWorst, 1) : '—') + (o.ok ? '' : ' — قابل اجرا نیست'); }
+  // order ticket in one cell (directive 26 · 2): the kind of order, its price and what that price means — a limit order's worst fill IS its price, so it is not shown twice
+  function xoCell(r) { var o = r.xo; if (!o || o.na) return '—'; var f = o.f || {};
+    return (o.type === 'stop' ? 'سفارش شرطی: فعال‌سازی ' + n(o.order, r) + ' · بدترین اجرای محتمل ' + n(o.worst, r) + ' (لغزش برآوردی ' + pct(o.slip, 1) + ')' : 'سفارش محدود: خرید تا سقف ' + n(o.order, r) + (isF(f.dist) ? ' (' + pct(f.dist, 1) + ' نسبت به قیمت)' : ''))
+      + (f.book ? ' · بهترین عرضه ' + n(f.book.ask, r) + ' / تقاضا ' + n(f.book.bid, r) : '') + ' · احتمال اجرا در ۳ جلسه ' + (isF(o.fillP) ? pct(o.fillP, 0) : 'نامعلوم') + ' · R:R در بدترین اجرا ' + (isF(o.rrWorst) ? fa(o.rrWorst, 1) : '—') + (o.ok ? '' : ' — قابل اجرا نیست'); }
+  // the full ticket (asset sheet): every field with its unit and basis; a field the data do not support says so
+  function xoRows(r) { var o = r.xo, f = o && o.f; if (!o) return [['اجرای سفارش', '—']]; if (o.na || !f) return [['اجرای سفارش', o.whyNot || '—']];
+    var u = ' ' + (f.unit || 'ریال'), ago = function (t) { return t ? new Date(t).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : '—'; };
+    return [['قیمت مرجع', n(f.ref.v, r) + u + (f.ref.kind ? ' · ' + f.ref.kind : '') + (f.ref.date ? ' · ' + f.ref.date : '')],
+      ['نوع و قیمت سفارش', o.typeFa + ' — ' + f.order.fa + ': ' + n(f.order.v, r) + u],
+      ['فاصلهٔ قیمت سفارش تا قیمت بازار', isF(f.dist) ? pct(f.dist, 2) : '—'],
+      ['بهترین قیمت خرید / فروش (دفتر سفارش)', f.book ? 'تقاضا ' + n(f.book.bid, r) + ' (' + fa(f.book.bidQ, 0) + ') · عرضه ' + n(f.book.ask, r) + ' (' + fa(f.book.askQ, 0) + ') · فاصله ' + pct(f.book.spread, 2) + ' — دریافت ' + (f.book.t || ago(f.book.at)) + ' (لحظه‌ای نیست)' : f.bookWhy],
+      ['لغزش قیمت مورد انتظار', pct(f.slip.v, 2) + ' — ' + f.slip.fa],
+      ['هزینهٔ معاملاتی', pct(f.cost.v, 2) + ' — ' + f.cost.fa],
+      ['حجم قابل اجرا', f.vol ? fa(f.vol.v, 0) + ' واحد (' + f.vol.fa + ')' + (f.vol.ask ? ' · حجم بهترین عرضه ' + fa(f.vol.ask, 0) : '') : 'دادهٔ حجم برای این بازار در دسترس نیست'],
+      ['سناریوی اجرای معمول', f.normal], ['سناریوی نامطلوب اجرا', f.adverse],
+      ['احتمال عدم تکمیل سفارش', isF(f.noFill) ? pct(f.noFill, 0) + ' در ۳ جلسه (از تاریخچهٔ همین دارایی)' : 'نامعلوم (تاریخچهٔ کمتر از ۶۰ مورد)'],
+      ['R:R در بدترین اجرا', isF(o.rrWorst) ? fa(o.rrWorst, 1) : '—'], ['قابلیت اجرا', o.ok ? 'قابل اجرا' : 'قابل اجرا نیست: ' + o.whyNot]]; }
   function bestPanel(ctx, S, R, k) { var A = bestRows(R, k);
     return ctx.panel('بهترین فرصت‌های کل بازار (همهٔ بازارها در یک رتبه‌بندی)', [P('رتبه بر پایهٔ امتیاز قابل توضیح (سطح تأیید، شواهد بک‌تست، اطمینان، بازده به ریسک، نزدیکی به ورود، هم‌جهتی افق‌ها، نقدشوندگی، نوسان) با کسر برای هم‌گروهی و همبستگی بالا. رتبهٔ اول توصیهٔ قطعی یا تضمین بازده نیست؛ تا وقتی «وضعیت» تأییدشده نیست، خرید نیست.', 'small muted'),
       A.length ? table(['رتبه', 'نماد', 'بازار / گروه', 'قیمت مرجع', 'وضعیت', 'محدودهٔ ورود', 'اجرای سفارش (۳ جلسه)', 'حد ضرر', 'هدف ۱ / ۲', 'R:R', 'امتیاز', 'چرا این رتبه (جزئیات با نگه‌داشتن نشانگر یا انتخاب نماد)'], A.map(function (r) { var L = r.L || {}, tp = L.tp || [];
@@ -461,7 +498,7 @@
       out.push(ctx.panel('خلاصهٔ همهٔ اقدام‌ها', [table(['دسته', 'تعداد', 'برترین مورد'], CATS.slice(1).map(function (c) { var L = c === 'change' ? [] : inC(c).sort(function (a, b) { return (b.pri ? b.pri.s : b.spri || 0) - (a.pri ? a.pri.s : a.spri || 0); });
         return [O.CATFA[c], fa(count(c), 0), L[0] ? L[0].sym + ' (' + (CLS[L[0].cls] || '') + ')' : c === 'change' && chg[0] ? chg[0].sym + ': ' + chg[0].to : '—']; }))]));
       var recent = A.log.slice().reverse().slice(0, 40);
-      out.push(ctx.panel('آخرین اعلان‌ها', [recent.length ? table(['زمان', 'سطح', 'عنوان', 'دارایی', 'قیمت', 'اقدام بعدی', 'وضعیت امروز'], recent.map(function (e) { return [dt(e.at), e.lvlFa, e.title, e.sym, n(e.px), e.next || '', e.key === 'test' ? '—' : Hub.alerts.statusOf(e)]; })) : P('هنوز اعلانی ثبت نشده است.')]));
+      out.push(ctx.panel('آخرین اعلان‌ها', [recent.length ? table(['زمان', 'نوع · اهمیت', 'عنوان', 'دارایی', 'قیمت مبنا', 'افق', 'اقدام بعدی', 'وضعیت امروز (با حکم فعلی)'], recent.map(function (e) { var KO = Hub.alerts.KOF || {}; return [dt(e.at), ((KO[e.t] || 'notif') === 'early' ? 'پیش‌آگاهی' : 'اطلاع‌رسانی') + ' · ' + e.lvlFa, e.title, e.sym, n(e.px), e.hzFa || '—', e.next || '', e.key === 'test' ? '—' : Hub.alerts.statusOf(e)]; })) : P('هنوز اعلانی ثبت نشده است.')]));
     } else if (cur === 'buy') out.push(buyT(inC('buy'), 'فرصت‌های خرید (تأییدشده)', 'هیچ فرصت خرید تأییدشده‌ای در هیچ بازاری نیست. نزدیک‌ترین‌ها در «انتظار برای تأیید» هستند.'));
     else if (cur === 'scale') out.push(buyT(inC('scale'), 'خرید پله‌ای (Scale In)', 'موردی نیست: خرید پله‌ای فقط برای سیگنال تأییدشده با قدرت متوسط یا افزایش موقعیت باز.'));
     else if (cur === 'wait') out.push(buyT(inC('wait'), 'انتظار برای تأیید (فرصت تحلیلی، خرید نیست)', 'موردی نیست.'));
@@ -497,6 +534,57 @@
       ['همبستگی دلار با سکهٔ امامی', faD(isF(corr60(R, 'g:price_dollar_rl', 'g:sekee')) ? corr60(R, 'g:price_dollar_rl', 'g:sekee').toFixed(2) : '—')]];
     return ctx.group([selPanel(ctx, S, R), marketPage(ctx, 'ارز — کف، سقف و محدوده‌های اقدام', A, {}), ctx.panel('عوامل اثرگذار بر ارز (داده‌های موجود)', [table(['عامل', 'مقدار'], rows),
       P('متغیرهای پولی و تورمی، سیاست ارزی و ریسک ژئوپلیتیک در «پایش اقتصاد کلان ایران» و «خبرها» هستند و در خود محدوده‌های کف و سقف وارد نشده‌اند (این محدوده‌ها از رفتار قیمت همان بازار برآورد می‌شوند). نرخ رسمی/مرکز مبادله در داده‌ها نیست؛ عدد تخمینی به‌جای آن نمایش داده نمی‌شود.', 'small muted')])].filter(Boolean)); }
+  /* ---------- directive 26: important moves, missed opportunities, gold / silver funds and fund coverage ---------- */
+  function movesTab(ctx) {
+    var S = ctx.S, R = ctx.R, C = R.C, A = Hub.alerts, MV = Hub.moves; if (!C || !MV) return ctx.panel('حرکت‌های مهم بازار', [P('حکم مرکزی هنوز محاسبه نشده است.')]);
+    var LV = MV.LVFA, u = function (r) { return r.cls === 'crypto' ? ' روز' : ' جلسه'; }, mark = function (b) { return b ? '✓' : '✗'; };
+    var hTxt = function (m, r) { return (m.h || []).map(function (o) { return fa(o.h, 0) + u(r) + ': ' + pct(o.r, 1) + ' (z ' + fa(o.z, 1) + (o.rk != null ? '، رتبه ' + fa(o.rk * 100, 0) : '') + ')'; }).join(' · '); };
+    var dc = function (r) { var d = r.dcx && r.dcx.o, p = function (x) { return isF(x) ? pct(Math.exp(x) - 1, 1) : '—'; }; if (!d) return '—';
+      return r.dcx.k === 'usdt' ? 'دلار ' + p(d.dollar) + ' · تتر جهانی ' + (d.worldKnown ? p(d.world) : 'نامعلوم') + ' · فاصلهٔ تتر از دلار ' + p(d.spread) : r.dcx.k === 'gold' ? 'اونس ' + p(d.ounce) + ' · دلار ' + p(d.dollar) + ' · حباب ' + p(d.bubble) + ' (اکنون ' + pct(d.bub1, 1) + ')' : r.dcx.k === 'fund' ? (isF(d.nav) ? 'NAV ' + p(d.nav) + ' · فاصله از NAV ' + p(d.premium) : 'NAV آغاز دوره ثبت نشده') + ' · قیمت/NAV اکنون ' + pct(d.prem1, 2) : '—'; };
+    S.mvCls = S.mvCls || 'all'; S.mvLv = S.mvLv == null ? 2 : S.mvLv;
+    var sel = function (k, opts, lab) { var e = h('select', { class: 'f-in', 'aria-label': lab }); opts.forEach(function (o) { var q = h('option', { value: String(o[0]), text: o[1] }); if (String(S[k]) === String(o[0])) q.selected = true; e.appendChild(q); }); e.addEventListener('change', function () { S[k] = /^\d$/.test(e.value) ? +e.value : e.value; ctx.rerender(); }); return h('label', { class: 'small', style: 'margin-inline-end:.8rem' }, [lab + ' ', e]); };
+    var all = R.recs.filter(function (r) { return r.mvx && r.mvx.h && r.cls !== 'option'; }), list = all.filter(function (r) { return r.mvx.lv >= S.mvLv && (S.mvCls === 'all' || r.cls === S.mvCls); }).sort(function (a, b) { return b.mvx.lv - a.mvx.lv || Math.abs(bz(b)) - Math.abs(bz(a)); });
+    function bz(r) { var o = (r.mvx.h || []).filter(function (q) { return q.h === r.mvx.best; })[0]; return o ? o.z : 0; }
+    var cnt = {}; all.forEach(function (r) { if (r.mvx.lv >= 2) { var c = cnt[r.cls] = cnt[r.cls] || { up: 0, dn: 0 }; c[r.mvx.dir > 0 ? 'up' : 'dn']++; } });
+    var intro = ctx.panel('حرکت‌های مهم بازار — مستقل از سیگنال خرید', [P('برای هر دارایی، تغییر قیمت در ۱، ۳ و ۵ جلسه (رمزارز: ۱، ۳ و ۷ روز) با نوسان معمول خود همان دارایی سنجیده می‌شود (z = بازده ÷ نوسان روزانه × √افق) و با حرکت‌های هم‌اندازهٔ تاریخچهٔ خودش مقایسه می‌شود؛ آستانهٔ درصدی ثابت برای همهٔ بازارها به کار نمی‌رود. «قابل توجه»: |z| ≥ ۲ و بزرگ‌تر از ۹۰٪ تاریخچه؛ «مهم»: |z| ≥ ۲٫۵ و ۹۵٪؛ «بسیار مهم»: |z| ≥ ۳٫۵ و ۹۹٪ (انتخاب طراحی این ابزار، نه استاندارد منتشرشده).', 'small'),
+      P('چهار وضعیت جدا نمایش داده می‌شوند: افزایش قابل توجه قیمت، شکست مقاومت (بسته‌شدن بالای سقف ۲۰ جلسه)، تأیید روند صعودی (قاعدهٔ واحد روند) و سیگنال خرید (حکم مرکزی). رشد سریع قیمت به‌تنهایی تأیید خرید نیست؛ اگر قیمت از محدودهٔ ورود گذشته باشد، ورود دوباره فقط پس از اصلاح یا پولبک.', 'small muted'),
+      P('حرکت‌های مهم و بسیار مهم امروز: ' + (Object.keys(cnt).map(function (c) { return (CLS[c] || c) + ' ↑' + fa(cnt[c].up, 0) + ' ↓' + fa(cnt[c].dn, 0); }).join(' · ') || 'هیچ'), 'small'),
+      h('div', { class: 'row-ctl' }, [sel('mvCls', [['all', 'همه']].concat(ORD.map(function (c) { return [c, CLS[c]]; })), 'بازار'), sel('mvLv', [[1, 'قابل توجه و بالاتر'], [2, 'مهم و بالاتر'], [3, 'فقط بسیار مهم']], 'سطح')])]);
+    var rows = list.slice(0, S.mvLim || 80).map(function (r) { var m = r.mvx, stt = MV.stateOf(r, m), sl = r.sl;
+      return [symBtn(ctx, S, r), (CLS[r.cls] || r.cls) + (r.grpFa && (r.cls === 'fund') ? ' · ' + r.grpFa : ''), n(r.px, r) + ' · ' + (m.d || ''), hTxt(m, r), (m.dir > 0 ? '↑ ' : '↓ ') + LV[m.lv], isF(m.volR) ? fa(m.volR, 1) + '×' : '—',
+        m.brk > 0 ? 'بالای سقف ۲۰ جلسه (' + n(m.brkLv, r) + ')' + (m.brkNew ? ' — امروز' : '') : m.brk < 0 ? 'زیر کف ۲۰ جلسه (' + n(m.brkLv, r) + ')' : '—',
+        sl ? pct(sl.r, 1) + ' (z ' + fa(sl.z, 1) + ')' : '—',
+        'افزایش ' + mark(stt.rise) + ' · شکست ' + mark(stt.breakUp) + ' · روند صعودی ' + mark(stt.trendUp) + ' · خرید ' + mark(stt.buy), stt.entry.fa, dc(r), (r.tierFa || '') + (r.actFa ? ' · ' + r.actFa : '')]; });
+    var tbl = ctx.panel('فهرست حرکت‌ها (' + fa(list.length, 0) + ')', [rows.length ? table(['دارایی', 'بازار', 'قیمت · تاریخ داده', 'تغییر در افق‌ها', 'سطح', 'حجم نسبی', 'شکست سطح', 'از آخرین به‌روزرسانی', 'وضعیت‌ها', 'وضعیت ورود', 'عامل حرکت', 'حکم مرکزی'], rows) : P('حرکتی در این سطح نیست.'),
+      list.length > (S.mvLim || 80) ? h('button', { class: 'btn ghost', type: 'button', text: 'نمایش بیشتر', onclick: function () { S.mvLim = (S.mvLim || 80) + 80; ctx.rerender(); } }) : null]);
+    // crypto on its own timeframes (directive 26 · 6): 1h / 4h bars from Binance or Gate and weekly bars from the daily history
+    var cr = R.recs.filter(function (r) { return r.cls === 'crypto'; }), tfRow = function (r, k, lab) { var m = r.mvTf && r.mvTf[k]; return m && m.h ? [r.sym, lab, fa(m.n, 0) + ' شمع', hTxt(m, { cls: 'x' }).replace(/ جلسه/g, ' شمع'), (m.dir > 0 ? '↑ ' : m.dir < 0 ? '↓ ' : '') + LV[m.lv]] : [r.sym, lab, m && m.na ? m.na : 'دریافت نشد', '—', '—']; };
+    var crP = cr.length ? ctx.panel('رمزارز در تایم‌فریم‌های جدا (بازار ۲۴ ساعته)', [table(['دارایی', 'تایم‌فریم', 'داده', 'تغییر', 'سطح'], [].concat.apply([], cr.map(function (r) { return [tfRow(r, 'h1', '۱ ساعته'), tfRow(r, 'h4', '۴ ساعته'), [r.sym, 'روزانه', fa(r.n || 0, 0) + ' روز', r.mvx && r.mvx.h ? hTxt(r.mvx, r) : (r.mvx && r.mvx.na) || '—', r.mvx ? LV[r.mvx.lv] : '—'], tfRow(r, 'w', 'هفتگی')]; }))),
+      P('موتور سیگنال روی شمع روزانه کار می‌کند؛ ۱ و ۴ ساعته برای تشخیص حرکت است. حداقل داده: نوسان ۳۰ بازده، رتبه‌بندی ۶۰ بازدهٔ مستقل، تحلیل روند ۲۷۰ روز، کف و سقف احتمالی ۲۶۰ روز، اعتبارسنجی خارج از نمونه ۳۰ معامله.', 'small muted')]) : null;
+    // missed opportunities (directive 26 · 5-7, 8)
+    var Mi = A && A.missed ? A.missed() : [], cz = {}; Mi.forEach(function (q) { cz[q.cause] = (cz[q.cause] || 0) + 1; });
+    var CZ = { warned: 'هشدار به‌موقع داده شد', nohist: 'قابل تعیین نیست (دفتر سیگنال این دستگاه بعد از آغاز حرکت شروع شده)', data: 'داده / به‌روزرسانی', threshold: 'آستانه یا دروازهٔ تأیید', logic: 'منطق تصمیم', model: 'مدل (الگو نساخت)', alert: 'منطق اعلان' };
+    var miP = ctx.panel('رشدهای اخیر و فرصت‌های ازدست‌رفته (' + fa(Mi.length, 0) + ')', [P('برای هر رشد مهم اخیر: آیا پیش از آغاز حرکت هشدار یا سیگنال صادر شده بود؟ اگر نه، علت از حکم ثبت‌شده در دفتر سیگنال‌ها در آغاز حرکت تعیین می‌شود. تشخیص پیش از حرکت و تشخیص حرکت در جریان جدا سنجیده می‌شوند (ستون «اولین اعلان» و تأخیر آن از بسته‌شدن جلسه).', 'small'),
+      P('علت‌ها: ' + (Object.keys(cz).map(function (k) { return (CZ[k] || k) + ' ' + fa(cz[k], 0); }).join(' · ') || '—'), 'small'),
+      Mi.length ? table(['دارایی', 'بازار', 'رشد', 'سطح', 'آغاز → پایان حرکت', 'پیش از حرکت', 'علت', 'اولین اعلان', 'تأخیر از پایان جلسه', 'حکم فعلی', 'ورود اکنون'], Mi.slice(0, 60).map(function (q) {
+        return [q.sym, CLS[q.cls] || q.cls, pct(q.r, 1) + ' در ' + fa(q.h, 0) + (q.cls === 'crypto' ? ' روز' : ' جلسه'), LV[q.lv], q.d0 + ' → ' + q.d1, q.cause === 'warned' ? 'بله' : 'خیر', q.why, q.firstAlert ? q.firstAlert.t + ' (' + dt(q.firstAlert.at) + ')' : 'اعلانی ثبت نشد', isF(q.delayH) ? fa(q.delayH, 1) + ' ساعت' : '—', q.tier || '—', q.entry ? q.entry.fa : '—']; })) : P('رشد مهمی در دادهٔ اخیر نیست.')]);
+    // gold and silver funds (directive 26 · 5, 7)
+    var RG = Hub.tseRegistry && Hub.tseRegistry.get ? Hub.tseRegistry.get() : null, byS = {}; if (RG && RG.ins) Object.keys(RG.ins).forEach(function (cd) { byS[RG.ins[cd].sym] = RG.ins[cd]; });
+    var SS = U.store.get('hub.sigstocks.v1', null), W2 = {}; (SS && SS.watch || []).forEach(function (w) { W2[w.symbol] = w; });
+    var gf = R.recs.filter(function (r) { var w = W2[r.sym]; return r.cls === 'fund' && w && /gold|silver|commodity/.test(w.ftype || ''); }).sort(function (a, b) { return (W2[a.sym].ftype > W2[b.sym].ftype ? 1 : -1) || (b.val20 || 0) - (a.val20 || 0); });
+    var gfP = ctx.panel('صندوق‌های طلا، نقره و کالایی (' + fa(gf.length, 0) + ')', [P('نوع هر صندوق: نامهٔ ثبت سازمان بورس (نوع ۵ «کالایی» طلا و نقره و سایر کالاها را با هم دارد)، نام معامله‌ای، نماد معاملاتی (سری نقرهٔ هر مدیر با «نقر…» آغاز می‌شود)، یا رفتار قیمت (رگرسیون هم‌زمان بازده ۱۲۰ جلسه بر طلای ۱۸ عیار و نقرهٔ ۹۹۹؛ همبستگی ساده کافی نیست چون طلا و نقرهٔ داخلی هر دو از دلار اثر می‌گیرند). NAV از دیده‌بان بازار (قیمت ابطال) در هر به‌روزرسانی ثبت می‌شود.', 'small muted'),
+      gf.length ? table(['صندوق', 'نوع', 'منبع طبقه‌بندی', 'قیمت', 'NAV', 'فاصله از NAV', 'تغییر ۱ / ۳ / ۵ جلسه', 'سطح حرکت', 'ارزش معاملات ۲۰ روزه (میلیارد ریال)', 'حکم مرکزی'], gf.map(function (r) { var w = W2[r.sym], o = byS[r.sym] || {}, nav = o.nav || w.nav, m = r.mvx || {};
+        return [symBtn(ctx, S, r), ({ gold: 'طلا', silver: 'نقره', commodity: 'کالایی (نامشخص)' })[w.ftype] || w.ftype, String(w.ftSrc || '—').replace('registry-symbol', 'ثبت سازمان (نماد)').replace(/^registry$/, 'ثبت سازمان (نام)').replace(/^name$/, 'نام معامله‌ای') + (w.ftCorr && w.ftCorr.m === 'beta' && !/ضریب/.test(w.ftSrc || '') ? ' (رفتار قیمت: ضریب طلا ' + (isF(w.ftCorr.g) ? fa(w.ftCorr.g, 2) : '—') + '، نقره ' + (isF(w.ftCorr.s) ? fa(w.ftCorr.s, 2) : '—') + ')' : ''),
+          n(r.px, r), nav ? n(nav, r) : '—', nav ? pct(r.px / nav - 1, 2) : '—', (m.h || []).map(function (q) { return pct(q.r, 1); }).join(' / ') || '—', m.h ? (m.dir > 0 ? '↑ ' : m.dir < 0 ? '↓ ' : '') + LV[m.lv] : '—', isF(r.val20) ? fa(r.val20 / 1e9, 0) : '—', (r.tierFa || '') + ' · ' + (r.actFa || '')]; })) : P('صندوق طلا یا نقره‌ای در حکم مرکزی نیست — کنترل پوشش پایین را ببینید.', 'bad-t')]);
+    // universe coverage of funds (directive 26 · 7-8): every fund of the market watch is in the engine, or the reason is written
+    var inC = {}; R.recs.forEach(function (r) { inC[r.sym] = 1; }); var outW = {}; ((C.funnel && C.funnel.outside) || []).forEach(function (q) { outW[q.sym] = q.why; });
+    var fundsAll = RG && RG.ins ? Object.keys(RG.ins).map(function (cd) { return RG.ins[cd]; }).filter(function (o) { return o.type === 'fund' && (o.seen ? o.seen === RG.date : o.navD === RG.date); }) : [];
+    var miss = fundsAll.filter(function (o) { var b = /^(.+?)[2-9]$/.exec(o.sym); return !inC[o.sym] && !(b && !W2[o.sym] && inC[b[1]]); }).map(function (o) { var w = W2[o.sym], npx = SS && SS.data && SS.data[o.sym] && SS.data[o.sym].px ? SS.data[o.sym].px.length : 0; return [o.sym, o.name, ({ gold: 'طلا', silver: 'نقره', commodity: 'کالایی', fixed: 'درآمد ثابت', equity: 'سهامی', mixed: 'مختلط', lev: 'اهرمی', index: 'شاخصی', sector: 'بخشی', other: 'سایر' })[o.ftype] || o.ftype || '—', !w ? 'در فهرست دیده‌بان هاب نیست (خطای داده)' : w.active === false ? 'غیرفعال: ' + (w.inactiveWhy || 'دستی') : outW[o.sym] || (npx < 30 ? 'تاریخچهٔ کوتاه: ' + fa(npx, 0) + ' جلسه (حداقل ۳۰؛ صندوق تازه)' : 'تاریخچه یا سناریوی معاملاتی ساخته نشد')]; });
+    var gm = miss.filter(function (q) { return /طلا|نقره|کالایی/.test(q[2]); });
+    var uvP = ctx.panel('کنترل پوشش صندوق‌ها', [P('صندوق‌های معامله‌شدهٔ امروز در دیده‌بان بازار: ' + fa(fundsAll.length, 0) + ' · در موتور تحلیل: ' + fa(fundsAll.length - miss.length, 0) + ' · بیرون از موتور: ' + fa(miss.length, 0) + ' (طلا / نقره / کالایی: ' + fa(gm.length, 0) + ')', gm.length ? 'small bad-t' : 'small'),
+      miss.length ? table(['نماد', 'نام', 'نوع', 'علت'], miss.slice(0, 120)) : P('همهٔ صندوق‌های معامله‌شده در موتور هستند.', 'small good-t'),
+      P('نمادهای فرعی یک صندوق (مثل «…۲»، تابلوی دیگر همان صندوق) جدا شمرده نمی‌شوند؛ تحلیل از نماد اصلی است. صندوق‌های درآمد ثابت با رفتار قیمت شبه‌سپرده (نوسان روزانه کمتر از ۰٫۲۵٪ و بیش از ۷۵٪ روزهای مثبت) عمداً از موتور فنی خارج می‌شوند؛ علت در ستون آخر نوشته شده است.', 'small muted')]);
+    return ctx.group([intro, tbl, miP, gfP, uvP, crP]); }
   function cryptoTab(ctx) { var S = ctx.S, R = ctx.R, A = R.recs.filter(function (r) { return r.cls === 'crypto'; }); var G2 = U.store.get('hub.sigglobal.v1', null), sn = G2 && G2.snap || {}, z = R.X && R.X.zmap || {};
     var crash = function (k) { var Z = z[k], X = Z && Z.R && Z.R.X; if (!X || X.n < 200) return '—'; var c = 0, t = 0; for (var i = 7; i < X.n; i++) { t++; if (X.c[i] / X.c[i - 7] - 1 <= -0.15) c++; } return pct(c / t, 1) + ' از ' + fa(t, 0) + ' پنجرهٔ ۷ روزه (' + fa(X.n, 0) + ' روز داده)'; };
     var rows = [['تاریخچهٔ در دسترس بیت‌کوین', z['x:btc'] ? fa(z['x:btc'].R.X.n, 0) + ' روز' + (z['x:btc'].R.X.n < 700 ? ' — کمتر از نیاز تحلیل هفتگی و محدودهٔ کف/سقف؛ با به‌روزرسانی روی کامپیوتر از KuCoin تکمیل می‌شود' : '') : 'نیست'],
@@ -817,7 +905,7 @@
       ['Awaiting confirmation', function () { return fa(cnt('wait'), 0); }, function () { return 'نزدیک کف: ' + fa(cnt('floor'), 0); }],
       ['Sell / exit', function () { return fa(R().recs.filter(function (r) { return r.sell === 'confirmed' || (r.held && /^(close|sell|reduce)$/.test(r.act)); }).length, 0); }, function () { return 'محدودهٔ سقف: ' + fa(R().recs.filter(function (r) { return r.sell === 'inZone'; }).length, 0); }],
       ['New alerts', function () { var A = Hub.alerts ? Hub.alerts.load() : null; return fa(A ? A.log.filter(function (e) { return e.state === 'new'; }).length : 0, 0); }, function () { var u = U.store.get('hub.updrun.v1', null); return u && u.doneAt ? 'به‌روزرسانی ' + ago(u.doneAt) : 'به‌روزرسانی نشده'; }]]; },
-    tabs: [{ group: 'بخش ۱ · داشبورد جامع', items: [['dash', 'داشبورد جامع بازارها', W(dash18)], ['cmp', 'مقایسه و فهرست پایش', W(cmpTab)], ['hist', 'تاریخچه و عملکرد فرصت‌ها', W(histTab)]] },
+    tabs: [{ group: 'بخش ۱ · داشبورد جامع', items: [['dash', 'داشبورد جامع بازارها', W(dash18)], ['moves', 'حرکت‌های مهم و فرصت‌های ازدست‌رفته', W(movesTab)], ['cmp', 'مقایسه و فهرست پایش', W(cmpTab)], ['hist', 'تاریخچه و عملکرد فرصت‌ها', W(histTab)]] },
       { group: 'بخش ۲ · مرکز اعلان‌ها', items: [['inbox', 'صندوق اقدام‌ها (خرید، فروش، …)', W(inboxTab)], ['alerts', 'تاریخچه و تنظیمات اعلان', W(alertsTab)]] },
       { group: 'بخش ۳ · تحلیل بازارها', items: [['gold', 'طلا و سکه', W(goldTab18)], ['fx', 'ارز', W(fxTab)], ['crypto', 'رمزارز', W(cryptoTab)], ['bourse', 'بورس و فرابورس', W(bourseTab)], ['other', 'کالا و سایر بازارها', W(otherTab)], ['cycles', 'چرخه‌های زمانی و نقاط عطف', W(cyclesTab)]] },
       { group: 'نظارت', items: [['cov', 'پوشش داده و دریافت افزایشی', W(coverageTab)], ['why', 'چرا خرید نیست؟', W(whyTab)], ['integ', 'کنترل یکپارچگی سیستم', W(integrityTab)], ['sync', 'هماهنگی سیگنال‌ها', W(syncTab)], ['refresh', 'زمان‌بندی و پایش', W(refreshTab)]] }]

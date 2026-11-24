@@ -26,12 +26,13 @@
   function U() { return Hub.util; }
   function isF(x) { return typeof x === 'number' && isFinite(x); }
   function C() { return Hub.central; }
+  function S0Get(k) { try { return U().store.get(k, null); } catch (e) { return null; } }
   /* register(id, title, fn, opt): fn() → { rows: [{ key, act, st, tier, rank, rankCls, px, buy, stop, tp1, up, dn, ver }], at?, note? } or null
      opt.fields: the fields this section shows (only those are compared) */
   function register(id, title, fn, opt) { CONS = CONS.filter(function (c) { return c.id !== id; }); CONS.push({ id: id, title: title, fn: fn, fields: (opt && opt.fields) || ['act', 'st', 'tier', 'rank', 'px', 'buy', 'stop', 'tp1', 'ver'], kind: opt && opt.kind || 'page' }); }
   function consumers() { return CONS.map(function (c) { return { id: c.id, title: c.title, fields: c.fields, kind: c.kind }; }); }
   var FFA = { act: 'اقدام', st: 'وضعیت', tier: 'سطح فرصت', rank: 'رتبه', rankCls: 'رتبهٔ بازار', px: 'قیمت مبنا', buy: 'محدودهٔ ورود', stop: 'حد ضرر', tp1: 'هدف ۱', up: 'تأیید صعود', dn: 'تأیید نزول', ver: 'نسخهٔ سیگنال', date: 'تاریخ داده' };
-  var TFA = { T1: 'فهرست دارایی‌ها', T2: 'سیگنال‌ها', T3: 'قیمت‌ها', T4: 'سطوح معاملاتی', T5: 'رتبه‌بندی', T6: 'دادهٔ قدیمی', T7: 'پس از به‌روزرسانی' };
+  var TFA = { T1: 'فهرست دارایی‌ها', T2: 'سیگنال‌ها', T3: 'قیمت‌ها', T4: 'سطوح معاملاتی', T5: 'رتبه‌بندی', T6: 'دادهٔ قدیمی', T7: 'پس از به‌روزرسانی', T8: 'اعلان‌ها در برابر حکم مرکزی', T9: 'پوشش صندوق‌های طلا و نقره', T10: 'پوشش تشخیص حرکت' };
   var TEST = { act: 'T2', st: 'T2', tier: 'T2', px: 'T3', date: 'T3', buy: 'T4', stop: 'T4', tp1: 'T4', up: 'T4', dn: 'T4', rank: 'T5', rankCls: 'T5', ver: 'T6' };
   function factsOf(key, r) { var p = C().present(Object.assign({ key: key }, r)); return { key: key, act: p.act, st: p.st, tier: p.tier, rank: p.rank, rankCls: p.rankCls, px: p.px, buy: p.buy, stop: p.stop, tp1: p.tp.length ? p.tp[0] : null, up: p.up, dn: p.dn, ver: p.ver, date: p.date, sym: p.sym }; }
   function same(a, b) { if (a == null && b == null) return true; if (a == null || b == null) return false;
@@ -80,6 +81,23 @@
     var S0 = U().store, inputs = [['hub.sigstocks.v1', 'سهام و صندوق‌ها'], ['hub.sig-gold.v1', 'طلا و سکه'], ['hub.sig-fx.v1', 'ارز'], ['hub.sigglobal.v1', 'بازارهای جهانی']];
     inputs.forEach(function (q) { var D = S0.get(q[0], null), ts = D && D.meta && D.meta.asOfTs; if (!ts) return; out.tests.T6.n++; if (ts > Cs.at + 60e3) bad('T6', { sec: 'مرجع مرکزی', key: '*', sym: q[1], field: 'زمان محاسبه', cen: new Date(Cs.at).toISOString(), shown: 'دادهٔ ' + new Date(ts).toISOString(), cause: 'داده پس از آخرین محاسبهٔ موتور به‌روز شده؛ حکم‌ها مربوط به دادهٔ قبلی‌اند', fix: '' }); });
     var AL = Hub.alerts ? Hub.alerts.load() : null; if (AL && AL.cenAt) { out.tests.T6.n++; if (AL.cenAt < Cs.at) out.info.push('اعلان‌ها آخرین بار با نسخهٔ قبلی مرجع مرکزی ارزیابی شدند (در به‌روزرسانی بعدی هماهنگ می‌شوند؛ اعلان‌ها هرگز حکم مستقل نمی‌سازند).'); }
+    /* ---- directive 26 · 4, 7, 9: alerts against the current verdict, gold / silver fund coverage, move-detection coverage ---- */
+    if (Hub.alerts && Hub.alerts.audit) { var au = Hub.alerts.audit(); out.tests.T8.n += au.n || 0;
+      (au.conflicts || []).forEach(function (q) { bad('T8', { sec: 'مرکز اعلان‌ها', key: '*', sym: q.sym, field: 'جهت در افق یکسان', cen: q.verdict + ' (' + q.verdictHz + ')', shown: q.alert + ' (' + (q.alertHz || 'بدون افق') + ')', cause: 'اعلان فعال با حکم فعلی در همان افق تناقض دارد', fix: 'اعلان را با «وضعیت امروز» بخوانید؛ در ارزیابی بعدی اعتبار آن بازبینی می‌شود' }); });
+      if ((au.stale || []).length) out.info.push(au.stale.length + ' اعلان فعال دیگر با حکم فعلی معتبر نیست (منسوخ؛ در ستون «وضعیت امروز» علامت خورده است).');
+      if ((au.hz || []).length) out.info.push(au.hz.length + ' اعلان با حکم فعلی در افق متفاوت هم‌جهت نیست (مجاز: افق‌ها جدا هستند).'); }
+    var RG = Hub.tseRegistry && Hub.tseRegistry.get ? Hub.tseRegistry.get() : null;
+    if (RG && RG.ins) { var syms = {}; keys.forEach(function (k) { syms[by[k].sym] = 1; }); var outW = {}; ((Cs.funnel && Cs.funnel.outside) || []).forEach(function (q) { outW[q.sym] = q.why; });
+      var SS = S0Get('hub.sigstocks.v1'), W = {}; ((SS && SS.watch) || []).forEach(function (w) { W[w.symbol] = w; });
+      Object.keys(RG.ins).forEach(function (cd) { var o = RG.ins[cd]; if (o.type !== 'fund' || (o.seen ? o.seen !== RG.date : o.navD !== RG.date) || !/gold|silver|commodity/.test(o.ftype || '')) return; out.tests.T9.n++;
+        if (syms[o.sym]) return; var w = W[o.sym], base = /^(.+?)[2-9]$/.exec(o.sym), npx = SS && SS.data && SS.data[o.sym] && SS.data[o.sym].px ? SS.data[o.sym].px.length : 0;
+        if (!w && base && syms[base[1]]) { out.info.push('صندوق ' + o.sym + ' نماد فرعیِ «' + base[1] + '» است (تابلوی دیگر همان صندوق)؛ تحلیل از نماد اصلی.'); return; }
+        if (w && w.active !== false && !outW[o.sym] && npx < 30) { out.info.push('صندوق ' + o.sym + ' بیرون از موتور: تاریخچهٔ کوتاه (' + npx + ' جلسه؛ حداقل ۳۰).'); return; }
+        if (!w) bad('T9', { sec: 'فهرست دیده‌بان هاب', key: 's:' + o.sym, sym: o.sym, field: 'حضور', cen: 'در دیده‌بان بازار معامله شده', shown: 'در فهرست هاب نیست', cause: 'همگام‌سازی فهرست با ثبت صندوق‌ها انجام نشده', fix: 'به‌روزرسانی سهام و صندوق‌ها' });
+        else if (w.active !== false && !outW[o.sym]) bad('T9', { sec: 'موتور تحلیل', key: 's:' + o.sym, sym: o.sym, field: 'حضور', cen: 'فعال در فهرست', shown: 'در حکم مرکزی نیست', cause: 'علت حذف ثبت نشده', fix: 'اجرای دوبارهٔ موتور' });
+        else out.info.push('صندوق ' + o.sym + ' بیرون از موتور: ' + (w.active === false ? 'غیرفعال' : outW[o.sym])); }); }
+    keys.forEach(function (k) { var r = by[k]; if (r.cls === 'option') return; out.tests.T10.n++;
+      if (!r.mvx && (r.n || 0) >= 32) bad('T10', { sec: 'تشخیص حرکت', key: k, sym: r.sym, field: 'پروفایل حرکت', cen: (r.n || 0) + ' مشاهده', shown: 'محاسبه نشد', cause: 'خطای پردازشی در تشخیص حرکت', fix: 'اجرای دوبارهٔ موتور' }); });
     /* ---- every registered section against the stored record ---- */
     CONS.concat(opt.extra || []).forEach(function (cn) { var res = null, t1 = Date.now(); try { res = cn.fn(); } catch (e) { out.cons.push({ id: cn.id, title: cn.title, err: e.message }); return; }
       if (!res) { out.cons.push({ id: cn.id, title: cn.title, skip: 'در این دستگاه داده ندارد' }); return; }

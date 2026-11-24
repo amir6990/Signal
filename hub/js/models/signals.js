@@ -358,9 +358,11 @@
       .then(function () { cal = tradingCal(data, sess); return stg('سهام و صندوق‌ها (افزایشی)', function () { return step(); }); })
       .then(function () { return stg('دلار (TGJU، افزایشی)', usdP); })
       .then(function () {
-        S.data = data; if (errs.length >= list.length && list.length) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; }
+        S.data = data; /* nothing arrived (market watch and every history request failed): the data are not newer, so they keep their old time */ if ((errs.length >= list.length && list.length) || (errs.length && !sess && !stats.rows && !stats.revised)) { var e = new Error(summErr(errs) + (isFa() ? ' — دادهٔ قبلی حفظ شد.' : ' — previous data kept.')); e.kept = true; throw e; }
         stampData(S, 'TSETMC + TGJU'); if (cap.n) S.meta.depth = cap; S.meta.revN = ((S.meta.revN) || 0) + 1;
         S.meta.session = sess ? { date: sess.date, time: sess.time, state: sess.state, stateFa: sess.stateFa, open: sess.open, at: sess.at, n: sess.n, live: nLive } : S.meta.session || null;
+        // order book snapshot of the session request, per symbol (directive 26 · 2): shown in the order ticket with its own time, never as live data
+        if (sess && sess.by) { var BL = {}, bySym = {}; S.watch.forEach(function (w) { if (w.insCode) bySym[w.insCode] = w.symbol; }); Object.keys(sess.by).forEach(function (cd) { var q = sess.by[cd], sy = bySym[cd]; if (sy && q.bl && q.bl.length) BL[sy] = q.bl; }); S.bl = { at: sess.at, date: sess.date, time: sess.time, by: BL }; }
         S.meta.incr = { at: Date.now(), plan: stats, idx: idxStats, n: list.length };
         if (IG) IG.finish({ kind: 'tse', plan: stats, idx: idxStats, symbols: list.length, rowsAdded: stats.rows, revised: stats.revised });
         return errs; }, function (e) { if (IG) IG.finish({ kind: 'tse', err: e.message }); throw e; });
@@ -371,7 +373,9 @@
     ['W_Trend', 0.6, 'Trend block weight'], ['W_Bubble', 0.4, 'Bubble block weight'], ['W_Struct', 0.35, 'MA structure inside trend'], ['W_Slope', 0.25, 'Short-MA slope'], ['W_Chan', 0.25, '60-day channel position'], ['W_Mom', 0.15, '20-day momentum'],
     ['SlopeScale', 0.06, 'Slope for the full score'], ['MomScale', 0.15, 'Momentum for the full score'], ['BubbleZScale', 1, 'Bubble standard deviations per score unit'], ['Thr_StrongBuy', 1.1, ''], ['Thr_Buy', 0.35, ''], ['Thr_Sell', -0.35, ''], ['Thr_StrongSell', -1.1, '']];
   var GOLD_INS = [['انس طلا', 'ons', 'Global', '', ''], ['دلار آزاد', 'price_dollar_rl', 'FX', '', ''], ['طلای ۱۸ عیار', 'geram18', 'Gold', 1, 0.75], ['طلای ۲۴ عیار', 'geram24', 'Gold', 1, 0.995], ['مثقال طلا', 'mesghal', 'Gold', 4.6083, 0.705],
-    ['سکه امامی', 'sekee', 'Coin', 8.133, 0.9], ['سکه بهار آزادی', 'sekeb', 'Coin', 8.133, 0.9], ['نیم سکه', 'nim', 'Coin', 4.0665, 0.9], ['ربع سکه', 'rob', 'Coin', 2.03325, 0.9], ['سکه گرمی', 'gerami', 'Coin', 1.0166, 0.9]];
+    ['سکه امامی', 'sekee', 'Coin', 8.133, 0.9], ['سکه بهار آزادی', 'sekeb', 'Coin', 8.133, 0.9], ['نیم سکه', 'nim', 'Coin', 4.0665, 0.9], ['ربع سکه', 'rob', 'Coin', 2.03325, 0.9], ['سکه گرمی', 'gerami', 'Coin', 1.0166, 0.9],
+    // directive 26 · 7: domestic silver (999, per gram, rial — TGJU «silver_999», checked 2026-11-24); no gold intrinsic value; reference for silver funds
+    ['نقره ۹۹۹ (گرم)', 'silver_999', 'Silver', '', '']];
   function goldSample() {
     var S = { version: 1, tool: 'sig-gold', meta: { title: 'Gold, coins and ounce', asOf: '', source: 'Illustrative synthetic data — press Fetch for TGJU' }, settings: { scenario: 'base' },
       ins: GOLD_INS.map(function (x) { return { series: x[0], key: x[1], type: x[2], grams: x[3], purity: x[4], active: true }; }), set: setRows(GOLD_SET), data: {}, sources: {} };
@@ -837,7 +841,7 @@
 
   /* ----- Gold and FX share a layout ----- */
   function simpleTool(cfg) {
-    var feedFetch = function (S, pr) { return tgjuFetch(S, S.ins.filter(function (x) { return x.active !== false && x.key; }).map(function (x) { return x.key; }).concat(cfg.alwaysKeys || []).filter(function (k, i, a) { return a.indexOf(k) === i; }), pr); };
+    var feedFetch = function (S, pr) { if (cfg.ensureIns) cfg.ensureIns(S); return tgjuFetch(S, S.ins.filter(function (x) { return x.active !== false && x.key; }).map(function (x) { return x.key; }).concat(cfg.alwaysKeys || []).filter(function (k, i, a) { return a.indexOf(k) === i; }), pr); };
     FEEDS.push({ id: cfg.id, title: cfg.title, storeKey: 'hub.' + cfg.id + '.v1', sample: cfg.sample, fetch: feedFetch, size: function (S) { return act(S.ins) + (isFa() ? ' سری' : ' series'); }, src: 'TGJU' });
     TK.define({
       id: cfg.id, title: cfg.title, sections: ['signals', 'trading'], priority: cfg.priority, version: 1, storeKey: 'hub.' + cfg.id + '.v1', summary: cfg.summary,
@@ -870,6 +874,8 @@
     });
   }
   simpleTool({ id: 'sig-gold', title: 'Gold & Coin Signals', priority: 2, file: 'Signals_Gold', eyebrow: 'Signals · Gold, coins and ounce · TGJU', sample: goldSample, run: goldRun, alwaysKeys: ['ons', 'price_dollar_rl'],
+    // series added to the default list after a store was created are added to that store on its next update (the user's own rows are kept)
+    ensureIns: function (S) { S.ins = S.ins || []; GOLD_INS.forEach(function (x) { if (!S.ins.some(function (i) { return i.key === x[1]; })) S.ins.push({ series: x[0], key: x[1], type: x[2], grams: x[3], purity: x[4], active: true }); }); },
     summary: 'Gold, coins and ounce: trend plus bubble z-score against intrinsic value (ounce / 31.1035 × grams × purity × free-market dollar).',
     newRow: function () { return { series: '', key: '', type: 'Coin', grams: 0, purity: 0.9, active: true }; },
     cols: [{ key: 'series', label: 'Series', kind: 'text' }, { key: 'key', label: 'TgjuKey', kind: 'text' }, { key: 'type', label: 'Type', kind: 'text' }, { key: 'grams', label: 'Weight (g)', fmt: 'num4' }, { key: 'purity', label: 'Purity', fmt: 'num4' }, { key: 'active', label: 'Active', kind: 'bool' }],

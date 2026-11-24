@@ -14,8 +14,13 @@
   var isF = function (x) { return typeof x === 'number' && isFinite(x); };
   var gint = function (d) { return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate(); };
   var SER = [
-    { id: 'btc', name: 'بیت‌کوین (BTC)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'bitcoin', ku: 'BTC-USDT', fresh: 2 },
-    { id: 'eth', name: 'اتریوم (ETH)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'ethereum', ku: 'ETH-USDT', fresh: 2 },
+    /* crypto daily history: CoinGecko (one year), then Binance and Gate daily candles (≈ 1,000 days, OHLCV) as fallbacks — all three answered
+       a direct browser request from a network inside Iran on 2026-11-24 (KuCoin, MEXC and CryptoCompare did not); 1-hour and 4-hour candles
+       from Binance / Gate (directive 26 · 6) */
+    { id: 'btc', name: 'بیت‌کوین (BTC)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'bitcoin', ku: 'BTC-USDT', bn: 'BTCUSDT', gt: 'BTC_USDT', fresh: 2 },
+    { id: 'eth', name: 'اتریوم (ETH)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'ethereum', ku: 'ETH-USDT', bn: 'ETHUSDT', gt: 'ETH_USDT', fresh: 2 },
+    // world price of tether in dollars (stablecoin): separates a move of the world USDT price from the rial exchange rate (directive 26 · note on USDT)
+    { id: 'usdt', name: 'تتر به دلار (بازار جهانی)', mk: 'crypto', unit: 'دلار', src: 'CoinGecko', cg: 'tether', fresh: 2, noCard: true },
     { id: 'brent', name: 'نفت برنت', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['BRENT', { interval: 'daily' }], avDays: 1, fresh: 6 },
     { id: 'wti', name: 'نفت WTI', mk: 'energy', unit: 'دلار/بشکه', src: 'Alpha Vantage', av: ['WTI', { interval: 'daily' }], avDays: 1, fresh: 6 },
     { id: 'ng', name: 'گاز طبیعی (هنری هاب)', mk: 'energy', unit: 'دلار/میلیون BTU', src: 'Alpha Vantage', av: ['NATURAL_GAS', { interval: 'daily' }], avDays: 1, fresh: 6 },
@@ -25,7 +30,7 @@
        answers from the user's network; Alpha Vantage gives copper monthly only). Futures, not spot: the roll between contracts shows as a
        small jump on the roll day. Copper is quoted in $/lb and kept in $/t (× 2,204.62); the monthly Alpha Vantage copper is no longer
        stored under this id because a daily and a monthly series cannot share one history. */
-    { id: 'silver', name: 'نقره (اونس، آتی COMEX)', mk: 'metals', unit: 'دلار/اونس', src: 'CNBC', cn: '@SI.1', fresh: 5 },
+    { id: 'silver', name: 'نقره (اونس)', mk: 'metals', unit: 'دلار/اونس', src: 'CNBC', cn: '@SI.1', tg: 'silver', fresh: 5 },   // TGJU «silver» (world ounce, spot) when CNBC does not answer
     { id: 'copper', name: 'مس (آتی COMEX)', mk: 'metals', unit: 'دلار/تن', src: 'CNBC', cn: '@HG.1', cnMul: 2204.62262, fresh: 5 },
     { id: 'alu', name: 'آلومینیوم', mk: 'metals', unit: 'دلار/تن', src: 'Alpha Vantage', av: ['ALUMINUM', { interval: 'monthly' }], avDays: 7, fresh: 45 },
     /* world equity indices (Hang Seng, S&P 500, Nikkei, ...) were removed on 1405/09/01 (directive 23 · 2): out of the official
@@ -77,6 +82,9 @@
       L.push({ name: 'وزارت خزانه‌داری آمریکا', fn: function () { return Promise.all(ys.map(function (y) { return D.webText(trUrl(y), 'U.S. Treasury').then(prs, function (e) { if (y === y0) throw e; return []; }); })).then(function (A) { return [].concat.apply([], A); }); }, parse: function (r) { return r; } }); }
     // NY Fed effective federal funds rate (official API, CORS) — up to 500 recent days
     if (s.nyfed) L.push({ name: 'NY Fed (EFFR)', url: 'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/' + (inc ? Math.min(500, inc.days + 5) : 500) + '.json', parse: nyfedRows });
+    if (s.bn) L.push({ name: 'Binance', url: 'https://api.binance.com/api/v3/klines?symbol=' + s.bn + '&interval=1d&limit=' + (inc ? Math.min(1000, inc.days) : 1000), parse: bnRows });
+    if (s.gt) L.push({ name: 'Gate', url: 'https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=' + s.gt + '&interval=1d&limit=' + (inc ? Math.min(1000, inc.days) : 1000), parse: gtRows });
+    if (s.tg && D.tgju) L.push({ name: 'TGJU (' + s.tg + ')', fn: function () { return D.tgju(s.tg); }, parse: function (r) { return (r || []).map(function (x) { return { date: x.date, open: x.open, high: x.high, low: x.low, close: x.close }; }); } });
     // Brent also from TGJU (oil_brent — the series the Iran-economy section already reads; TGJU answers from the phone)
     if (s.id === 'brent' && D.tgju) L.push({ name: 'TGJU (oil_brent)', fn: function () { return D.tgju('oil_brent'); }, parse: function (r) { return (r || []).map(function (x) { return { date: x.date, close: x.close }; }); } });
     if (s.av && k) L.push({ name: 'Alpha Vantage', url: 'https://www.alphavantage.co/query?function=' + s.av[0] + Object.keys(s.av[1]).map(function (p) { return '&' + p + '=' + s.av[1][p]; }).join('') + '&apikey=' + encodeURIComponent(k), parse: avRows });
@@ -113,13 +121,23 @@
      daily high/low; CoinGecko stays authoritative inside its own range (history guard). A KuCoin failure only leaves the year. */
   function kuRows(j) { var a = j && j.data; if (!Array.isArray(a)) throw new Error('پاسخ KuCoin قالب مورد انتظار را ندارد');
     return a.map(function (r) { var d = gint(new Date(Number(r[0]) * 1000)), o = +r[1], c = +r[2], h = +r[3], l = +r[4]; return isF(c) && c > 0 ? { date: d, open: o, high: h, low: l, close: c, vol: +r[6] || 0 } : null; }).filter(Boolean).sort(function (x, y) { return x.date - y.date; }); }
+  // Binance klines [openTime ms, open, high, low, close, volume, …]; Gate candlesticks [time s, quote volume, close, high, low, open, base volume, closed] — UTC days
+  function bnRows(j) { if (!Array.isArray(j)) throw new Error('پاسخ Binance قالب مورد انتظار را ندارد'); return j.map(function (r) { var c = +r[4]; return isF(c) && c > 0 ? { date: gint(new Date(Number(r[0]))), ts: Number(r[0]), open: +r[1], high: +r[2], low: +r[3], close: c, vol: +r[5] || 0 } : null; }).filter(Boolean).sort(function (x, y) { return x.ts - y.ts; }); }
+  function gtRows(j) { if (!Array.isArray(j)) throw new Error('پاسخ Gate قالب مورد انتظار را ندارد'); return j.map(function (r) { var c = +r[2], t = Number(r[0]) * 1000; return isF(c) && c > 0 ? { date: gint(new Date(t)), ts: t, open: +r[5], high: +r[3], low: +r[4], close: c, vol: +r[6] || 0 } : null; }).filter(Boolean).sort(function (x, y) { return x.ts - y.ts; }); }
+  /* intraday candles of the main crypto (directive 26 · 6): a 24/7 market — 1-hour (last 500 ≈ 21 days) and 4-hour (last 500 ≈ 83 days) bars,
+     Binance first, Gate as the fallback. Used for move detection on those timeframes; the signal engine itself stays on daily bars. */
+  function intraday(s, D, any) {
+    var tf = function (iv, gi) { return any([{ name: 'Binance', url: 'https://api.binance.com/api/v3/klines?symbol=' + s.bn + '&interval=' + iv + '&limit=500', parse: bnRows }, { name: 'Gate', url: 'https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=' + s.gt + '&interval=' + gi + '&limit=500', parse: gtRows }], s.name + ' (' + iv + ')'); };
+    return Promise.all([tf('1h', '1h').catch(function () { return null; }), tf('4h', '4h').catch(function () { return null; })]).then(function (r) { return { h1: r[0], h4: r[1], at: Date.now(), src: (r[0] && r[0]._src) || (r[1] && r[1]._src) || '' }; }); }
   function deepen(s, rows) {
     var D = Hub.data, end = Math.floor(Date.now() / 1000), url = 'https://api.kucoin.com/api/v1/market/candles?type=1day&symbol=' + s.ku + '&startAt=' + (end - 1499 * 86400) + '&endAt=' + end;
-    return D.web(url, 'KuCoin').then(kuRows).then(function (ku) {
+    var deep = D.web(url, 'KuCoin').then(kuRows).catch(function () { return s.bn ? D.web('https://api.binance.com/api/v3/klines?symbol=' + s.bn + '&interval=1d&limit=1000', 'Binance').then(bnRows) : Promise.reject(new Error('no fallback')); })
+      .catch(function () { return s.gt ? D.web('https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=' + s.gt + '&interval=1d&limit=1000', 'Gate').then(gtRows) : Promise.reject(new Error('no fallback')); });
+    return deep.then(function (ku) {
       if (ku.length < 30) return rows; var HM = Hub.histMerge, out = HM ? HM.mergeSeries(ku, rows, null, s.id) : rows, by = {};
       ku.forEach(function (r) { by[r.date] = r; });   // the daily high/low of KuCoin on CoinGecko's days too (path tests need the intraday extremes)
       out = out.map(function (r) { var k = by[r.date]; return k && !isF(r.high) && Math.abs(k.close / r.close - 1) < 0.03 ? Object.assign({}, r, { high: Math.max(k.high, r.close), low: Math.min(k.low, r.close) }) : r; });
-      out._src = (rows._src || 'CoinGecko') + ' + KuCoin (تاریخچه)'; return out; }, function () { return rows; });
+      out._src = (rows._src || 'CoinGecko') + ' + تاریخچهٔ تکمیلی (KuCoin / Binance / Gate)'; return out; }, function () { return rows; });
   }
   function fetchAll(S, progress) {
     var D = Hub.data, errs = [], k = D.keys().av, now = Date.now(); S.data = S.data || {}; S.snap = S.snap || {}; S.at = S.at || {}; S.srcOf = S.srcOf || {};
@@ -146,6 +164,7 @@
     var snaps = [
       D.web('https://api.coingecko.com/api/v3/global', 'CoinGecko').then(function (j) { var d = j.data || {}; S.snap.cgGlobal = { mcap: d.total_market_cap && d.total_market_cap.usd, dom: d.market_cap_percentage && d.market_cap_percentage.btc, chg: d.market_cap_change_percentage_24h_usd, at: now }; }, function (e) { errs.push('CoinGecko (بازار کل): ' + e.message); }),
       any(irxSources(), 'رمزارز به ریال').then(function (o) { o.at = now; S.snap.nbx = o; }, function (e) { errs.push(e.message); }),
+      Promise.all(SER.filter(function (q) { return q.bn; }).map(function (q) { return intraday(q, D, any).then(function (o) { if (o.h1 || o.h4) { S.tf = S.tf || {}; S.tf[q.id] = { h1: (o.h1 || []).slice(-500), h4: (o.h4 || []).slice(-500), at: o.at, src: o.src }; } else errs.push(q.name + ': کندل‌های ۱ و ۴ ساعته دریافت نشد'); }); })),
       any(fundSources(), 'Funding Rate').then(function (o) { o.at = now; S.snap.funding = o; }, function (e) { errs.push(e.message); }),
       any(oiSources(), 'Open Interest').then(function (o) { o.at = now; S.snap.oi = o; }, function (e) { errs.push(e.message); }),
       D.web('https://api.alternative.me/fng/?limit=1', 'alternative.me').then(function (j) { var d = (j.data || [])[0]; if (!d) throw new Error('بدون داده'); S.snap.fng = { v: Number(d.value), label: d.value_classification, at: now }; }, function (e) { errs.push('شاخص ترس و طمع: ' + e.message); }),
@@ -200,5 +219,6 @@
     var P = [['tg:price_dollar_rl', 'tg:geram18', 'دلار و طلای ۱۸'], ['tg:price_dollar_rl', 'tse:total', 'دلار و شاخص کل'], ['tg:ons', 'tg:geram18', 'اونس و طلای ۱۸'], ['lv:oil_brent', 'tse:total', 'نفت برنت و شاخص کل'], ['g:brent', 'tse:total', 'نفت برنت (AV) و شاخص کل'], ['g:btc', 'tg:crypto-tether-irr', 'بیت‌کوین و تتر'], ['g:ust10', 'tg:ons', 'بازده اوراق آمریکا و اونس'], ['g:btc', 'g:eth', 'بیت‌کوین و اتریوم']];
     return P.filter(function (p) { return A[p[0]] && A[p[1]]; }).map(function (p) { var c60 = corr(A[p[0]], A[p[1]], 60), c250 = corr(A[p[0]], A[p[1]], 250); return { label: p[2], c60: c60, c250: c250, brk: isF(c60) && isF(c250) && Math.abs(c60 - c250) >= 0.4 }; });
   }
-  Hub.globalMkt = { KEY: KEY, SER: SER, MKFA: MKFA, rowsAll: rowsAll, deepen: deepen, kuRows: kuRows, health: health, HIER: HIER, intermarket: intermarket, fetchAll: fetchAll, store: function () { return U.store.get(KEY, null); } };
+  function tfOf(id) { var G = U.store.get(KEY, null); return G && G.tf && G.tf[id] || null; }
+  Hub.globalMkt = { KEY: KEY, SER: SER, MKFA: MKFA, rowsAll: rowsAll, tfOf: tfOf, bnRows: bnRows, gtRows: gtRows, deepen: deepen, kuRows: kuRows, health: health, HIER: HIER, intermarket: intermarket, fetchAll: fetchAll, store: function () { return U.store.get(KEY, null); } };
 })(typeof window !== 'undefined' ? window : globalThis);

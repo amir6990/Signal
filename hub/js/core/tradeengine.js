@@ -175,7 +175,7 @@
       if (w.ftype === 'other' || w.ftype === '' && /صندوق/.test((w.sector || '') + (w.name || '')) || w.src === 'registry' && /صندوق/.test(w.name || '')) { var cz = d.px.slice(-121).map(function (r) { return r.close; }).filter(function (v) { return v > 0; }), up = 0, sd = 0, m0 = 0, nR = cz.length - 1;
         if (nR >= 60) { var rr = []; for (var q = 1; q < cz.length; q++) { var g = cz[q] / cz[q - 1] - 1; rr.push(g); if (g > 0) up++; } m0 = rr.reduce(function (a, b) { return a + b; }, 0) / nR; sd = Math.sqrt(rr.reduce(function (a, b) { return a + (b - m0) * (b - m0); }, 0) / nR);
           if (sd < 0.0025 && up / nR > 0.75 && m0 > 0) { FIXSKIP.push({ sym: w.symbol, cls: 'fund', why: 'رفتار قیمت مانند صندوق درآمد ثابت (نوسان روزانه ' + (sd * 100).toFixed(2) + '٪، ' + Math.round(up / nR * 100) + '٪ روزها مثبت): از موتور فنی خارج شد' }); return; } } }
-      out.push({ key: 's:' + w.symbol, sym: w.symbol, name: w.name || w.symbol, cls: w.ftype || /صندوق/.test(w.sector || '') ? 'fund' : 'stock', sector: w.sector || '', cs: w.cs || '', csName: w.csName || '', ftSrc: w.ftSrc || '', market: w.market || '', board: w.board || '', ftype: w.ftype || '', lim: Number(w.lim) || 0, rows: d.px, ct: d.ct, sample: smp, asOf: st.meta.asOf, age: age, comp: srows[w.symbol], unit: 'ریال', pm: { src: 'TSETMC', at: st.meta.asOfTs, session: st.meta.session || null } });
+      out.push({ key: 's:' + w.symbol, sym: w.symbol, name: w.name || w.symbol, cls: w.ftype || /صندوق/.test(w.sector || '') ? 'fund' : 'stock', sector: w.sector || '', cs: w.cs || '', csName: w.csName || '', ftSrc: w.ftSrc || '', market: w.market || '', board: w.board || '', ftype: w.ftype || '', lim: Number(w.lim) || 0, bl: st.bl && st.bl.by ? st.bl.by[w.symbol] || null : null, blAt: st.bl ? st.bl.at : null, blT: st.bl ? st.bl.time : '', rows: d.px, ct: d.ct, sample: smp, asOf: st.meta.asOf, age: age, comp: srows[w.symbol], unit: 'ریال', pm: { src: 'TSETMC', at: st.meta.asOfTs, session: st.meta.session || null } });
     });
     var addTG = function (key, sample, c, nameKey) {
       var S = getStore(key, sample), smp2 = isSampleSrc(S.meta.source), age2 = SG.dataAge ? SG.dataAge(S) : NaN, rr = {};
@@ -184,7 +184,7 @@
         var rows = (S.data || {})[x.key]; if (!rows || rows.length < 30) return;
         if (out.some(function (a) { return a.tg === x.key; })) return;          // the free-market dollar appears in both lists
         var isFx = /^price_(dollar|eur|aed|gbp|try|cny)|tether|usdt/i.test(x.key), cl2 = isFx ? 'fx' : x.key === 'ons' ? 'gold' : c;   // a currency is FX even when it comes from the gold list (it is there as an input of the intrinsic value)
-        out.push({ key: 'g:' + x.key, tg: x.key, sym: x.series, name: x.series, cls: cl2, sector: cl2 === 'gold' ? 'طلا و سکه' : 'ارز', rows: rows.map(function (r) { return { date: r.date, open: r.open, high: r.high, low: r.low, close: r.close, vol: 0, val: 0, yclose: 0, live: r.live, ts: r.ts }; }), sample: smp2, asOf: S.meta.asOf, age: age2, pm: { src: 'TGJU', at: S.meta.asOfTs, now: S.meta.now || null }, comp: rr[x.key] || rr[x.series], unit: x.key === 'ons' ? 'دلار' : 'ریال' });
+        out.push({ key: 'g:' + x.key, tg: x.key, sym: x.series, name: x.series, cls: cl2, sector: /silver/.test(x.key) ? 'نقره' : cl2 === 'gold' ? 'طلا و سکه' : 'ارز', rows: rows.map(function (r) { return { date: r.date, open: r.open, high: r.high, low: r.low, close: r.close, vol: 0, val: 0, yclose: 0, live: r.live, ts: r.ts }; }), sample: smp2, asOf: S.meta.asOf, age: age2, pm: { src: 'TGJU', at: S.meta.asOfTs, now: S.meta.now || null }, comp: rr[x.key] || rr[x.series], unit: x.key === 'ons' ? 'دلار' : 'ریال' });
       });
     };
     if (cls.gold !== false) addTG('hub.sig-gold.v1', SG.gold.sample, 'gold');
@@ -2108,6 +2108,27 @@
     if (o.queue === 'sell') why.push('صف فروش در جلسهٔ آخر.');
     if (o.worst >= band && LO.lim) why.push('قیمت اجرا به سقف دامنهٔ نوسان روزانه (' + pct(LO.lim, 0) + ') می‌رسد.');
     o.ok = !why.length; o.whyNot = why.join(' ');
+    /* directive 26 · 2 — every field named, with its unit and basis; nothing shown that the data do not support
+       ref      the reference price (last close / live price) and its time
+       order    limit: the highest price the buy order accepts (it can fill at or below it, never above); stop: the trigger price
+       book     best bid / ask from the TSETMC order book at the time of the session request (stocks and funds only; not live)
+       slip     limit: none by construction; stop: the model's estimate from 20-day traded value (not a live measurement)
+       cost     the user's round-trip cost setting
+       vol      executable size: 10% of the 20-day median traded volume (stocks / funds) and the quantity at the best ask
+       normal / adverse fill scenario and the probability of no fill within EXK sessions from the asset's own history */
+    var a0 = z.a || {}, bl = a0.bl && a0.bl[0], tse = a0.cls === 'stock' || a0.cls === 'fund', cost = Number(E.acct && E.acct.costPct) || 0;
+    var vm = tse && X.v ? (function () { var v = X.v.slice(-20).filter(function (q) { return q > 0; }).sort(function (p, q) { return p - q; }); return v.length ? v[Math.floor(v.length / 2)] : NaN; })() : NaN;
+    o.f = { unit: a0.unit || rec.unit || 'ریال', ref: { v: px, at: rec.pxAt || null, kind: rec.pxKind || '', date: x.date || null },
+      order: { v: o.order, fa: o.type === 'stop' ? 'قیمت فعال‌سازی سفارش شرطی (خرید وقتی قیمت به این سطح برسد)' : 'قیمت سفارش محدود: بالاترین قیمتی که خرید می‌پذیرد (اجرا در همین قیمت یا پایین‌تر)' },
+      dist: o.order / px - 1,
+      book: tse && bl && bl[0] > 0 && bl[2] > 0 ? { bid: bl[0], bidQ: bl[1], ask: bl[2], askQ: bl[3], spread: bl[2] / bl[0] - 1, at: a0.blAt || null, t: a0.blT || '' } : null,
+      bookWhy: tse && bl && bl[0] > 0 && bl[2] > 0 ? '' : tse ? 'دفتر سفارش این نماد در آخرین دریافت دیده‌بان نبود' : 'برای این بازار (' + (a0.cls === 'crypto' ? 'رمزارز جهانی' : 'بازار آزاد TGJU') + ') دفتر سفارش دریافت نمی‌شود؛ بهترین قیمت خرید و فروش نمایش داده نمی‌شود',
+      slip: o.type === 'stop' ? { v: o.slip, fa: 'برآورد مدل از نقدشوندگی ۲۰ جلسه (نه اندازه‌گیری لحظه‌ای) + جهش ۰٫۲۵ ATR در شکست' } : { v: 0, fa: 'سفارش محدود بالاتر از قیمت سفارش اجرا نمی‌شود؛ لغزش منفی ندارد' },
+      cost: { v: cost, fa: 'هزینهٔ رفت‌وبرگشت از تنظیمات حساب' },
+      vol: tse && isF(vm) ? { v: Math.floor(0.1 * vm), fa: '۱۰٪ میانهٔ حجم روزانهٔ ۲۰ جلسه', ask: bl && bl[3] > 0 ? bl[3] : null } : null,
+      normal: o.type === 'stop' ? 'اجرا نزدیک ' + fa(Math.min(o.order * (1 + o.slip), band)) + ' پس از عبور قیمت از ' + fa(o.order) : 'اجرا در ' + fa(o.order) + ' یا پایین‌تر اگر قیمت در ' + fa(EXK, 0) + ' جلسه به این سطح برگردد',
+      adverse: o.type === 'stop' ? 'اجرا در ' + fa(o.worst) + ' (لغزش و جهش قیمت)' : 'اجرا نشدن سفارش (قیمت به محدوده برنگردد)؛ در بدترین حالتِ اجرا، همان ' + fa(o.order),
+      noFill: isF(o.fillP) ? 1 - o.fillP : NaN };
     o.txt = o.typeFa + '؛ قیمت مرجع ' + fa(px) + (x.date ? ' (' + x.date + ')' : '') + '؛ بدترین اجرای محتمل ' + fa(o.worst) + '؛ احتمال اجرا در ' + fa(EXK, 0) + ' جلسه ' + (isF(o.fillP) ? pct(o.fillP, 0) : 'نامعلوم (تاریخچهٔ کم)') + '؛ R:R در بدترین اجرا ' + (isF(o.rrWorst) ? fa(o.rrWorst, 1) : '—');
     return o;
   }
@@ -2157,6 +2178,24 @@
     var X = prep(rows.map(function (r) { return { date: r.date, open: r.open || r.close, high: r.high || r.close, low: r.low || r.close, close: r.close, vol: r.vol || 0, val: r.val || 0 }; })), I = indicators(X), t = X.n - 1;
     var o = { date: X.d[t], n: X.n, s: trendEv(X, I, t, 's'), m: trendEv(X, I, t, 'm'), l: trendEv(X, I, t, 'l') }; TRC[ck] = o; return o; }
   function trendOfZ(z) { if (!z || !z.R) return null; var X = z.R.X, I = z.R.I, t = X.n - 1; return { date: X.d[t], n: X.n, s: trendEv(X, I, t, 's'), m: trendEv(X, I, t, 'm'), l: trendEv(X, I, t, 'l') }; }
+  /* what drove a move (directive 26 · 1 note, 5-3, 5-4): tether = world USDT × implied dollar rate (vs the free-market dollar);
+     18k gold = ounce × dollar × (1 + bubble); a fund = NAV × (1 + premium). Crypto: the same profile on 1-hour, 4-hour and weekly bars. */
+  function moveContext(by, R0) {
+    var M = Hub.moves, rows = function (k) { var z = R0.zmap[k]; return z && z.a && !z.a.sample ? z.a.rows : null; }, usd = rows('g:price_dollar_rl'), ons = rows('g:ons');
+    var G = Hub.globalMkt, wU = G && G.rowsAll ? (G.rowsAll().filter(function (o) { return o.id === 'g:usdt'; })[0] || {}).rows : null;
+    var R = Hub.tseRegistry && Hub.tseRegistry.get ? Hub.tseRegistry.get() : null, codeOf = {}; if (R && R.ins) Object.keys(R.ins).forEach(function (cd) { codeOf['s:' + R.ins[cd].sym] = cd; });
+    var navAt = function (nh, d) { var v = NaN; (nh || []).forEach(function (q) { if (q[0] <= d) v = q[1]; }); return v; };
+    Object.keys(by).forEach(function (k) { var r = by[k], m = r.mvx; if (!m || !m.h || !m.h.length) return;
+      var b = m.h.filter(function (o) { return o.h === m.best; })[0] || m.h[m.h.length - 1], d1 = m.d, d0 = b.d0; if (!d0) return;
+      if (k === 'g:crypto-tether-irr' && usd) r.dcx = { k: 'usdt', h: b.h, d0: d0, d1: d1, o: M.decompUSDT(rows(k), usd, wU, d1, d0) };
+      else if (k === 'g:geram18' && usd && ons) r.dcx = { k: 'gold', h: b.h, d0: d0, d1: d1, o: M.decompGold(rows(k), ons, usd, d1, d0) };
+      else if (r.cls === 'fund' && R && R.navH && codeOf[k]) { var nh = R.navH[codeOf[k]], z = R0.zmap[k], X = z && z.R.X; if (X) { var p1 = X.c[X.n - 1], i0 = X.d.lastIndexOf(d0), p0 = i0 >= 0 ? X.c[i0] : NaN, n1 = navAt(nh, d1), n0 = navAt(nh, d0);
+        r.dcx = { k: 'fund', h: b.h, d0: d0, d1: d1, o: M.decompFund(p1, p0, n1, n0), navN: (nh || []).length, navNow: n1 }; } }
+      if (r.cls === 'crypto' && G && G.tfOf) { var id = String(k).replace(/^x:/, ''), tf = G.tfOf(id); if (tf) { var arr = function (a) { return a && a.length >= 40 ? { d: a.map(function (q) { return q.ts; }), c: a.map(function (q) { return q.close; }), h: a.map(function (q) { return q.high; }), l: a.map(function (q) { return q.low; }), v: a.map(function (q) { return q.vol; }), n: a.length } : null; };
+        var h1 = arr(tf.h1), h4 = arr(tf.h4); r.mvTf = { at: tf.at, src: tf.src, h1: h1 ? M.profile(h1, { hs: [1, 4, 24], sigWin: 240, rankWin: 480 }) : null, h4: h4 ? M.profile(h4, { hs: [1, 3, 6], sigWin: 240, rankWin: 480 }) : null }; } }
+      if (r.cls === 'crypto') { var zz = R0.zmap[k], XX = zz && zz.R.X; if (XX && XX.n >= 200) { var W = { d: [], c: [], h: [], l: [], v: [], n: 0 }; for (var i = XX.n - 1; i >= 6; i -= 7) { W.d.unshift(XX.d[i]); W.c.unshift(XX.c[i]); var hh = -Infinity, ll = Infinity; for (var j = i - 6; j <= i; j++) { hh = Math.max(hh, XX.h[j]); ll = Math.min(ll, XX.l[j]); } W.h.unshift(hh); W.l.unshift(ll); W.v.unshift(0); } W.n = W.c.length; r.mvTf = r.mvTf || {}; r.mvTf.w = W.n >= 40 ? M.profile(W, { hs: [1, 2, 4], sigWin: 150, rankWin: 300 }) : null; } }
+    });
+  }
   function centralBuild(R0, DC) {
     var by = {}, items = DC && DC.desk ? DC.desk.items : [], rank = {}; (DC && DC.desk ? DC.desk.opp : []).forEach(function (x, i) { rank[x.key] = i + 1; });
     if (Hub.universe) { Hub.universe.purge(); items = items.filter(function (x) { return Hub.universe.ok(x.key); }); }
@@ -2205,7 +2244,11 @@
       rec.sector = c.sector || (z && z.a.sector) || ''; rec.cs = z && z.a.cs || ''; rec.csName = z && z.a.csName || ''; rec.ftype = z && z.a.ftype || ''; rec.ftSrc = z && z.a.ftSrc || ''; rec.mkt = z && z.a.market || ''; rec.queue = c.queue || null;
       rec.val20 = Xz && (x.cls === 'stock' || x.cls === 'fund') ? Xz.val.slice(-20).reduce(function (s, v) { return s + (v || 0); }, 0) / Math.max(1, Math.min(20, nz)) : NaN;
       rec.atrAbs = Iz && Iz.atr ? Iz.atr[nz - 1] : NaN; rec.atrPct = isF(rec.atrAbs) && Xz && Xz.c[nz - 1] > 0 ? rec.atrAbs / Xz.c[nz - 1] : NaN; rec.lastD = Xz ? Xz.d[nz - 1] : NaN;
+      // directive 26: important price moves on the record, separate from the trading verdict (Hub.moves; 24/7 crypto counts calendar days)
+      rec.n = nz; if (Hub.moves && Xz && !c.sample) { try { rec.mvx = Hub.moves.profile(Xz, { hs: x.cls === 'crypto' ? [1, 3, 7] : [1, 3, 5] }); } catch (e) { rec.mvx = null; } }
     });
+    if (Hub.moves && R0 && R0.zmap) { try { moveContext(by, R0); } catch (e) { /* the decompositions are optional */ } }
+    if (Hub.alerts && Hub.alerts.grade && R0 && R0.zmap) { try { Hub.alerts.grade(function (k) { var z = R0.zmap[k]; return z && z.a && !z.a.sample ? z.a.rows : null; }); } catch (e) { /* grading is best-effort */ } }
     // options (directive 22 · 2): the option model's proposals are recorded here too, so no page shows an option verdict of its own.
     // Their status is the option model's (liquidity-gated, not back-tested — stated on every record); they carry a rank within options only.
     var oc = ((R0 && R0.cards) || []).filter(function (c) { return c.cls === 'option'; }).sort(function (a, b) { return (b.type === 'long') - (a.type === 'long') || b.conf - a.conf; });
@@ -2274,6 +2317,8 @@
     return { list: M, crit: M.filter(function (m) { return m.sev === 'crit'; }).length, warn: M.filter(function (m) { return m.sev === 'warn'; }).length, at: Date.now() };
   }
   // the central record is kept so other tools (e.g. the stock signal tool) and the next update can read it; status changes are versioned
+  function slimMv(m) { if (!m || !m.h) return m && m.na ? { na: m.na, n: m.n } : null;
+    return { d: m.d, lv: m.lv, dir: m.dir, best: m.best, sig: m.sig, brk: m.brk, brkNew: m.brkNew, brkLv: m.brkLv, volR: m.volR, h: m.h.map(function (o) { return { h: o.h, r: o.r, z: o.z, rk: o.rk, lv: o.lv, d0: o.d0 }; }) }; }
   var CKEY = 'hub.central.v1';
   function centralSave(C, U0) {
     try { var St = Hub.util && Hub.util.store; if (!St) return null; var old = St.get(CKEY, null) || { by: {}, hist: [] }, ch = [];
@@ -2285,10 +2330,11 @@
         ['st', 'stFa', 'act', 'actFa', 'tier', 'tierFa', 'rank', 'px', 'date', 'conf'].forEach(function (f) { if (o[f] !== undefined) r[f] = o[f]; });
         if (o.lv) { r.L = Object.assign({}, r.L || {}, { buy: o.lv.buy, stop: o.lv.stop, tp: o.lv.tp || [], upConf: o.lv.up, dnConf: o.lv.dn }); r.lo = o.lv.buy ? o.lv.buy[0] : NaN; r.hi = o.lv.buy ? o.lv.buy[1] : NaN; r.stop = o.lv.stop; r.tp = o.lv.tp || []; }
         r.heldPrev = true; r.dataBad = false; r.why = 'دادهٔ تازه از کنترل کیفیت عبور نکرد (' + String(r.why || '').slice(0, 80) + ')؛ آخرین حکم معتبر (داده ' + (o.date || '—') + (o.ver ? '، نسخهٔ ' + o.ver : '') + ') حفظ شد. ' + String(o.why || ''); });
-      var slim = {}; Object.keys(C.by).forEach(function (k) { var r = C.by[k]; var L = r.L || {}; slim[k] = { sym: r.sym, cls: r.cls, st: r.st, stFa: r.stFa, act: r.act, actFa: r.actFa, rank: r.rank, px: r.px, sid: r.sid, why: r.why.slice(0, 200), held: r.held, tier: r.tier, rc: r.rc, tzState: r.tzState, near: r.near, sell: r.sell, date: r.date,
+      var slim = {}; Object.keys(C.by).forEach(function (k) { var r = C.by[k], o = old.by && old.by[k]; var L = r.L || {}; slim[k] = { sym: r.sym, cls: r.cls, st: r.st, stFa: r.stFa, act: r.act, actFa: r.actFa, rank: r.rank, px: r.px, sid: r.sid, why: r.why.slice(0, 200), held: r.held, tier: r.tier, rc: r.rc, tzState: r.tzState, near: r.near, sell: r.sell, date: r.date,
           lv: { buy: L.buy, stop: L.stop, tp: (L.tp || []).slice(0, 3), up: L.upConf, dn: L.dnConf, floor: L.floor, ceil: L.ceil, tzConf: L.tzConf, rr: r.rr }, pri: r.pri ? Math.round(r.pri.s) : null, ex: r.exec || null, s4: r.st4 || null, grp: r.grp || null, cy: r.cyc ? { l: r.cyc.lvl, w: r.cyc.win, s: r.cyc.st } : null,
-          tierFa: r.tierFa || null, rankCls: r.rankCls || null, conf: isF(r.conf) ? r.conf : null, strength: r.strength || null, hz: r.hz || null, hzc: r.hzc || 'M', validUntil: r.validUntil || null, dataState: r.dataState || null, model: r.model || null, mv: MODEL_VER, hzk: r.hz || null, tr: r.trx ? { s: r.trx.s.v, m: r.trx.m.v, l: r.trx.l.v, sb: r.trx.s.sub, mb: r.trx.m.sub, lb: r.trx.l.sub, d: r.trx.date } : null, xo: r.xo && !r.xo.na ? { ty: r.xo.type, ord: r.xo.order, w: r.xo.worst, fp: isF(r.xo.fillP) ? Math.round(r.xo.fillP * 100) / 100 : null, rw: isF(r.xo.rrWorst) ? Math.round(r.xo.rrWorst * 10) / 10 : null, ok: r.xo.ok, ref: r.xo.ref, rd: r.xo.refDate, at: r.xo.calcAt } : null }; slim[k].lv.inv = L.inv; });
+          tierFa: r.tierFa || null, rankCls: r.rankCls || null, conf: isF(r.conf) ? r.conf : null, mvx: slimMv(r.mvx), sl: Hub.moves && o && o.px > 0 && r.px > 0 && o.date ? Hub.moves.sinceLast(o.px, old.at, r.px, C.at, r.mvx && r.mvx.sig, Math.max(1, Math.round((C.at - (old.at || C.at)) / 864e5))) : null, dcx: r.dcx || null, n: r.n || null, strength: r.strength || null, hz: r.hz || null, hzc: r.hzc || 'M', validUntil: r.validUntil || null, dataState: r.dataState || null, model: r.model || null, mv: MODEL_VER, hzk: r.hz || null, tr: r.trx ? { s: r.trx.s.v, m: r.trx.m.v, l: r.trx.l.v, sb: r.trx.s.sub, mb: r.trx.m.sub, lb: r.trx.l.sub, d: r.trx.date } : null, xo: r.xo && !r.xo.na ? { ty: r.xo.type, ord: r.xo.order, w: r.xo.worst, fp: isF(r.xo.fillP) ? Math.round(r.xo.fillP * 100) / 100 : null, rw: isF(r.xo.rrWorst) ? Math.round(r.xo.rrWorst * 10) / 10 : null, ok: r.xo.ok, ref: r.xo.ref, rd: r.xo.refDate, at: r.xo.calcAt } : null }; slim[k].lv.inv = L.inv; });
       // directive 22: AID, signal ID and version on every record, and a ledger entry for every change — the live records get the same stamps
+      Object.keys(slim).forEach(function (k) { if (C.by[k]) C.by[k].sl = slim[k].sl; });   // change since the last update, also on the live record (alerts read it)
       var stp = Hub.central ? Hub.central.stamp(slim, C.at, U0 && U0.upd ? U0.upd : (Hub.util.store.get('hub.updrun.v1', null) || {}).id) : null;
       Object.keys(slim).forEach(function (k) { var a = slim[k], r = C.by[k]; r.aid = a.aid; r.sigId = a.sigId; r.ver = a.ver; r.created = a.created; r.updAt = a.updAt; });
       var upd = U0 && U0.upd ? { id: U0.upd } : Hub.util.store.get('hub.updrun.v1', null), hist = (old.hist || []).concat(ch.length ? [{ at: C.at, upd: upd && upd.id || null, ch: ch.slice(0, 80) }] : []).slice(-30);
