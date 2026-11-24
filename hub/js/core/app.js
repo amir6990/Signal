@@ -374,7 +374,7 @@
 
   function rerenderAll() { renderNav(); route(); }
 
-  function start() {
+  function start(hold) {
     if (Hub.i18n) Hub.i18n.init();
     initTheme();
     if (root.HUB_ONLY) { document.body.classList.add('single-tool'); var br = document.querySelector('.brand'); if (br) br.setAttribute('href', '#' + root.HUB_ONLY); }
@@ -398,7 +398,11 @@
     // links to another page of the system wait for pending writes to reach the shared store
     document.addEventListener('click', function (e) { var a = e.target && e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey || a.target === '_blank') return;
       var href = a.getAttribute('href'); if (!href || href.charAt(0) === '#' || /^[a-z]+:/i.test(href) || !/\.html(#|$)/.test(href)) return; e.preventDefault(); go(href); });
-    route();
+    if (!hold) return route();
+    // the menu is drawn; the page itself waits for the data pull (one engine run, on the new data) — at most 45 s
+    var v = document.getElementById('view'); if (v && !v.firstChild) { var m = document.createElement('p'); m.className = 'small muted'; m.id = 'boot-wait'; m.style.padding = '1rem'; m.textContent = (Hub.i18n && Hub.i18n.lang && Hub.i18n.lang() === 'en') ? 'Checking for new data from the computer…' : 'بررسی دادهٔ تازه از کامپیوتر …'; v.appendChild(m); }
+    var done = false, fin = function () { if (done) return; done = true; var m2 = document.getElementById('boot-wait'); if (m2) m2.remove(); Hub.__appStarted = true; route(); };
+    hold.then(fin, fin); setTimeout(fin, 45000);
   }
 
   Hub.register = register; Hub.toolById = byId;
@@ -412,7 +416,13 @@
   (function () { var b = root.document && document.getElementById('back-btn'); if (!b) return; var depth = 0;
     root.addEventListener('hashchange', function () { depth++; b.disabled = false; });
     b.addEventListener('click', function () { if (depth > 0 && root.history.length > 1) { depth = Math.max(0, depth - 2); root.history.back(); } else if (location.hash && location.hash !== '#home') location.hash = '#home'; }); })();
-  Hub.start = function () { var st = Hub.util.store; if (st && st.ready) st.ready().then(start, start); else start(); };
+  Hub.start = function () { var st = Hub.util.store, go = function () {
+      // on the published site (phone): the market-data pages (desk, trading, Iran economy: they run the engine) are drawn after the data of
+      // the computer are pulled — one engine run, on the new data; the other pages draw at once and the pull runs beside them
+      var D = Hub.dataSync; if (!D || !D.bootFirst) { Hub.__appStarted = true; return start(); }
+      if (!/^(desk|trading|iran)$/.test(MOD || '')) { Hub.__appStarted = true; start(); D.bootFirst(); return; }
+      start(D.bootFirst()); };
+    if (st && st.ready) st.ready().then(go, go); else go(); };
   Hub.rerenderAll = rerenderAll;
   Hub.secLabel = secLabel;
 })(window);

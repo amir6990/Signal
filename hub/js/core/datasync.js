@@ -44,7 +44,13 @@
     // the stock shards: stocks.json says how many; the rows come packed as arrays
     var shardSet = function (pre, n) { var L = [fetchSnap(pre)]; for (var i = 1; i < n; i++) L.push(fetchSnap(pre + '-' + i)); return Promise.all(L); };
     var unpackAll = function (files) { var D = {}; files.forEach(function (f) { var st = f.stores && f.stores[SKEY]; Object.keys((st && st.data) || {}).forEach(function (k) { D[k] = unpackSym(st.data[k]); }); }); return D; };
-    var stocks = fetchSnap('stocks').then(function (s0) { var n = s0.shards || 1, more = []; for (var i = 1; i < n; i++) more.push(fetchSnap('stocks-' + i));
+    var stocks = fetchSnap('stocks').then(function (s0) { var n = s0.shards || 1, more = [];
+      /* already current here (same or newer time, enough history): the other shards are not downloaded or unpacked at all — on a phone that
+         download and its unpacking (≈ 60 MB of JSON) ran on every opening, next to the engine run, and the page was killed for memory */
+      var S00 = s0.stores && s0.stores[SKEY], L00 = get(SKEY, null);
+      if (!force && live(S00) && live(L00) && ts(L00) >= ts(S00)) { var d00 = []; Object.keys(L00.data || {}).forEach(function (k) { var v = L00.data[k]; if (k[0] !== '_' && v && v.px) d00.push(v.px.length); }); d00.sort(function (x, y) { return x - y; });
+        if (!s0.base || !s0.base.shards || (d00.length && d00[Math.floor(d00.length / 2)] >= 260)) { out.same.push(SKEY); out.snaps.stocks = { publishedAt: s0.publishedAt, by: s0.by, shards: n, base: s0.base || null, baseUsed: false, skipped: true }; return; } }
+      for (var i = 1; i < n; i++) more.push(fetchSnap('stocks-' + i));
       // the base (full history) is fetched when this device's stock history is short: a new device, or one that missed it
       var L0 = get(SKEY, null), depth = Hub.histMerge && live(L0) ? (function () { var a = []; Object.keys(L0.data || {}).forEach(function (k) { var v = L0.data[k]; if (k[0] !== '_' && v && v.px) a.push(v.px.length); }); a.sort(function (x, y) { return x - y; }); return a.length ? a[Math.floor(a.length / 2)] : 0; })() : 0;
       var needBase = s0.base && s0.base.shards && depth < 260, baseP = needBase ? shardSet('stocks-base', s0.base.shards).then(unpackAll, function (e) { out.errors.push('stocks-base: ' + e.message); return null; }) : Promise.resolve(null);
@@ -162,7 +168,17 @@
   if (root.addEventListener) root.addEventListener('hub:data-updated', afterUpdate);
 
   // on the phone: pull once on opening
+  /* the app waits for this pull before it mounts the page (app.js): new data are in place before the first engine run, so a phone never runs
+     the engine twice on opening (once on the old data, again after the pull) — two runs at once were the cause of the iPhone tab crashes */
+  var BOOTP = null;
+  function bootFirst() {
+    if (BOOTP) return BOOTP; if (!served() || !cfg().autoPull) return (BOOTP = Promise.resolve(null));
+    var rd = Hub.util && Hub.util.store && Hub.util.store.ready ? Hub.util.store.ready() : Promise.resolve();
+    BOOTP = rd.then(function () { return pull(false); }).then(function (r) { BOOTED = true; if (r && r.updated.length) Hub.util && Hub.util.toast((fa() ? 'دادهٔ جدید از کامپیوتر رسید: ' : 'New data arrived: ') + r.updated.length + (fa() ? ' مجموعه' : ' sets'), 'good'); if (r && r.updated.length && Hub.__appStarted && Hub.rerenderAll) Hub.rerenderAll(); return r; }, function () { BOOTED = true; return null; });
+    return BOOTP; }
+  var BOOTED = false;
   function boot() {
+    if (BOOTP) return;   // the app already pulled before mounting
     if (!served() || !cfg().autoPull) return;
     var rd = Hub.util && Hub.util.store && Hub.util.store.ready ? Hub.util.store.ready() : Promise.resolve();
     rd.then(function () { return pull(false); }).then(function (r) { if (r.updated.length) { Hub.util && Hub.util.toast((fa() ? 'دادهٔ جدید از کامپیوتر رسید: ' : 'New data arrived: ') + r.updated.length + (fa() ? ' مجموعه' : ' sets'), 'good'); if (Hub.rerenderAll) Hub.rerenderAll(); } });
@@ -174,5 +190,5 @@
     var tail = c.token.slice(-4);
     return gh(c, '').then(function (j) { var p = j.permissions || {}; return p.push ? { ok: true, why: 'توکن معتبر است و روی مخزن ' + c.repo + ' اجازهٔ نوشتن دارد (چهار نویسهٔ آخر: …' + tail + ').' } : { ok: false, why: 'توکن معتبر است ولی روی ' + c.repo + ' فقط اجازهٔ خواندن دارد: در GitHub برای این توکن «Contents: Read and write» را فعال کنید.' }; },
       function (e) { return { ok: false, why: e.status === 401 ? 'GitHub این توکن را نمی‌شناسد (۴۰۱): باطل شده، منقضی شده یا ناقص کپی شده است. چهار نویسهٔ آخرِ توکن ثبت‌شده: …' + tail + ' — با چهار نویسهٔ آخر توکن تازه در GitHub مقایسه کنید.' : e.status === 404 ? 'توکن معتبر است ولی به مخزن ' + c.repo + ' دسترسی ندارد (۴۰۴): در تنظیمات توکن، «Repository access» را روی همین مخزن بگذارید.' : e.status === 403 ? 'دسترسی رد شد (۴۰۳): ' + e.message : e.message }; }); }
-  Hub.dataSync = { _buildStocks: buildStocks, _unpackSym: unpackSym, testToken: testToken, tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
+  Hub.dataSync = { bootFirst: bootFirst, _buildStocks: buildStocks, _unpackSym: unpackSym, testToken: testToken, tokOK: function (t) { return tokOK(cleanTok(t)); }, putFile: putFile, getFile: getFile, cfg: cfg, setCfg: setCfg, pull: pull, publish: publish, publishWidget: publishWidget, lastWidgetPub: function () { return get(KEY + '.wpub', null); }, served: served, FILES: FILES, last: function () { return get(KEY + '.last', null); }, lastPub: function () { return get(KEY + '.pub', null); }, notify: function () { try { root.dispatchEvent(new Event('hub:data-updated')); } catch (e) { /* old browsers */ } } };
 })(typeof window !== 'undefined' ? window : globalThis);

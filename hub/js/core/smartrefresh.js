@@ -69,6 +69,10 @@
   function fa(n) { return String(n).replace(/[0-9]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }); }
   function full(S, why) {
     if (!Hub.updateAll || (Hub.updateBusy && Hub.updateBusy())) return false;
+    /* never on a phone (2026-11-24, iPhone crash loop): a full update re-runs the back-test validation of every asset and needs ≈ 2 GB of
+       memory; iOS kills the page, the home-screen app reopens, the catch-up run starts again — «A problem repeatedly occurred». On a phone
+       only the light price checks run; the full run (and its validation) comes from the computer through the data sync. */
+    if (U().lite && U().lite()) { if (!S.liteSkip || Date.now() - S.liteSkip > 6 * 36e5) { S.liteSkip = Date.now(); log(S, 'full', true, 'روی گوشی اجرا نشد (' + why + '): به‌روزرسانی کامل و اعتبارسنجی برای حافظهٔ گوشی سنگین است؛ نتیجهٔ کامل از کامپیوتر می‌رسد'); saveSt(S); } return false; }
     S.m.full++; log(S, 'full', true, 'شروع: ' + why); saveSt(S);
     return Hub.updateAll(null, null, function () { var S2 = st(); S2.last.full = Date.now(); saveSt(S2); afterFull(); });
   }

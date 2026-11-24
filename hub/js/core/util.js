@@ -106,14 +106,20 @@
   function idbPut(k, s) { if (!idb) { announce(k); return; } try { var tx = idb.transaction('kv', 'readwrite'); if (s == null) tx.objectStore('kv').delete(k); else tx.objectStore('kv').put(s, k);
     var p = new Promise(function (res) { tx.oncomplete = function () { announce(k); res(); }; tx.onerror = tx.onabort = function () { res(); }; }); pend.push(p); p.then(function () { pend = pend.filter(function (x) { return x !== p; }); }); } catch (e) { /* ignore */ } }
   function full() { if (warned) return; warned = true; try { toast((root.Hub.i18n && root.Hub.i18n.lang() === 'fa') ? 'حافظهٔ مرورگر پر است؛ دادهٔ تازه فقط تا بستن برنامه می‌ماند.' : 'Browser storage is full; new data lasts only until the app is closed.', 'warn'); } catch (e) { /* ignore */ } }
+  /* on a phone the big stores are held once, as the parsed object: the JSON text (the stock store is ≈ 170 MB of text, twice that in memory)
+     is dropped once it is parsed and written; a short token stands in for it, so a later get still returns the same object. Writes and
+     reloads from another page (BroadcastChannel) replace the token as before. Desktop keeps the text (no change there). */
+  var LEN = {}, SEQ = 0, LITE0 = null;
+  function liteDev() { if (LITE0 === null) { try { LITE0 = !!(root.Hub && root.Hub.util && root.Hub.util.lite && root.Hub.util.lite()); } catch (e) { LITE0 = false; } } return LITE0; }
+  function slim(k) { var c = OBJ[k]; if (!c || !idb || typeof c.s !== 'string' || c.s.length < 5e6 || !liteDev()) return; LEN[k] = c.s.length; var tok = '\u0001' + k + '#' + (++SEQ); mem[k] = tok; c.s = tok; }
   var store = {
     // the big market-data stores (the stock store is ≈ 110 MB of JSON with a market-wide watch list) are parsed once and the object is kept:
     // parsing them on every read made several 500 MB copies during one update — a main cause of the phone running out of memory
     get: function (k, d) { try { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); if (v == null) return d;
-      if (BIG[k]) { var c = OBJ[k]; if (c && c.s === v) return c.o; var o = JSON.parse(v); OBJ[k] = { s: v, o: o }; return o; } return JSON.parse(v); } catch (e) { return d; } },
+      if (BIG[k]) { var c = OBJ[k]; if (c && c.s === v) return c.o; var o = JSON.parse(v); OBJ[k] = { s: v, o: o }; slim(k); return o; } return JSON.parse(v); } catch (e) { return d; } },
     set: function (k, v) {
       var s; try { s = JSON.stringify(v); } catch (e) { return false; }
-      mem[k] = s; idbPut(k, s); if (BIG[k]) OBJ[k] = { s: s, o: v };
+      mem[k] = s; idbPut(k, s); if (BIG[k]) { OBJ[k] = { s: s, o: v }; slim(k); }
       if (idb && s.length > SMALL) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } return true; }
       try { localStorage.setItem(k, s); return true; } catch (e) { if (!idb) full(); return !!idb; }
     },
@@ -145,7 +151,7 @@
     },
     backend: function () { return idb ? 'IndexedDB' : 'localStorage'; },
     flush: function () { return Promise.all(pend.slice()); },
-    size: function (k) { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); return v ? v.length : 0; }
+    size: function (k) { if (LEN[k] && OBJ[k] && mem[k] === OBJ[k].s) return LEN[k]; var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); return v ? v.length : 0; }
   };
 
   /* ---------- toast -------------------------------------------------- */

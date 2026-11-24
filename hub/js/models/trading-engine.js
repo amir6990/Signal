@@ -89,6 +89,9 @@
     return 'UPD-' + (j ? j.jy + p2(j.jm) + p2(j.jd) : th.toISOString().slice(0, 10).replace(/-/g, '')) + '-' + p2(th.getUTCHours()) + p2(th.getUTCMinutes()); }   // Iran has no daylight saving since 1401: UTC+3:30
   function updateEverything(ctx, onDone, opt) {
     opt = opt || {};
+    // on a phone the back-test validation is not run inside an update (≈ 2 GB of memory; iOS closes the page): data only, unless the
+    // validation is asked for explicitly (opt.forceVal); the full validation comes from the computer through the data sync
+    if (U.lite && U.lite() && !opt.forceVal && !opt.calcOnly) opt = Object.assign({}, opt, { dataOnly: true, liteAuto: true });
     if (UPD.busy) return; var TS = function () { return ctx.S || U.store.get('hub.tradingEngine.v1', null); }; UPD.busy = true; UPD.lines = []; UPD.st = {}; UPD.at = Date.now(); UPD.phase = 'fetch'; UPD.calcOk = undefined; UPD.id = updId(UPD.at); UPD.dataOnly = !!opt.dataOnly;
     try { var R0 = U.store.get('hub.updrun.v1', null) || {}; U.store.set('hub.updrun.v1', Object.assign({}, R0, { cur: { id: UPD.id, at: UPD.at, dataOnly: UPD.dataOnly, st: 'running' } })); } catch (e) { /* optional */ }
     var say = function (i, t, k) { UPD.lines[i] = { t: t, k: k || '' }; var el = document.getElementById('upd-log'); if (el) { U.clear(el); UPD.lines.forEach(function (l) { if (l) el.appendChild(h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t })); }); } };
@@ -270,7 +273,7 @@
   if (root.document) setInterval(function () { try {
     var A = U.store.get(AKEY, null); if (!A || !A.on || UPD.busy) return; if (Hub.smartRefresh && Hub.smartRefresh.active()) return;   // the market-aware scheduler supersedes the fixed interval var last = U.store.get('hub.autoupd.last', 0); if (Date.now() - last < (A.min || 60) * 60e3) return;
     U.store.set('hub.autoupd.last', Date.now()); var sn = {}, stale = FEEDIDS.map(feed).concat(SG.feeds).filter(function (f) { if (!f || sn[f.id]) return false; sn[f.id] = 1; var st = feedState(f); return st.live && isFinite(st.age) && st.age * 60 >= (A.min || 60); });
-    if (!stale.length) return; if (A.calc) { updateEverything({ S: null, rerender: function () {} }); return; }
+    if (!stale.length) return; if (A.calc && !(U.lite && U.lite())) { updateEverything({ S: null, rerender: function () {} }); return; }   /* never the full run with validation on a phone (memory) */
     stale.reduce(function (p, f) { return p.then(function () { var St = loadFeed(f), t0 = Date.now() - 1000; return SG.safeFetch(f.fetch, St, function () {}).then(function (errs) { U.store.set(f.storeKey, St); flog(f.id, true, errs.length ? 'بخشی ناموفق: ' + SG.summErr(errs) : (errs.notes && errs.notes.length ? errs.notes.join(' · ') : ''), { n: recvN(St, errs, t0), fail: errs.length, auto: true }); }, function (e) { flog(f.id, false, e.message, { auto: true }); }); }); }, Promise.resolve()).then(function () { TE.clearCache(); });
   } catch (e) { /* the timer must never break the page */ } }, 5 * 60e3);
   TK.define({ id: 'data-center', title: 'Data update center', sections: ['data'], priority: -100, version: 1, storeKey: 'hub.dataCenter.v1', noFile: true,
