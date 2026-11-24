@@ -20,6 +20,9 @@
   var MOD = root.HUB_MODULE || null;           // null = the hub (gateway) page
   function MAN() { return root.HUB_MANIFEST || null; }
   function modOf(id) { var M = MAN(); return M && M.tools[id] ? M.tools[id].m : null; }
+  // a tool is on this page when this is its module, or it is a shared tool also hosted here (e.g. the data update centre)
+  function here(id) { var M = MAN(), t = M && M.tools[id]; return !t || t.m === MOD || (t.also || []).indexOf(MOD) >= 0; }
+  function sharedHere() { var M = MAN(), mm = M && M.modules.filter(function (x) { return x.id === MOD; })[0]; return (mm && mm.shared) || []; }
   function fileOfMod(m) { var M = MAN(); if (!M) return null; var x = M.modules.filter(function (q) { return q.id === m; })[0]; return x ? x.file : null; }
   function urlOf(id) { var m = modOf(id), f = m && fileOfMod(m); return f ? f + '#' + id : null; }
   // leave the page only after pending writes reached the shared store (IndexedDB), so the next page reads them
@@ -84,6 +87,8 @@
     var q = h('input', { class: 'f-text nav-search', type: 'search', placeholder: 'Find a tool', 'aria-label': 'Find a tool' }), M = MAN();
     if (M) nav.appendChild(h('a', { href: 'index.html', class: 'nav-link top hub-link' }, [h('span', { text: 'درگاه مرکزی (Hub)' })]));
     nav.appendChild(link('home', MOD ? 'Overview' : 'All modules', null, true));
+    // module page: the shared tools it hosts (data update centre) come first, as top links
+    if (MOD && MAN()) sharedHere().concat(modOf('data-center') === MOD ? ['data-center'] : []).forEach(function (id) { var t = byId(id); if (t) nav.appendChild(link(id, id === 'data-center' ? 'مرکز به‌روزرسانی داده‌ها' : t.title, null, true)); });
     // module page: only this module (its own tools); the hub and the single-file build keep the system-wide links
     if (!MOD) [['trade-center', 'مرکز داشبورد معاملاتی'], ['data-center', 'مرکز به‌روزرسانی داده‌ها']].forEach(function (x) { if (byId(x[0])) nav.appendChild(link(x[0], x[1], null, true)); else if (M && M.tools[x[0]]) nav.appendChild(xlink(x[0], x[1], true)); });
     nav.appendChild(q);
@@ -99,6 +104,7 @@
     // a module page lists its own module only: exactly the tools the manifest assigns to it (the same list as its home page)
     var own = MOD && M ? (M.modules.filter(function (x) { return x.id === MOD; })[0] || { tools: [] }).tools.map(byId).filter(Boolean) : null;
     if (own) { var ord = inSection(MOD).map(function (t) { return t.id; }), ix = function (t) { var i = ord.indexOf(t.id); return i < 0 ? 999 : i; }; own.sort(function (a, b) { return ix(a) - ix(b); }); }
+    if (own) own = own.filter(function (t) { return t.id !== 'data-center'; });   // shown above as a top link
     if (own) addGrp(MOD, secLabel(MOD), own.map(function (t) { return link(t.id, t.title, t.status); }));
     if (!own) SECTIONS.forEach(function (s) {
       if (M && s.id !== MOD) {   // the hub: each module's tools are links to that module's page
@@ -133,7 +139,7 @@
     // single-tool build: every address opens that tool (Data sources & keys stays reachable)
     if (root.HUB_ONLY && id !== root.HUB_ONLY && id !== 'data-sources') { if (location.hash !== '#' + root.HUB_ONLY) { location.replace('#' + root.HUB_ONLY); return; } id = root.HUB_ONLY; }
     // a tool hosted by another module page (or any tool, on the hub): open that page
-    if (id !== 'home' && id !== 'data-sources' && MAN()) { var m = modOf(id); if (m && m !== MOD) { var u = urlOf(id); if (u) { go(u); return; } } }
+    if (id !== 'home' && id !== 'data-sources' && MAN()) { var m = modOf(id); if (m && m !== MOD && !here(id)) { var u = urlOf(id); if (u) { go(u); return; } } }
     var par = !root.HUB_ONLY && parentOf(id);
     if (par && byId(par.id)) { try { localStorage.setItem(par.key + '.tab', JSON.stringify(par.tab)); } catch (e) { /* ignore */ } location.replace('#' + par.id); return; }
     var main = document.getElementById('view');
@@ -179,10 +185,11 @@
   }
   /* home of a module page: only this module's tools (the other modules are reached from the hub) */
   function renderModuleHome(el, M) {
-    var mm = M.modules.filter(function (x) { return x.id === MOD; })[0], ids = mm ? mm.tools : [];
+    var mm = M.modules.filter(function (x) { return x.id === MOD; })[0], ids = mm ? (mm.shared || []).concat(mm.tools.indexOf('data-center') >= 0 ? ['data-center'] : [], mm.tools.filter(function (i) { return i !== 'data-center'; })) : [];
     el.appendChild(h('header', { class: 'page-head' }, [h('p', { class: 'eyebrow' }, [h('a', { href: 'index.html', text: 'درگاه مرکزی (Hub)' })]), h('h1', { text: secLabel(MOD) })]));
     var ord = inSection(MOD).map(function (t) { return t.id; }), ix = function (t) { var i = ord.indexOf(t.id); return i < 0 ? 999 : i; };
-    var list = ids.map(byId).filter(Boolean).sort(function (a, b) { return ix(a) - ix(b); });
+    var top = ids.filter(function (i) { return i === 'data-center' || (mm.shared || []).indexOf(i) >= 0; }).map(byId).filter(Boolean);
+    var list = top.concat(ids.filter(function (i) { return top.every(function (t) { return t.id !== i; }); }).map(byId).filter(Boolean).sort(function (a, b) { return ix(a) - ix(b); }));
     el.appendChild(h('section', { class: 'sec-grid', 'aria-label': secLabel(MOD) }, [h('div', { class: 'sec-card', id: 'sec-' + MOD }, [h('h2', { text: secLabel(MOD) }),
       h('ul', { class: 'sec-tools' }, list.map(function (t) { return h('li', null, [h('a', { href: '#' + t.id, text: t.title }), t.summary ? h('span', { class: 'muted', text: t.summary }) : null]); }))])]));
   }
