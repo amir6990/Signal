@@ -1,0 +1,31 @@
+{
+  "id": "./trading.html",
+  "name": "معامله‌گری · مرکز مدل‌ها",
+  "short_name": "معامله‌گری",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "./trading.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "icons": [
+    {
+      "src": "icon-trading-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-trading-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-trading-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

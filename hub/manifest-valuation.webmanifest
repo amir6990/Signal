@@ -1,0 +1,31 @@
+{
+  "id": "./valuation.html",
+  "name": "ارزش‌گذاری · مرکز مدل‌ها",
+  "short_name": "ارزش‌گذاری",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "./valuation.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "icons": [
+    {
+      "src": "icon-valuation-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-valuation-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-valuation-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

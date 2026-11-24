@@ -1,0 +1,31 @@
+{
+  "id": "./pe.html",
+  "name": "سرمایه‌گذاری خصوصی · مرکز مدل‌ها",
+  "short_name": "سرمایه‌گذاری خ.",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "./pe.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "icons": [
+    {
+      "src": "icon-pe-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-pe-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-pe-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
