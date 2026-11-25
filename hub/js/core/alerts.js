@@ -274,7 +274,7 @@
     var S = load(), c = U().store.get('hub.central.v1', null), cut = Date.now() - 3 * 864e5, act = S.log.filter(function (e) { return e.at >= cut; }), out = { n: act.length, stale: [], conflicts: [], hz: [], at: c && c.at };
     var up = { buyOk: 1, preBuy: 1, preBreak: 1, preFloor: 1 }, dn = { sellOk: 1, preCeil: 1, stop: 1 };
     act.forEach(function (e) { var k = check(e), r = c && c.by && c.by[e.key]; if (k.k === 'stale') out.stale.push({ e: e, why: k.fa }); if (!r || k.k === 'stale') return;
-      var eDir = up[e.t] ? 1 : dn[e.t] ? -1 : 0, rDir = r.tier === 'ok' ? 1 : r.sell === 'confirmed' ? -1 : r.tier === 'wait' ? 1 : 0;   // same precedence as Hub.central.life: a confirmed downturn outranks a buy still awaiting confirmation if (!eDir || !rDir || eDir === rDir) return;
+      var eDir = up[e.t] ? 1 : dn[e.t] ? -1 : 0, rDir = r.tier === 'ok' ? 1 : r.sell === 'confirmed' ? -1 : r.tier === 'wait' ? 1 : 0; /* same precedence as Hub.central.life: a confirmed downturn outranks a buy still awaiting confirmation */ if (!eDir || !rDir || eDir === rDir) return;
       var same = (e.hzc || 'M') === (r.hzc || 'M'), row = { sym: e.sym, alert: e.title, alertHz: e.hzFa || '', verdict: (r.tierFa || r.tier) + ' / ' + (r.actFa || ''), verdictHz: r.hz || 'میان‌مدت', sameRun: e.cenAt && c && e.cenAt === c.at };
       if (same) out.conflicts.push(row); else out.hz.push(row); });
     return out; }
