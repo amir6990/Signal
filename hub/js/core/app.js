@@ -134,6 +134,8 @@
   }
 
   /* ---------- router ----------------------------------------------- */
+  // after a full engine run started in a quiet moment, the open decision / analysis page is drawn again from the new verdicts
+  root.addEventListener('hub:engine', function () { if (current && /^(trade-center|analysis-center)$/.test(current.id)) { var y = root.scrollY; try { route(); root.scrollTo(0, y); } catch (e) { /* ignore */ } } });
   function route() {
     var id = (location.hash || '#home').slice(1) || 'home';
     // «#tool/tab» opens a tool on one of its tabs (directive 28: links straight to the opportunities centre or the analysis centre)

@@ -116,9 +116,9 @@
       out.cons.push({ id: cn.id, title: cn.title, n: rows.length, bad: nb, ms: Date.now() - t1, note: res.note || '' }); });
     /* ---- reload from the central record where that can fix it, then test again (once) ---- */
     if (opt.fix !== false && !opt.retry && out.mm.length) {
-      var acts = []; if (out.mm.some(function (m) { return /اجرای روی صفحه|نسخهٔ مرجع/.test(m.cause); }) && Hub.tradeUI && Hub.tradeUI.clearMemo) { Hub.tradeUI.clearMemo(); try { Hub.tradeUI.engineNow(true); acts.push('اجرای دوبارهٔ موتور و ذخیرهٔ مرجع تازه'); } catch (e) { acts.push('اجرای دوبارهٔ موتور ناموفق: ' + e.message); } }
+      var acts = []; if (out.mm.some(function (m) { return /اجرای روی صفحه|نسخهٔ مرجع/.test(m.cause); }) && Hub.tradeUI && Hub.tradeUI.idleRun) { Hub.tradeUI.idleRun('کنترل یکپارچگی: نتیجهٔ صفحه با مرجع مرکزی یکی نیست'); out.sched = 'اجرای دوبارهٔ موتور برای اولین لحظهٔ بیکاری زمان‌بندی شد'; }   /* never a blocking re-run from inside a check (2026-11-25) */
       if (out.mm.some(function (m) { return /فهرست دارایی‌ها از رکورد مرکزی عقب/.test(m.cause); })) { C().buildMaster(); acts.push('بازسازی فهرست مرکزی دارایی‌ها'); }
-      if (out.mm.some(function (m) { return /داده پس از آخرین محاسبه/.test(m.cause); }) && Hub.tradeUI && !acts.length) { try { Hub.tradeUI.clearMemo(); Hub.tradeUI.engineNow(true); acts.push('محاسبهٔ دوبارهٔ موتور با دادهٔ تازه'); } catch (e) { acts.push('محاسبهٔ دوباره ناموفق: ' + e.message); } }
+      if (out.mm.some(function (m) { return /داده پس از آخرین محاسبه/.test(m.cause); }) && Hub.tradeUI && Hub.tradeUI.idleRun) { Hub.tradeUI.idleRun('کنترل یکپارچگی: دادهٔ تازه پس از آخرین محاسبه'); out.sched = 'محاسبهٔ دوباره با دادهٔ تازه برای اولین لحظهٔ بیکاری زمان‌بندی شد'; }
       if (acts.length) { var again = run(Object.assign({}, opt, { retry: true, why: out.why + ' — آزمون دوباره پس از اصلاح' })); again.fixedFrom = { n: out.mm.length, acts: acts }; again.mm.forEach(function (m) { m.fix = 'پس از «' + acts.join('، ') + '» هنوز باقی است'; });
         out.mm.forEach(function (m) { var still = again.mm.some(function (x) { return x.sec === m.sec && x.key === m.key && x.field === m.field; }); if (!still) { m.fix = 'اصلاح شد: ' + acts.join('، '); again.fixed.push(m); } }); return again; }
     }

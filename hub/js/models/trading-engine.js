@@ -1589,18 +1589,51 @@
         h('div', { class: 'row-ctl' }, [h('a', { class: 'btn primary', href: 'desk.html#trade-center/opp', text: 'مرکز جامع فرصت‌ها (همهٔ سیگنال‌ها با فیلتر)' }), h('button', { class: 'btn ghost', type: 'button', text: 'اجرای کامل موتور روی همین گوشی (سنگین)', onclick: function () { if (window.confirm('اجرای کامل موتور در گوشی حافظهٔ زیادی می‌گیرد و ممکن است iOS اپ را ببندد. ادامه می‌دهید؟')) goFull(); } })])]),
       h('div', { class: 'panel' }, [h('h3', { text: 'فرصت‌های خرید تأییدشده (' + fa(ok.length, 0) + ')' }), ok.length ? tbl(ok.slice(0, 40)) : h('p', { class: 'small', text: 'در حکم مرکزی فعلی فرصت تأییدشده‌ای نیست.' })]),
       h('div', { class: 'panel' }, [h('h3', { text: 'در انتظار تأیید (' + fa(wait.length, 0) + ')' }), wait.length ? tbl(wait.slice(0, 40)) : h('p', { class: 'small', text: '—' })])]); }
-  function engineNow(force) {
-    var S = U.store.get('hub.tradingEngine.v1', null) || sample(), u = U.store.get('hub.updrun.v1', null) || {}, ce = U.store.get('hub.central.v1', null) || {};
-    var sig = [u.id, u.doneAt, JSON.stringify(S.e || {}).length, (S.j || []).length, FEEDIDS.map(feed).concat(SG.feeds).filter(Boolean).map(function (f) { var x = U.store.get(f.storeKey, null); return x && x.meta ? x.meta.asOfTs || x.meta.asOf || '' : ''; }).join(',')].join('|');
-    if (!force && MEMO && MEMO.sig === sig && Date.now() - MEMO.at < 15 * 60e3) return MEMO.R;
+  /* 2026-11-25 (page unresponsive on open): the full engine run is one synchronous block (≈10 s on a fast machine, minutes on a slow one).
+     A page that only SHOWS decisions (opt.fast) never starts it while the user works: it shows the last full result, or the stored central
+     record of the last run when the page was just opened, and the recomputation waits for a quiet moment (no click, key or scroll for 8 s),
+     announced on screen before it starts. The verdicts are the same — the stored record IS the output of the last full run; when data newer
+     than that run exist, every page says so until the recomputation finishes. */
+  var SIGKEY = 'hub.central.sig';
+  function fastR(sig) { var VR = viewR(); if (!VR) return null; var cs = U.store.get(SIGKEY, null), C = VR.X.central; VR.X.viewer = false; VR.X.fast = true; VR.X.fresh = !!(cs && cs.sig === sig && cs.at === C.at); return VR; }
+  function engineNow(force, opt) {
+    var S = U.store.get('hub.tradingEngine.v1', null) || sample(), sig = sigNow(S), fast = !!(opt && opt.fast);
+    if (!force && MEMO && MEMO.sig === sig && (Date.now() - MEMO.at < 15 * 60e3 || fast || MEMO.fast)) { if (fast && MEMO.full && Date.now() - MEMO.at >= 15 * 60e3) idleRun('حکم‌ها بیش از ۱۵ دقیقه پیش محاسبه شده‌اند'); return MEMO.R; }
     if (viewerMode()) { var VR = viewR(); if (VR) { MEMO = { sig: sig, at: Date.now(), R: VR }; return VR; } }
-    var R = run(S); MEMO = { sig: sig, at: Date.now(), R: R };
+    if (!force && fast) {
+      if (MEMO && MEMO.full) { MEMO.R.X.dataNewer = true; idleRun('دادهٔ تازه پس از آخرین محاسبه رسیده است'); return MEMO.R; }
+      var FR = fastR(sig); if (FR) { MEMO = { sig: sig, at: Date.now(), R: FR, fast: true }; if (!FR.X.fresh) { FR.X.dataNewer = true; idleRun('دادهٔ تازه‌تر از آخرین حکم ذخیره‌شده رسیده است'); } return FR; } }
+    var R = run(S); MEMO = { sig: sig, at: Date.now(), R: R, full: true };
+    try { var Cc = (R.X || R).central; if (Cc && Cc.at && !(R.X || R).sample) U.store.set(SIGKEY, { sig: sigNow(S), at: Cc.at }); } catch (e) { /* ignore */ }
     // directive 22 · 11, test 7: after every engine run the integrity monitor checks every section against the new central record
     if (Hub.integrity && !INTEG) { INTEG = setTimeout(function () { INTEG = null; try { Hub.integrity.run({ why: 'پس از اجرای موتور / به‌روزرسانی' }); } catch (e) { /* reported on the monitor page */ } }, 1500); }
     return R;
   }
   var INTEG = null;
-  Hub.tradeUI = { sigText: sigText, excel: excel, aiPrompt: aiPrompt, engineNow: engineNow, engineMemo: function () { return MEMO ? MEMO.R.X || MEMO.R : null; }, clearMemo: function () { MEMO = null; } };
+  /* the quiet-moment runner (2026-11-25): heavy jobs (the full engine run, the learning cycle) wait until nobody is using the page — 30 s
+     without a click, key, scroll or touch (60 s for the learning cycle), or the tab hidden — are announced on screen before they start, and
+     the open decision page is drawn again when they finish. Jobs queue; one at a time. */
+  var IDLE = { t: null, last: Date.now(), busy: false, hooked: false, q: [] };
+  function busyBox(title, why) { var o = document.createElement('div'); o.className = 'hub-busy'; o.setAttribute('data-notr', '1');
+    o.innerHTML = '<div><b></b><br><span></span><br><small>صفحه چند ثانیه (روی کامپیوتر کند تا حدود دو دقیقه) پاسخ نمی‌دهد؛ لطفاً صبر کنید و صفحه را نبندید.</small></div>';
+    o.querySelector('b').textContent = title; o.querySelector('span').textContent = why || ''; document.body.appendChild(o); return o; }
+  function hookIdle() { if (IDLE.hooked) return; IDLE.hooked = true; ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(function (ev) { root.addEventListener(ev, function () { IDLE.last = Date.now(); }, { passive: true, capture: true }); }); }
+  hookIdle();
+  function whenIdle(job) { if (viewerMode()) return; var same = IDLE.q.filter(function (x) { return x.id === job.id; })[0];
+    if (same) { same.why = job.why || same.why; if (job.cb) (same.cbs = same.cbs || []).push(job.cb); } else { job.cbs = job.cb ? [job.cb] : []; IDLE.q.push(job); }
+    if (!IDLE.hooked) { IDLE.hooked = true; ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(function (ev) { root.addEventListener(ev, function () { IDLE.last = Date.now(); }, { passive: true, capture: true }); }); }
+    pump(job.now); }
+  function pump(now) { if (IDLE.busy || !IDLE.q.length) return; clearTimeout(IDLE.t); IDLE.t = null; var job = IDLE.q[0];
+    if (!now && !(document.hidden || Date.now() - IDLE.last >= (job.idle || 8000))) { IDLE.t = setTimeout(function () { IDLE.t = null; pump(); }, 2000); return; }
+    IDLE.q.shift(); IDLE.busy = true; var o = busyBox(job.title, job.why);
+    requestAnimationFrame(function () { setTimeout(function () { var fin = function (res, err) { o.remove(); IDLE.busy = false; (job.cbs || []).forEach(function (f) { try { f(res, err); } catch (e) { /* ignore */ } });
+          try { root.dispatchEvent(new CustomEvent('hub:engine', { detail: { job: job.id, err: err ? err.message : null } })); } catch (e) { /* ignore */ } pump(); };
+        var r, err = null; try { r = job.run(); } catch (e) { err = e; }
+        if (r && typeof r.then === 'function') r.then(function (v) { fin(v, null); }, function (e) { fin(null, e); }); else fin(r, err); }, 60); }); }
+  function idleRun(why, now, cb) { whenIdle({ id: 'engine', title: 'در حال محاسبهٔ دوبارهٔ موتور مرکزی', why: why, now: now, cb: cb, idle: 30000, run: function () { return engineNow(true); } }); }
+  function sigNow(S) { S = S || U.store.get('hub.tradingEngine.v1', null) || sample(); var u = U.store.get('hub.updrun.v1', null) || {};
+    return [u.id, u.doneAt, JSON.stringify(S.e || {}).length, (S.j || []).length, FEEDIDS.map(feed).concat(SG.feeds).filter(Boolean).map(function (f) { var x = (U.store.getRO || U.store.get)(f.storeKey, null); return x && x.meta ? x.meta.asOfTs || x.meta.asOf || '' : ''; }).join(',')].join('|'); }
+  Hub.tradeUI = { _sig: sigNow, _memoSig: function () { return MEMO && MEMO.sig; }, idleRun: idleRun, whenIdle: whenIdle, idleFor: function () { return document.hidden ? 1e12 : Date.now() - IDLE.last; }, recompute: function (why) { idleRun(why || 'به درخواست شما', true); }, pending: function () { return !!(IDLE.q.length || IDLE.busy); }, sigText: sigText, excel: excel, aiPrompt: aiPrompt, engineNow: engineNow, engineMemo: function () { return MEMO ? MEMO.R.X || MEMO.R : null; }, clearMemo: function () { MEMO = null; } };
   // the phone widget's opportunity list, checked against the central record (rank and verdict)
   if (Hub.integrity) Hub.integrity.register('widget', 'ویجت گوشی (فرصت‌های برتر)', function () { var X = MEMO && (MEMO.R.X || MEMO.R); if (!X || !X.widget) return null; var W = X.widget(), C0 = Hub.central.get(); if (!W || !W.decision || !C0) return null;
     var bySym = {}; Object.keys(C0.by).forEach(function (k) { bySym[C0.by[k].sym + '|' + k] = k; });

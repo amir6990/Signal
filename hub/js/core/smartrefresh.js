@@ -87,14 +87,24 @@
        memory; iOS kills the page, the home-screen app reopens, the catch-up run starts again — «A problem repeatedly occurred». On a phone
        only the light price checks run; the full run (and its validation) comes from the computer through the data sync. */
     if (U().lite && U().lite()) { if (!S.liteSkip || Date.now() - S.liteSkip > 6 * 36e5) { S.liteSkip = Date.now(); log(S, 'full', true, 'روی گوشی اجرا نشد (' + why + '): به‌روزرسانی کامل و اعتبارسنجی برای حافظهٔ گوشی سنگین است؛ نتیجهٔ کامل از کامپیوتر می‌رسد'); saveSt(S); } return false; }
+    // 2026-11-25: a scheduled full update (heavy: validation of every asset) starts only when nobody has used the page for a minute
+    var TU = Hub.tradeUI; if (TU && TU.idleFor && TU.idleFor() < 60e3) { if (!S.waitIdle || Date.now() - S.waitIdle > 30 * 60e3) { S.waitIdle = Date.now(); log(S, 'full', true, 'به‌روزرسانی کامل («' + why + '») منتظر یک دقیقه بیکاری صفحه است تا کار شما را قطع نکند'); saveSt(S); } return false; }
     S.m.full++; log(S, 'full', true, 'شروع: ' + why); saveSt(S);
     return Hub.updateAll(null, null, function () { var S2 = st(); S2.last.full = Date.now(); saveSt(S2); afterFull(); });
   }
   // after any full update (scheduled, event-driven or the user's own button): recompute the central verdict and compare it with the last one
   function afterFull() {
     // directive 27: the learning cycle after a full update (computer only), at most once a day; its result is offered for release, not forced
-    try { var LR = Hub.learnRun, LS = LR && LR.load(), lc = LS && LS.cycles.length ? LS.cycles[LS.cycles.length - 1].at : 0; if (LR && !(U().lite && U().lite()) && Date.now() - lc > 20 * 36e5) setTimeout(function () { LR.run({ auto: true }).catch(function () { /* logged in the cycle */ }); }, 4000); } catch (e) { /* optional */ }
-    try { var R = Hub.tradeUI && Hub.tradeUI.engineNow ? Hub.tradeUI.engineNow(true) : null, X = R && R.X; if (!X || X.sample || !X.central) return;
+    // 2026-11-25: both heavy jobs wait for a quiet moment (announced on screen) instead of freezing the page the user is working in
+    var TU = Hub.tradeUI;
+    var learn = function () { try { var LR = Hub.learnRun, LS = LR && LR.load(), lc = LS && LS.cycles.length ? LS.cycles[LS.cycles.length - 1].at : 0; if (LR && !(U().lite && U().lite()) && Date.now() - lc > 20 * 36e5) {
+      var lj = function () { return LR.run({ auto: true }).catch(function () { /* logged in the cycle */ }); };
+      if (TU && TU.whenIdle) TU.whenIdle({ id: 'learn', title: 'در حال اجرای چرخهٔ روزانهٔ یادگیری', why: 'بازآموزی و آزمون رو به جلو پس از به‌روزرسانی کامل (روزی یک بار)', idle: 60000, run: lj }); else setTimeout(lj, 4000); } } catch (e) { /* optional */ } };
+    if (TU && TU.idleRun) { TU.idleRun('به‌روزرسانی کامل داده‌ها انجام شد', false, function (R) { evalAfter(R); }); learn(); return; }   // the engine first, then the learning cycle on its results
+    evalAfter(TU && TU.engineNow ? TU.engineNow(true) : null); learn();
+  }
+  function evalAfter(R) {
+    try { var X = R && R.X; if (!X || X.sample || !X.central) return;
       var fresh = freshness(); var evs = Hub.alerts ? Hub.alerts.evaluateCentral(X.central, fresh) : []; if (evs.length && Hub.alerts) Hub.alerts.deliver(evs);
       var S = st(); S.evalAt = Date.now(); S.evalUpd = (U().store.get('hub.updrun.v1', null) || {}).doneAt || null; log(S, 'eval', true, 'حکم مرکزی بازمحاسبه شد؛ ' + fa(evs.length) + ' رویداد'); saveSt(S);
     } catch (e) { var S3 = st(); log(S3, 'eval', false, 'محاسبهٔ دوباره ناموفق: ' + e.message); saveSt(S3); }
@@ -126,7 +136,7 @@
     jobs.reduce(function (p, j) { return p.then(function (acc) { return light(j[0], S, T).then(function (r) { return acc.concat(r.touched || []); }); }); }, Promise.resolve([]))
       .then(function (touched) {
         var gapOk = due(S.last.full, s.minFullGap);
-        if (s.fullEod && (eodT || eodG) && gapOk) { if (eodT) S.eodTse = T.g; if (eodG) S.eodTgju = T.g; full(S, 'بازبینی پایان روز ' + (eodT ? 'بورس' : 'طلا و ارز')); }
+        if (s.fullEod && (eodT || eodG) && gapOk) { if (full(S, 'بازبینی پایان روز ' + (eodT ? 'بورس' : 'طلا و ارز'))) { if (eodT) S.eodTse = T.g; if (eodG) S.eodTgju = T.g; } }
         else if (s.fullOnEvent && touched.length && gapOk) { full(S, 'رسیدن قیمت به سطح کلیدی: ' + touched.slice(0, 5).map(function (k) { return k.slice(2); }).join('، ')); }
         saveSt(S);
       }).catch(function () { saveSt(S); }).then(function () { BUSY = false; });

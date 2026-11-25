@@ -70,12 +70,12 @@
       if (!last || last.h !== h) { var created = last && last.sid === (s.sid || null) && last.created ? last.created : at; H.push({ v: last ? last.v + 1 : 1, at: at, upd: upd || null, h: h, sid: s.sid || null, created: created, key: k, sym: s.sym, px: s.px, c: c }); if (H.length > MAXV) H.splice(0, H.length - MAXV); if (last) nCh++; else nNew++; }
       var cur = H[H.length - 1]; s.ver = cur.v; s.created = cur.created; s.updAt = at; s.verAt = cur.at; });
     L.at = at; try { S.set(LKEY, L); } catch (e) { /* ignore */ } return { nNew: nNew, nChanged: nCh }; }
-  function ledger(aid) { var L = st() && st().get(LKEY, null); return L && L.by ? (aid ? L.by[aid] || [] : L.by) : aid ? [] : {}; }
+  function ledger(aid) { var L = st() && (st().getRO || st().get)(LKEY, null); return L && L.by ? (aid ? L.by[aid] || [] : L.by) : aid ? [] : {}; }
   // the state of a signal at a past moment (directive 22 · 13): the last version issued at or before `at`
   function asOf(aid, at) { var H = ledger(aid), o = null; H.forEach(function (x) { if (x.at <= at) o = x; }); return o; }
 
   /* ---------- the stored central record (the only source of verdicts) ---------- */
-  function get() { var S = st(); return S ? S.get(CKEY, null) : null; }
+  function get() { var S = st(); return S ? (S.getRO || S.get)(CKEY, null) : null; }   // shared read-only object: do not mutate
   function rec(key) { var C = get(); return C && C.by ? C.by[key] || null : null; }
   /* present(r): the one normalised view of a central record — full (engine run) or slim (stored) — used by every page */
   function present(r) {
@@ -115,7 +115,7 @@
        below   — under the zone (not at the stop): wait; the setup is weakening
        stopped — at or under the stop: the plan failed                                                                      */
   var LPX = 'hub.livepx.v1';
-  function livePx(k) { var L = U() && U().store.get(LPX, null), q = L && L.by && L.by[k]; return q && q[0] > 0 ? { px: q[0], at: q[1] || L.at } : null; }
+  function livePx(k) { var L = U() && (U().store.getRO || U().store.get)(LPX, null), q = L && L.by && L.by[k]; return q && q[0] > 0 ? { px: q[0], at: q[1] || L.at } : null; }
   function entryNow(r, opt) { opt = opt || {}; if (!r) return null; var lv = r.lv || {}, L = r.L || {}, z = lv.buy || L.buy, stop = isF(lv.stop) ? lv.stop : L.stop, inv = isF(lv.inv) ? lv.inv : L.inv;
     var q = livePx(r.key || opt.key), t0 = r.pxAt || (opt.C && opt.C.at) || 0, px = r.px, at = t0, src = 'حکم';
     if (q && q.at > t0 && q.px > 0) { px = q.px; at = q.at; src = 'قیمت لحظه‌ای'; }

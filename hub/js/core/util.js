@@ -109,7 +109,7 @@
   /* on a phone the big stores are held once, as the parsed object: the JSON text (the stock store is ≈ 170 MB of text, twice that in memory)
      is dropped once it is parsed and written; a short token stands in for it, so a later get still returns the same object. Writes and
      reloads from another page (BroadcastChannel) replace the token as before. Desktop keeps the text (no change there). */
-  var LEN = {}, SEQ = 0, LITE0 = null, LAZY = { 'hub.sigstocks.v1': 1 }, SKIPPED = {};
+  var RO = {}, LEN = {}, SEQ = 0, LITE0 = null, LAZY = { 'hub.sigstocks.v1': 1 }, SKIPPED = {};
   function lazyOn() { if (!liteDev()) return false; try { return sessionStorage.getItem('hub.fullEngine') !== '1'; } catch (e) { return true; } }
   function liteDev() { if (LITE0 === null) { try { LITE0 = !!(root.Hub && root.Hub.util && root.Hub.util.lite && root.Hub.util.lite()); } catch (e) { LITE0 = false; } } return LITE0; }
   function slim(k) { var c = OBJ[k]; if (!c || !idb || typeof c.s !== 'string' || c.s.length < 5e6 || !liteDev()) return; LEN[k] = c.s.length; var tok = '\u0001' + k + '#' + (++SEQ); mem[k] = tok; c.s = tok; }
@@ -118,6 +118,11 @@
     // parsing them on every read made several 500 MB copies during one update — a main cause of the phone running out of memory
     get: function (k, d) { try { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); if (v == null) return d;
       if (BIG[k]) { var c = OBJ[k]; if (c && c.s === v) return c.o; var o = JSON.parse(v); OBJ[k] = { s: v, o: o }; slim(k); return o; } return JSON.parse(v); } catch (e) { return d; } },
+    /* read-only shared view (2026-11-25): parsed once per stored version and shared by every reader until the next write. For the stores read
+       hundreds of times per run (the central record, its ledger, live quotes): parsing them on every read froze the page for minutes.
+       The caller must not mutate the result (copy first if it needs to change it). */
+    getRO: function (k, d) { try { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); if (v == null) return d; if (BIG[k]) return store.get(k, d);
+      var c = RO[k]; if (c && c.s === v) return c.o; var o = JSON.parse(v); RO[k] = { s: v, o: o }; return o; } catch (e) { return d; } },
     set: function (k, v) { if (SKIPPED[k]) { try { console.warn('hub store: '+k+' not loaded on this phone (viewer) — write refused'); } catch (e) {} return false; }
       var s; try { s = JSON.stringify(v); } catch (e) { return false; }
       mem[k] = s; idbPut(k, s); if (BIG[k]) { OBJ[k] = { s: s, o: v }; slim(k); }

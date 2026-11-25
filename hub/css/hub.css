@@ -554,3 +554,6 @@ details.fold { margin: .6rem 0; } details.fold > summary { cursor: pointer; padd
 .grid.opp-tbl th:nth-child(1), .grid.opp-tbl td:nth-child(1) { min-width: 4.5rem; }
 .grid.opp-tbl td:nth-child(14), .grid.opp-tbl td:nth-child(16) { min-width: 14rem; }
 .opp-chart { color: var(--ink, currentColor); margin: .5rem 0; }
+/* the announced full engine run (2026-11-25) */
+.hub-busy { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+.hub-busy > div { background: var(--panel, #1b1f24); color: var(--fg, #e8e8e8); border-radius: 10px; padding: 1.2rem 1.6rem; max-width: 30rem; text-align: center; line-height: 1.9; box-shadow: 0 8px 30px rgba(0,0,0,.4); }

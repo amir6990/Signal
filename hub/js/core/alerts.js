@@ -67,7 +67,7 @@
       dataAt: r.date || '', floor: L.floor || null, ceil: L.ceil || null, tzConf: L.tzConf, stage: lifeOf(r) }, extra || {});
   }
   // directive 28 · 7: the alert carries the opportunity's life stage from the same central function the opportunities centre uses
-  function lifeOf(r) { try { var CE = Hub.central, cen = U() && U().store.get('hub.central.v1', null); if (!CE || !CE.life) return null; var o = CE.life(Object.assign({}, cen && cen.by && cen.by[r.key] || {}, r), { C: cen }); return o ? { k: o.k, fa: o.fa } : null; } catch (e) { return null; } }
+  function lifeOf(r) { try { var CE = Hub.central, cen = U() && U().store.getRO('hub.central.v1', null); if (!CE || !CE.life) return null; var o = CE.life(Object.assign({}, cen && cen.by && cen.by[r.key] || {}, r), { C: cen }); return o ? { k: o.k, fa: o.fa } : null; } catch (e) { return null; } }
   // «next action» in one line (directive 17 · closing note): what to do now, not only what happened
   function nextAct(t, c) {
     switch (t) {
@@ -127,7 +127,7 @@
     c.dirFa = c.dir === 1 || DIRS[t] ? 'صعودی' : c.dir === -1 || DIRD[t] ? 'نزولی' : '—';
     c.confFa = isF(r.conf) ? 'امتیاز اطمینان مدل ' + fa(r.conf, 0) + '٪ (امتیاز قاعده‌محور؛ احتمال کالیبره‌شده نیست)' : '—';
     var cd = condOf(t, c, r); c.okCond = cd.ok; c.noCond = cd.no;
-    var cen = U() && U().store.get('hub.central.v1', null); c.mver = r.mv || (cen && cen.by && cen.by[r.key] && cen.by[r.key].mv) || ''; c.cenAt = (cen && cen.at) || null; c.dataD = r.date || '';
+    var cen = U() && U().store.getRO('hub.central.v1', null); c.mver = r.mv || (cen && cen.by && cen.by[r.key] && cen.by[r.key].mv) || ''; c.cenAt = (cen && cen.at) || null; c.dataD = r.date || '';
     c.event = c.kind === 'early' ? 'مورد انتظار: ' + (t === 'preCeil' ? 'برگشت نزولی از محدودهٔ سقف احتمالی' : t === 'preFloor' ? 'برگشت صعودی از محدودهٔ کف احتمالی' : /^cyc/.test(t) ? 'نقطهٔ عطف زمانی' : 'تأیید صعود (بسته‌شدن بالای سطح تأیید)') : 'رخ‌داده: ' + T[1];
     return c; }
 
@@ -252,7 +252,7 @@
   /* directive 26 · 4: every alert is checked against the CURRENT central record — the claim it made (a zone, a level, a verdict) is re-tested
      with the latest levels, so an alert issued on an earlier run is marked stale instead of contradicting the dashboard */
   function check(e) {
-    var c = U().store.get('hub.central.v1', null), r = c && c.by && c.by[e.key], at = c && c.at ? new Date(c.at).toLocaleString('fa-IR-u-nu-arabext', { timeZone: 'Asia/Tehran', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : '—';
+    var c = U().store.getRO('hub.central.v1', null), r = c && c.by && c.by[e.key], at = c && c.at ? new Date(c.at).toLocaleString('fa-IR-u-nu-arabext', { timeZone: 'Asia/Tehran', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : '—';
     if (!r) return { k: 'gone', fa: 'نامشخص (دارایی در محاسبهٔ اخیر نیست)' };
     var L = r.lv || {}, px = r.px, inZ = function (z) { return z && isF(z[0]) && px >= Math.min(z[0], z[1]) && px <= Math.max(z[0], z[1]); }, zs = function (z) { return fa(Math.min(z[0], z[1])) + '–' + fa(Math.max(z[0], z[1])); }, tierFa = ({ ok: 'تأییدشده', wait: 'در انتظار تأیید', floor: 'محدودهٔ کف', none: 'فاقد فرصت', pos: 'موقعیت باز' })[r.tier] || '—';
     var hzNote = e.hzc && e.hzc !== (r.hzc || 'M') ? ' · افق متفاوت: حکم مرکزی ' + (r.hz || 'میان‌مدت') + ' = ' + tierFa : '';

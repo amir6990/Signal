@@ -1035,7 +1035,11 @@
       for (a = 1; a <= k; a++) { g[a] -= lam * w[a]; H[a][a] += lam; } var st = solve(H, g); if (!st) break; var mx = 0; for (a = 0; a <= k; a++) { w[a] += st[a]; mx = Math.max(mx, Math.abs(st[a])); } if (mx < 1e-7) break; }
     return function (x) { var e = w[0]; for (var j = 0; j < k; j++) e += w[j + 1] * (x[j] - mu[j]) / sg[j]; return 1 / (1 + Math.exp(-e)); };
   }
-  function indexForecast(rows, opts) {
+  // 2026-11-25: a pure function of its rows and options, called on every engine run for the same index series — memoised per data fingerprint
+  var IFC = {};
+  function indexForecast(rows, opts) { var A = rows || [], l = A.length ? A[A.length - 1] : null, f = A[0] || null, key = A.length + '|' + (f && f.date) + '|' + (l && l.date) + '|' + (l && l.close) + '|' + JSON.stringify(opts || {});
+    if (IFC[key]) return IFC[key]; var o = indexForecast0(rows, opts); var ks = Object.keys(IFC); if (ks.length > 40) delete IFC[ks[0]]; IFC[key] = o; return o; }
+  function indexForecast0(rows, opts) {
     opts = opts || {}; var R = (rows || []).filter(function (r) { return isF(r.close) && r.close > 0; }).slice().sort(function (a, b) { return a.date - b.date; }), c = R.map(function (r) { return r.close; }), n = c.length;
     var out = { n: n, from: n ? R[0].date : null, to: n ? R[n - 1].date : null, H: [] }, DM = Hub.macroEval && Hub.macroEval.dm;
     (opts.h || [5, 20, 60]).forEach(function (h) {
@@ -1786,19 +1790,26 @@
   }
 
   function decide(X, E, U) {
+    var DT = X.dtm = { t: Date.now() }, dtm = function (k) { var t = Date.now(); DT[k] = (DT[k] || 0) + t - DT.t; DT.t = t; };
     var db = E.val && E.val.db && !E.val.db.sample ? E.val.db : null, cards = X.cards.filter(function (c) { return c.cls !== 'option' && !c.sample && X.zmap[c.key]; }), all = cards.map(function (c) { return forecastAsset(c, X.zmap[c.key], false, db); });
+    dtm('forecastAll');
     var by = {}; all.forEach(function (f) { var k = f.cls === 'fund' ? 'stock' : f.cls; (by[k] = by[k] || { n: 0, up: 0, down: 0, flat: 0 }); by[k].n++; by[k][f.dir]++; });
     all.forEach(function (f) { var g = GW[f.grade] || 0.25; f.score = f.dir === 'up' && isF(f.expRet) && f.expRet > 0 ? g * f.conf / 100 * f.expRet / Math.max(0.01, Math.abs(isF(f.down20) ? f.down20 : 0.05)) : (!db && f.dir === 'up' ? 1e-6 * f.conf : NaN); f.noEvidence = !db; });
     var DK = deskBuild(X, E, all, db), ranked = DK.opp.map(function (x) { return x.f; });
+    dtm('deskBuild');
     try { DK.track = deskTrack(DK, X, E); } catch (e) { DK.track = null; DK.trackErr = e.message; }
     // again, now with the registry entry (issue price) attached
+    dtm('deskTrack');
     DK.items.forEach(function (x) { try { x.v6 = sigView(x, E, X.zmap[x.key]); okOnlyIfElig(x); } catch (e) { /* keep the earlier view */ } });
     // the registry's issue price can turn a call into «entry missed» or expired: such calls leave the opportunity list here too, so every view agrees
+    dtm('sigView');
     var drop = DK.opp.filter(function (x) { var v = x.v6; return v && (v.st === 'exp' || v.st === 'nodata' || v.st === 'rej' || v.en === 'missed'); });
     if (drop.length) { drop.forEach(function (x) { x.elig = false; x.notWhy.push(x.v6.stFa + ': ' + x.v6.why.split('؛')[0]); });
       DK.opp = DK.opp.filter(function (x) { return x.elig; }); DK.top10 = DK.opp.slice(0, 10); ranked = DK.opp.map(function (x) { return x.f; }); }
     try { DK.risk = deskRisk(DK, X, E); } catch (e) { DK.risk = null; }
+    dtm('risk');
     var top = DK.opp.map(function (x) { var f2 = forecastAsset(x.c, X.zmap[x.key], true, db); f2.score = x.score; f2.desk = x; x.prob = f2.prob || []; return f2; });
+    dtm('topForecast');
     top.forEach(function (f, i) { f.rank = i + 1; f.vs = []; });
     top.sort(function (a, b) { return (b.confirmed - a.confirmed) || 0; });
     var days = top[0] && isF(top[0].expDays) ? top[0].expDays * 7 / 5 : 28, cr = isF(E.cashRate) ? E.cashRate : NaN, cashRet = isF(cr) ? cr * days / 365 : NaN;
@@ -1816,6 +1827,7 @@
     best.cashRet = cashRet; best.cashRate = cr; best.reinvest = top.length ? 'سرمایه‌گذاری مجدد وقتی جذاب می‌شود که ' + top[0].sym + ': ' + top[0].confirm + ' و درجهٔ اعتبار به B برسد.' : 'وقتی دست‌کم یک دارایی دید صعودی و امید ریاضی مثبت پیدا کند.';
     // market-level views
     var pf = function (name, rows) { if (!rows || rows.length < 300) return null; try { var F = indexForecast(rows, { h: [5, 20] }); return F.H.filter(function (q) { return q.ok; }).map(function (q) { return { h: q.h, p: q.p, skill: q.skill }; }); } catch (e) { return null; } };
+    dtm('best');
     var mk = [];
     var ix = X.ixf && X.ixf.H ? X.ixf.H.filter(function (q) { return q.ok; }) : [], st = by.stock;
     mk.push({ name: 'سهام ایران', dir: st ? (st.up > st.down * 1.3 ? 'up' : st.down > st.up * 1.3 ? 'down' : 'flat') : 'none', note: st ? 'دید موتور: ' + fa(st.up, 0) + ' صعودی، ' + fa(st.down, 0) + ' نزولی، ' + fa(st.flat, 0) + ' خنثی از ' + fa(st.n, 0) + ' نماد' + (ix.length ? '؛ شاخص کل تا ۲۰ روز: ' + pct(ix[ix.length > 1 ? 1 : 0].p, 0) + ' احتمال بالاتر' + (ix[ix.length > 1 ? 1 : 0].skill ? '' : ' (نرخ پایه)') : '') : 'داده ندارد' });
@@ -1827,6 +1839,7 @@
       var o = pickS(q[1]); if (!o) return mk.push({ name: q[0], dir: 'none', note: 'داده دریافت نشده؛ «به‌روزرسانی همهٔ بخش‌ها» را بزنید' + (/g:brent/.test(q[1][0]) ? ' (برای نفت کلید Alpha Vantage یا TGJU لازم است)' : /g:copper/.test(q[1][0]) ? ' (منبع مس: CNBC)' : '') });
       var v = seriesView(o); mk.push({ name: q[0], dir: v.dir, note: v.why + ' · ' + v.src + ' · داده تا ' + shamsi(v.date) + (v.prob.length ? ' · احتمال بالاتر بودن ۲۰ روز: ' + pct(v.prob[v.prob.length - 1].p, 0) + (v.prob[v.prob.length - 1].skill ? '' : ' (نرخ پایه)') : ''), view: v }); });
     if (!db) best.why += ' (اعتبارسنجی اجرا نشده: رتبه‌بندی فقط بر پایهٔ قدرت پیش‌بینی است، بدون شواهد بک‌تست.)'; else if (X.valState === 'stale') best.why += ' (شواهد بک‌تست مربوط به تنظیمات قبلی است؛ دوباره اعتبارسنجی کنید.)';
+    dtm('markets');
     best.urgent = urgent;
     return { best: best, top: top, ranked: ranked.length, screened: all.length, by: by, markets: mk, all: all, desk: DK };
   }
@@ -2344,12 +2357,17 @@
       if (!(U0 && U0.noSave)) St.set(CKEY, o); return o; } catch (e) { return null; }
   }
   function run(E0, U0, opts) {
+    var TM = { t: Date.now() }, tm = function (k) { var t = Date.now(); TM[k] = (TM[k] || 0) + t - TM.t; TM.t = t; };
     var E = merge(defaults(), JSON.parse(JSON.stringify(E0 || {}))), U = U0 || universe(E), list = [];
+    tm('universe');
     var full = !!(opts && (opts.backtest || opts.prep));
     var skipped = FIXSKIP.slice(); (U.assets || []).forEach(function (a) { if (!a.rows || a.rows.length < 30) { skipped.push({ sym: a.sym, cls: a.cls, why: 'تاریخچه ' + ((a.rows || []).length) + ' جلسه (حداقل ۳۰)' }); return; } try { list.push({ a: a, R: analyse(a, false) }); } catch (e) { skipped.push({ sym: a.sym, cls: a.cls, why: 'خطای تحلیل: ' + e.message }); } });
+    tm('analyse');
     crossModels(list, U, E, full); var ml = mlRank(list), pr = pairs(list);
+    tm('cross');
     var zmap = {}; list.forEach(function (z) { zmap[z.a.key] = z; });
     var cards = list.map(function (z) { return card(z, E); }).filter(Boolean).concat(E.classes.option !== false ? optionCards(U.opt, E) : []);
+    tm('cards');
     var zmap0 = {}; list.forEach(function (z) { zmap0[z.a.key] = z; });
     if (E.classes.global !== false && Hub.globalMkt) { try { var GMr = Hub.globalMkt.rowsAll(), gdef = [['g:btc', 'lv:crypto-bitcoin', 'crypto', 'بیت‌کوین'], ['g:eth', null, 'crypto', 'اتریوم'], ['g:brent', 'lv:oil_brent', 'commodity', 'نفت برنت'], ['g:wti', null, 'commodity', 'نفت WTI'], ['g:ng', null, 'commodity', 'گاز طبیعی'], ['g:silver', null, 'commodity', 'نقره'], ['g:copper', null, 'commodity', 'مس']].filter(function (q) { return !Hub.universe || Hub.universe.ok('x:' + q[0].slice(2), q[2]); });
       gdef.forEach(function (q) { var o = GMr.filter(function (g) { return g.id === q[0]; })[0] || (q[1] && GMr.filter(function (g) { return g.id === q[1]; })[0]); if (!o) return;
@@ -2366,11 +2384,13 @@
     if (btF && db) db.ver = ((E0 && E0.val && E0.val.db && E0.val.db.ver) || 0) + 1;
     var todayD = 0; blist.forEach(function (z) { todayD = Math.max(todayD, z.R.X.d[z.R.X.n - 1]); });   // real series only: sample dates must not age the evidence
     var gated = gateCards(cards, db, E, todayD);
+    tm('global+gate');
     Object.keys(zmap0).forEach(function (k) { zmap[k] = zmap0[k]; });
     cards.forEach(function (c) { if (c.global && c.val && c.val.grade === 'D' && !c.val.ev) c.val.reasons.push('بازار جهانی: تاریخچهٔ کوتاه (حداکثر یک سال از CoinGecko) نمونهٔ کافی برای اعتبارسنجی نمی‌دهد.'); });
     var rank = { long: 0, short: 1, close: 2, hold: 3 }; cards.sort(function (a, b) { return rank[a.type] - rank[b.type] || b.conf - a.conf; });
     var byKey = {}; cards.forEach(function (c) { byKey[c.key] = c; });
     var mon = monitor(E, zmap, byKey), rk0 = risk(E, zmap, mon, { pick: [] }, U);
+    tm('monitor');
     if (/^اضطراری|^کاهش/.test(rk0.state)) cards.forEach(function (c) { if (c.type === 'long') { c.status = 'مسدود — ' + rk0.state.split(':')[0]; c.cond.push('قاعدهٔ افت سرمایه: ' + rk0.state); } });
     // central verdict first (decision desk on the same cards), then every downstream output from it
     var ixF0 = null; try { ixF0 = U.idx && U.idx.length ? indexForecast(U.idx) : null; } catch (e) { ixF0 = null; }
@@ -2378,19 +2398,26 @@
     Object.keys(zmap0).forEach(function (k) { zmap[k] = zmap0[k]; });
     var Xc = { E: E, zmap: zmap, cards: cards, mon: mon, ixf: ixF0, xg: xg0, valDb: db, valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', skipped: skipped, nUni: (U.assets || []).length }, DC0 = null;
     try { DC0 = decide(Xc, E, U); } catch (e) { DC0 = { best: { kind: 'error', text: 'خطا در تحلیل', why: e.message }, top: [], markets: [], screened: 0, ranked: 0, all: [] }; }
+    tm('decide');
     var CEN = centralBuild(Xc, DC0); centralApply(cards, CEN);
+    tm('central');
     var pf = portfolio(cards, zmap, E, mon), rk = risk(E, zmap, mon, pf, U), plan2 = actionPlan(E, cards, pf, mon, rk, CEN);
+    tm('portfolio');
     // market regime from the total index
     var mk = null; if (U.idx && U.idx.length > 80) { var ix = { key: 'idx', rows: U.idx.map(function (r) { return { date: r.date, open: r.close, high: r.high || r.close, low: r.low || r.close, close: r.close, vol: 0, val: 0 }; }) }, Ri = analyse(ix); mk = { rg: Ri.RG[Ri.X.n - 1], close: Ri.X.c[Ri.X.n - 1] }; }
     var ixF = ixF0;
     var idxv = []; try { if (U.idxAll) { idxv.push(indexView(U.idxAll.total, 'شاخص کل بورس', E, U.idxSample)); idxv.push(indexView(U.idxAll.ew, 'شاخص کل (هم‌وزن)', E, U.idxSample)); } } catch (e) { idxv = [{ name: 'شاخص‌ها', ok: false, why: 'خطا: ' + e.message }]; }
+    tm('index');
     var bt = btF, xgS = xg0;
     var counts = { long: cards.filter(function (c) { return c.type === 'long'; }).length, strong: cards.filter(function (c) { return c.type === 'long' && c.strength === 'قوی'; }).length, close: cards.filter(function (c) { return c.type === 'close'; }).length, hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
     var sample = (U.assets || []).some(function (a) { return a.sample; });
     var R0 = { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, ixf: ixF, idxv: idxv, xg: xgS, markets: rankMarkets(cards, db, list, E, xgS), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
     R0.decide = function () { return DC0; }; R0.central = CEN; R0.pulse = pulse(R0, U);
+    tm('assemble');
     R0.consistency = consistency(R0, CEN, DC0); if (!sample) { R0.centralSaved = centralSave(CEN, opts); try { R0.ptReg = DC0 && DC0.desk ? ptRegister(DC0.desk, Xc) : null; } catch (e) { R0.ptReg = null; } }
+    tm('save');
     R0.prio = priorities(R0, E); R0.widget = function () { return widget(R0, E, U); };
+    tm('prio'); delete TM.t; if (Xc.dtm) { delete Xc.dtm.t; TM.decideParts = Xc.dtm; } R0.timing = TM;
     return R0;
   }
 

@@ -44,7 +44,7 @@
   /* ---------------- data: one engine run, the central record ---------------- */
   function sample() { return { version: 2, tool: 'trade-center', g: null, cmp: [], sel: null, icat: 'all', bsub: 'idx', lim: 60 }; }
   function run(S) {
-    var R = Hub.tradeUI && Hub.tradeUI.engineNow ? Hub.tradeUI.engineNow() : null, X = R && R.X, C = X && X.central;
+    var R = Hub.tradeUI && Hub.tradeUI.engineNow ? Hub.tradeUI.engineNow(false, { fast: true }) : null, X = R && R.X, C = X && X.central;   // never starts the full engine while the page is in use
     var recs = C ? Object.keys(C.by).map(function (k) { if (!C.by[k].key) C.by[k].key = k; return C.by[k]; }) : [];
     // the published record (phone) keeps only the priority score as a number: the same shape as the computer's record, without the parts
     recs.forEach(function (r) { if (typeof r.pri === 'number') r.pri = { s: r.pri, base: r.pri, pen: [] }; if (!isF(r.rr) && r.lv && isF(r.lv.rr)) r.rr = r.lv.rr; if (!r.L && r.lv) r.L = { buy: r.lv.buy, stop: r.lv.stop, tp: r.lv.tp || [], upConf: r.lv.up, dnConf: r.lv.dn, floor: r.lv.floor, ceil: r.lv.ceil, tzConf: r.lv.tzConf }; if (r.grpFa == null) r.grpFa = ''; if (r.execFa == null) r.execFa = (r.ex && r.ex.fa) || ''; });
@@ -1137,8 +1137,13 @@
     var W = 640, H = 220, pl = 6, pr = 70, y = function (v) { return (8 + (H - 16) * (1 - (v - lo) / (hi - lo))).toFixed(1); }, x = function (i) { return (pl + (W - pl - pr) * i / (A.length - 1)).toFixed(1); };
     var path = A.map(function (v, i) { return (i ? 'L' : 'M') + x(i) + ' ' + y(v); }).join(' '), lines = lv.map(function (q) { return '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(q[0]) + '" y2="' + y(q[0]) + '" stroke="' + q[1] + '" stroke-dasharray="4 3" stroke-width="1.2"/>' + (q[2] ? '<text x="' + (W - pr + 4) + '" y="' + (+y(q[0]) + 4) + '" fill="' + q[1] + '" font-size="11">' + q[2] + '</text>' : ''); }).join('');
     var d = h('div', { class: 'opp-chart', style: 'max-width:680px' }); d.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="نمودار قیمت با سطوح طرح">' + lines + '<path d="' + path + '" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'; return d; }
+  // the stored daily rows of one asset (fast view: the engine's zmap is not built) — read-only, nothing recomputed
+  function rowsOf(r) { try { var k = String(r.key || ''), m, RO = U.store.getRO || U.store.get;
+      if ((m = /^s:(.+)$/.exec(k))) { var SS = U.store.get('hub.sigstocks.v1', null), d = SS && SS.data && SS.data[m[1]]; return d && d.px ? d.px.map(function (q) { return { close: isF(q.close) ? q.close : isF(q.pc) ? q.pc : q.c }; }) : null; }
+      if ((m = /^g:(.+)$/.exec(k))) { var T = ['hub.sig-gold.v1', 'hub.sig-fx.v1'].map(function (x) { return U.store.get(x, null); }).filter(function (x) { return x && x.data && x.data[m[1]]; })[0]; return T ? T.data[m[1]] : null; }
+      return null; } catch (e) { return null; } }
   function oppDetail(ctx, S, R) { var r = S.sel && R.C && R.C.by[S.sel]; if (!r) return null;
-    var z = R.X && R.X.zmap && R.X.zmap[r.key], rows = z && z.a && z.a.rows, ch = miniChart(rows, r), L = r.L || {}, l = r.life || {};
+    var z = R.X && R.X.zmap && R.X.zmap[r.key], rows = z && z.a && z.a.rows || rowsOf(r), ch = miniChart(rows, r), L = r.L || {}, l = r.life || {};
     var box = h('div', { class: 'callout ' + (l.k === 'confirmed' ? 'info' : l.k === 'ended' ? 'warn' : '') }, [h('p', { 'data-notr': '1' }, [stageChip(r), document.createTextNode(' ' + actText(r))]), P(l.why || '', 'small')]);
     var scen = []; if (isF(L.stop) && isF(pxNow(r))) scen.push(['سناریوی نزولی (شکست طرح)', 'بسته‌شدن زیر ' + n(L.stop) + ' → خروج؛ زیان از قیمت فعلی ' + pct(L.stop / pxNow(r) - 1, 1)]);
     if ((L.tp || []).filter(isF).length && isF(pxNow(r))) scen.push(['سناریوی صعودی (تحقق هدف)', 'هدف اول ' + n(L.tp[0]) + ' (' + pct(L.tp[0] / pxNow(r) - 1, 1) + ')' + (isF(L.tp[1]) ? '، هدف دوم ' + n(L.tp[1]) + ' (' + pct(L.tp[1] / pxNow(r) - 1, 1) + ')' : '')]);
@@ -1154,8 +1159,10 @@
     var lims = []; if (age != null && age > 30) lims.push('حکم مرکزی ' + (age < 48 ? fa(age, 0) + ' ساعت' : fa(age / 24, 1) + ' روز') + ' پیش محاسبه شده است؛ تا به‌روزرسانی، هیچ خریدی «تأییدشده» نمایش داده نمی‌شود.');
     if (IG && !IG.ok) lims.push('آخرین کنترل یکپارچگی ' + fa(IG.nMM, 0) + ' اختلاف حل‌نشده دارد (مرکز تحلیل ← کنترل یکپارچگی).');
     var stl = A.filter(function (r) { return r.dataState === 'stale' || r.dataState === 'sample'; }).length; if (stl) lims.push(fa(stl, 0) + ' دارایی دادهٔ کهنه یا نمونه دارند و سیگنال قطعی نمی‌گیرند.');
+    if (R.X && R.X.dataNewer) lims.push('دادهٔ تازه‌تر از آخرین محاسبه رسیده است؛ حکم‌های این صفحه مربوط به محاسبهٔ ' + dt(C.at) + ' است. محاسبهٔ دوباره وقتی ۳۰ ثانیه با صفحه کار نکنید (یا زبانهٔ دیگری را باز کنید) خودکار و با اطلاع روی صفحه اجرا می‌شود؛ یا همین حالا دکمهٔ «محاسبهٔ دوباره» را بزنید' + (Hub.tradeUI && Hub.tradeUI.pending && Hub.tradeUI.pending() ? ' (در صف)' : '') + '.');
     if (R.X && R.X.viewer) lims.push('نمای سبک گوشی: حکم‌ها همان حکم مرکزی کامپیوتر است؛ وضعیت ورود با قیمت لحظه‌ای این دستگاه دوباره سنجیده می‌شود.');
-    var head = ctx.panel('وضعیت سیستم', [P('آخرین محاسبهٔ حکم مرکزی: ' + dt(C.at) + ' (' + ago(C.at) + ') · ' + fa(A.length, 0) + ' دارایی بررسی‌شده · آخرین قیمت لحظه‌ای: ' + (LQ && LQ.at ? ago(LQ.at) : 'دریافت نشده'), 'small'),
+    var recBtn = !R.X || R.X.viewer || !Hub.tradeUI || !Hub.tradeUI.recompute ? null : h('button', { class: 'btn ghost', type: 'button', text: R.X.dataNewer ? 'محاسبهٔ دوباره همین حالا' : 'محاسبهٔ دوبارهٔ موتور', onclick: function () { Hub.tradeUI.recompute('به درخواست شما'); } });
+    var head = ctx.panel('وضعیت سیستم', [recBtn,P('آخرین محاسبهٔ حکم مرکزی: ' + dt(C.at) + ' (' + ago(C.at) + ') · ' + fa(A.length, 0) + ' دارایی بررسی‌شده · آخرین قیمت لحظه‌ای: ' + (LQ && LQ.at ? ago(LQ.at) : 'دریافت نشده'), 'small'),
       lims.length ? h('div', { class: 'callout warn' }, lims.map(function (t) { return P(t, 'small'); })) : P('محدودیتی ثبت نشده است: داده، حکم مرکزی و یکپارچگی سالم‌اند.', 'small')]);
     var ST = ['confirmed', 'progress', 'pre', 'watch', 'ended'], M = {}, T = { n: 0, nw: 0 };
     A.forEach(function (r) { var m = mkOf(r), k = (r.life || {}).k; var o = M[m] = M[m] || { n: 0, nw: 0 }; o.n++; T.n++; if (ST.indexOf(k) >= 0) { o[k] = (o[k] || 0) + 1; T[k] = (T[k] || 0) + 1; } if (r.life && r.life.isNew) { o.nw++; T.nw++; } });
