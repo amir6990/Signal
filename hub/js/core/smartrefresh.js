@@ -78,6 +78,8 @@
   }
   // after any full update (scheduled, event-driven or the user's own button): recompute the central verdict and compare it with the last one
   function afterFull() {
+    // directive 27: the learning cycle after a full update (computer only), at most once a day; its result is offered for release, not forced
+    try { var LR = Hub.learnRun, LS = LR && LR.load(), lc = LS && LS.cycles.length ? LS.cycles[LS.cycles.length - 1].at : 0; if (LR && !(U().lite && U().lite()) && Date.now() - lc > 20 * 36e5) setTimeout(function () { LR.run({ auto: true }).catch(function () { /* logged in the cycle */ }); }, 4000); } catch (e) { /* optional */ }
     try { var R = Hub.tradeUI && Hub.tradeUI.engineNow ? Hub.tradeUI.engineNow(true) : null, X = R && R.X; if (!X || X.sample || !X.central) return;
       var fresh = freshness(); var evs = Hub.alerts ? Hub.alerts.evaluateCentral(X.central, fresh) : []; if (evs.length && Hub.alerts) Hub.alerts.deliver(evs);
       var S = st(); S.evalAt = Date.now(); S.evalUpd = (U().store.get('hub.updrun.v1', null) || {}).doneAt || null; log(S, 'eval', true, 'حکم مرکزی بازمحاسبه شد؛ ' + fa(evs.length) + ' رویداد'); saveSt(S);

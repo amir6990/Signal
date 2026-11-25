@@ -15,7 +15,7 @@
   /* stocks (≈ 100 MB as plain JSON with full history) are published apart: rows packed as arrays and split in shards (stocks.json + stocks-1…n.json),
      each well under GitHub's limits; the small sets go first in their own commit, so a slow upload of the stocks never holds back the rest */
   var SKEY = 'hub.sigstocks.v1', SHARD = 6e6;
-  var FILES = { central: ['hub.central.v1'], tse: ['hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
+  var FILES = { central: ['hub.central.v1', 'hub.learn.v1', 'hub.missed.v1'], tse: ['hub.sigoptions.v1', 'hub.sigtemporal.v1', 'hub.longview.v1'], tgju: ['hub.sig-gold.v1', 'hub.sig-fx.v1', 'hub.sigglobal.v1'], news: ['hub.news.v1'] };
   var KEEP = ['set', 'tk', 'settings', 'f', 'sel', 'opt'];               // the phone keeps its own settings / filters
   var DEF = { repo: 'amir6990/Signal', branch: 'claude/iran-stock-signals-excel-guqwon', dir: 'hub/data', token: '', auto: false, autoPull: true, site: 'https://amir6990.github.io/Signal/hub/' };
   function ls() { try { return root.localStorage; } catch (e) { return null; } }
@@ -30,8 +30,10 @@
   function setCfg(c) { if (c && 'token' in c) c = Object.assign({}, c, { token: cleanTok(c.token) }); put(KEY, Object.assign(cfg(), c)); }
   // the central record has no meta (it is a computed verdict, not a feed): it counts as live when it has records, its time is its «at»
   // (before 2026-11-24 the phone skipped it as «not live», so the phone never received the computer's verdicts)
-  function live(S) { if (S && S.by && !S.meta) return Object.keys(S.by).length > 0; return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
-  function ts(S) { if (S && S.by && !S.meta) return S.at || 0; return (S && S.meta && S.meta.asOfTs) || 0; }
+  function live(S) { if (S && !S.meta && (S.versions || S.items)) return (S.versions || S.items).length > 0;   // learning-loop stores (directive 27)
+    if (S && S.by && !S.meta) return Object.keys(S.by).length > 0; return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
+  function ts(S) { if (S && !S.meta && S.versions) { var c = S.cycles && S.cycles[S.cycles.length - 1]; return Math.max(c ? c.at : 0, (S.log && S.log.length ? S.log[S.log.length - 1].at : 0)); } if (S && !S.meta && S.items) return S.at || 0;
+    if (S && S.by && !S.meta) return S.at || 0; return (S && S.meta && S.meta.asOfTs) || 0; }
   function served() { var L = root.location || {}; return /^https?:$/.test(L.protocol || '') && !/claude|anthropic|localhost|127\.0\.0\.1/.test(L.host || ''); }
   function round(k, v) { return typeof v === 'number' && isFinite(v) && v % 1 ? +v.toPrecision(7) : v; }
 
