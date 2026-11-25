@@ -100,7 +100,7 @@
   /* several pages of the system (module pages, tabs) share this store: a write is announced on a BroadcastChannel once it is in
      IndexedDB, and the other open pages reload that key; pending writes are tracked so a page can be left only after they landed */
   var bc = null, pend = [];
-  try { if (root.BroadcastChannel) { bc = new root.BroadcastChannel('hub-store'); bc.onmessage = function (e) { var k = e && e.data && e.data.k; if (!k) return; delete OBJ[k];
+  try { if (root.BroadcastChannel) { bc = new root.BroadcastChannel('hub-store'); bc.onmessage = function (e) { var k = e && e.data && e.data.k; if (!k || SKIPPED[k]) return; delete OBJ[k];
     if (!idb) { delete mem[k]; return; } try { var g = idb.transaction('kv', 'readonly').objectStore('kv').get(k); g.onsuccess = function () { mem[k] = g.result == null ? null : g.result; delete OBJ[k]; try { document.dispatchEvent(new CustomEvent('hub:store', { detail: { k: k } })); } catch (x) { /* ignore */ } }; } catch (x) { delete mem[k]; } }; } } catch (e) { bc = null; }
   function announce(k) { if (bc) try { bc.postMessage({ k: k }); } catch (e) { /* ignore */ } }
   function idbPut(k, s) { if (!idb) { announce(k); return; } try { var tx = idb.transaction('kv', 'readwrite'); if (s == null) tx.objectStore('kv').delete(k); else tx.objectStore('kv').put(s, k);
@@ -109,7 +109,8 @@
   /* on a phone the big stores are held once, as the parsed object: the JSON text (the stock store is ≈ 170 MB of text, twice that in memory)
      is dropped once it is parsed and written; a short token stands in for it, so a later get still returns the same object. Writes and
      reloads from another page (BroadcastChannel) replace the token as before. Desktop keeps the text (no change there). */
-  var LEN = {}, SEQ = 0, LITE0 = null;
+  var LEN = {}, SEQ = 0, LITE0 = null, LAZY = { 'hub.sigstocks.v1': 1 }, SKIPPED = {};
+  function lazyOn() { if (!liteDev()) return false; try { return sessionStorage.getItem('hub.fullEngine') !== '1'; } catch (e) { return true; } }
   function liteDev() { if (LITE0 === null) { try { LITE0 = !!(root.Hub && root.Hub.util && root.Hub.util.lite && root.Hub.util.lite()); } catch (e) { LITE0 = false; } } return LITE0; }
   function slim(k) { var c = OBJ[k]; if (!c || !idb || typeof c.s !== 'string' || c.s.length < 5e6 || !liteDev()) return; LEN[k] = c.s.length; var tok = '\u0001' + k + '#' + (++SEQ); mem[k] = tok; c.s = tok; }
   var store = {
@@ -117,7 +118,7 @@
     // parsing them on every read made several 500 MB copies during one update — a main cause of the phone running out of memory
     get: function (k, d) { try { var v = Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : lsGet(k); if (v == null) return d;
       if (BIG[k]) { var c = OBJ[k]; if (c && c.s === v) return c.o; var o = JSON.parse(v); OBJ[k] = { s: v, o: o }; slim(k); return o; } return JSON.parse(v); } catch (e) { return d; } },
-    set: function (k, v) {
+    set: function (k, v) { if (SKIPPED[k]) { try { console.warn('hub store: '+k+' not loaded on this phone (viewer) — write refused'); } catch (e) {} return false; }
       var s; try { s = JSON.stringify(v); } catch (e) { return false; }
       mem[k] = s; idbPut(k, s); if (BIG[k]) { OBJ[k] = { s: s, o: v }; slim(k); }
       if (idb && s.length > SMALL) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } return true; }
@@ -136,13 +137,20 @@
           rq.onsuccess = function () {
             var db = rq.result;
             try {
-              var os = db.transaction('kv', 'readonly').objectStore('kv'), cur = os.openCursor();
-              cur.onsuccess = function () { var c = cur.result; if (c) { if (!Object.prototype.hasOwnProperty.call(mem, c.key)) mem[c.key] = c.value; c.continue(); } else { idb = db;
+              var os = db.transaction('kv', 'readonly').objectStore('kv'), cur;
+              /* phone viewer: the stock history (≈ 170 MB) is not read from the database at all — the phone shows the computer's central record.
+                 Its key is marked, so nothing on this page can overwrite the stored history with a partial copy (set() refuses it). */
+              if (lazyOn() && os.getAllKeys) { var gk = os.getAllKeys(), left = 0, after = function () { idb = db; fin2(); };
+                gk.onsuccess = function () { var ks = gk.result || []; ks.forEach(function (k) { if (LAZY[k]) { SKIPPED[k] = true; return; } if (Object.prototype.hasOwnProperty.call(mem, k)) return; left++; var g = os.get(k); g.onsuccess = function () { mem[k] = g.result; if (--left === 0) after(); }; g.onerror = function () { if (--left === 0) after(); }; }); if (!left) after(); };
+                gk.onerror = fin; return; }
+              cur = os.openCursor();
+              cur.onsuccess = function () { var c = cur.result; if (c) { if (!Object.prototype.hasOwnProperty.call(mem, c.key)) mem[c.key] = c.value; c.continue(); } else { idb = db; fin2(); } };
+              function fin2() {
                 // move big items that are still in localStorage (older versions) over, and free the space
                 try { for (var i = localStorage.length - 1; i >= 0; i--) { var k = localStorage.key(i); if (!/^hub\./.test(k)) continue; var v = localStorage.getItem(k); if (v && v.length > SMALL) { if (!Object.prototype.hasOwnProperty.call(mem, k)) { mem[k] = v; idbPut(k, v); } localStorage.removeItem(k); } } } catch (e) { /* ignore */ }
-                Object.keys(mem).forEach(function (k) { idbPut(k, mem[k]); });   // anything written before the database opened
-                fin(); } };
-              cur.onerror = fin;
+                Object.keys(mem).forEach(function (k) { if (!SKIPPED[k]) idbPut(k, mem[k]); });   // anything written before the database opened
+                fin(); }
+              if (cur) cur.onerror = fin;
             } catch (e) { fin(); }
           };
           setTimeout(fin, 2500);

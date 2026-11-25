@@ -118,6 +118,6 @@
   function start() { if (timer) return; timer = setInterval(function () { try { tick('timer'); } catch (e) { BUSY = false; } }, 60e3);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(function () { try { tick('visible'); } catch (e) { BUSY = false; } }, 3000); });
     setTimeout(function () { try { tick('open'); } catch (e) { BUSY = false; } }, 20000); }
-  Hub.smartRefresh = { SKEY: SKEY, STKEY: STKEY, MK: MK, defaults: defaults, set: set, state: st, saveState: saveSt, marketState: marketState, teh: teh, tick: tick, active: active, afterFull: afterFull, freshness: freshness, light: function (m) { var S = st(); return light(m, S, teh()).then(function (r) { saveSt(S); return r; }); } };
+  Hub.smartRefresh = { light: function (m) { var S = st(); return light(m, S).then(function (r) { saveSt(S); return r; }); }, SKEY: SKEY, STKEY: STKEY, MK: MK, defaults: defaults, set: set, state: st, saveState: saveSt, marketState: marketState, teh: teh, tick: tick, active: active, afterFull: afterFull, freshness: freshness, light: function (m) { var S = st(); return light(m, S, teh()).then(function (r) { saveSt(S); return r; }); } };
   if (Hub.util) start(); else root.addEventListener('load', start);
 })(typeof window !== 'undefined' ? window : globalThis);

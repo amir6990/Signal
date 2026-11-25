@@ -46,6 +46,13 @@
   function run(S) {
     var R = Hub.tradeUI && Hub.tradeUI.engineNow ? Hub.tradeUI.engineNow() : null, X = R && R.X, C = X && X.central;
     var recs = C ? Object.keys(C.by).map(function (k) { return C.by[k]; }) : [];
+    // the published record (phone) keeps only the priority score as a number: the same shape as the computer's record, without the parts
+    recs.forEach(function (r) { if (typeof r.pri === 'number') r.pri = { s: r.pri, base: r.pri, pen: [] }; if (!r.L && r.lv) r.L = { buy: r.lv.buy, stop: r.lv.stop, tp: r.lv.tp || [], upConf: r.lv.up, dnConf: r.lv.dn, floor: r.lv.floor, ceil: r.lv.ceil, tzConf: r.lv.tzConf }; if (r.grpFa == null) r.grpFa = ''; if (r.execFa == null) r.execFa = (r.ex && r.ex.fa) || ''; });
+    // phone viewer: the inbox categories, groups and execution states come from the same rules (opprank) applied to the published record;
+    // the priority score stays the computer's (it needs liquidity data the phone does not load)
+    if (X && X.viewer && Hub.oppRank && Hub.oppRank.enrich && C && !C.__viewEnriched) { var keepP = {}; Object.keys(C.by).forEach(function (k) { keepP[k] = C.by[k].pri; });
+      try { Hub.oppRank.enrich(C.by, null); } catch (e) { /* the inbox stays empty rather than the page failing */ }
+      Object.keys(C.by).forEach(function (k) { C.by[k].pri = keepP[k]; if (!C.by[k].grpFa) C.by[k].grpFa = ''; }); C.__viewEnriched = true; }
     var ch = []; if (!X) ch.push({ level: 'critical', msg: 'موتور معاملاتی در دسترس نیست.' }); else if (X.sample) ch.push({ level: 'warning', msg: 'بخشی از داده‌ها نمونه است؛ هیچ سیگنالی قابل اجرا نیست.' });
     return { X: X, C: C, recs: recs, checks: ch };
   }
@@ -131,11 +138,11 @@
       ['امتیاز اولویت', r.pri ? fa(r.pri.s, 0) + ' از ۱۰۰ (رتبهٔ ' + fa(r.rank, 0) + ') — ' + priWhy(r) : 'فرصت خرید نیست؛ امتیاز ندارد']]);
   }
   // the parts of the priority score, largest contributions first, and the penalties
-  function priWhy(r) { var OR = Hub.oppRank; if (!r.pri || !OR) return '';
-    var p = r.pri.parts, a = Object.keys(OR.W).map(function (k) { return [k, OR.W[k] * p[k]]; }).sort(function (x, y) { return y[1] - x[1]; });
-    return a.map(function (x) { return OR.WFA[x[0]] + ' ' + fa(x[1], 0) + '/' + fa(OR.W[x[0]], 0); }).join('، ') + (r.pri.pen.length ? ' · کسر: ' + faD(r.pri.pen.join('؛ ')) : ''); }
+  function priWhy(r) { var OR = Hub.oppRank; if (!r.pri || !OR || !r.pri.parts) return '';   // the published (slim) record has the score without its parts
+    var p = r.pri.parts, a = Object.keys(OR.W).map(function (k) { return [k, OR.W[k] * (p[k] || 0)]; }).sort(function (x, y) { return y[1] - x[1]; });
+    return a.map(function (x) { return OR.WFA[x[0]] + ' ' + fa(x[1], 0) + '/' + fa(OR.W[x[0]], 0); }).join('، ') + ((r.pri.pen || []).length ? ' · کسر: ' + faD(r.pri.pen.join('؛ ')) : ''); }
   // short form for tables: the score and its three largest parts; the full breakdown in the tooltip and in the asset sheet
-  function priShort(r, noN) { var OR0 = Hub.oppRank; if (!r.pri || !OR0) return '—'; var p = r.pri.parts, a = Object.keys(OR0.W).map(function (k) { return [k, OR0.W[k] * p[k]]; }).sort(function (x, y) { return y[1] - x[1]; }).slice(0, 3);
+  function priShort(r, noN) { var OR0 = Hub.oppRank; if (!r.pri || !OR0) return '—'; if (!r.pri.parts) { var s0 = typeof r.pri === 'number' ? r.pri : r.pri.s; return isF(s0) ? fa(s0, 0) : '—'; } var p = r.pri.parts, a = Object.keys(OR0.W).map(function (k) { return [k, OR0.W[k] * p[k]]; }).sort(function (x, y) { return y[1] - x[1]; }).slice(0, 3);
     return h('span', { title: priWhy(r), 'data-notr': '1', text: (noN ? '' : fa(r.pri.s, 0) + ' · ') + a.map(function (x) { return OR0.WFA[x[0]]; }).join('، ') + (r.pri.pen.length ? ' · با کسر' : '') }); }
   function faD(t) { return String(t).replace(/[0-9]/g, function (c) { return '۰۱۲۳۴۵۶۷۸۹'[c]; }).replace(/\./g, '٫'); }
   function assetRow(r, open) { var a = actionOf(r);

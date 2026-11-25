@@ -92,6 +92,15 @@
     // on a phone the back-test validation is not run inside an update (≈ 2 GB of memory; iOS closes the page): data only, unless the
     // validation is asked for explicitly (opt.forceVal); the full validation comes from the computer through the data sync
     if (U.lite && U.lite() && !opt.forceVal && !opt.calcOnly) opt = Object.assign({}, opt, { dataOnly: true, liteAuto: true });
+    /* phone viewer: «update» = the computer's latest published data (central record, gold / FX, news) + a light check of current prices
+       against the central levels (alerts). No stock history and no engine run on the phone. */
+    if (viewerMode() && !opt.forceVal && !opt.calcOnly) { if (UPD.busy) return; UPD.busy = true; var t0 = Date.now(), msg = [];
+      var D = Hub.dataSync, SR = Hub.smartRefresh, step = function (p, lab) { return Promise.resolve(p).then(function (r) { msg.push(lab(r)); }, function (e) { msg.push(lab(null) + ' — ناموفق: ' + (e && e.message || e)); }); };
+      step(D && D.pull ? D.pull(false) : null, function (r) { return r ? 'دادهٔ منتشرشدهٔ کامپیوتر: ' + (r.updated && r.updated.length ? fa(r.updated.length, 0) + ' مجموعهٔ تازه' : 'تغییری نبود') : 'دریافت از کامپیوتر'; })
+        .then(function () { return step(SR && SR.light ? SR.light('tgju') : null, function (r) { return 'قیمت لحظه‌ای طلا و ارز بررسی شد'; }); })
+        .then(function () { return step(SR && SR.light ? SR.light('tse') : null, function (r) { return 'قیمت لحظه‌ای بورس بررسی شد'; }); })
+        .then(function () { UPD.busy = false; MEMO = null; U.toast('به‌روزرسانی سبک گوشی (' + fa((Date.now() - t0) / 1000, 0) + ' ثانیه): ' + msg.join(' · '), 'good'); if (ctx && ctx.rerender) ctx.rerender(); if (Hub.rerenderAll) Hub.rerenderAll(); if (onDone) onDone(true); });
+      return; }
     if (UPD.busy) return; var TS = function () { return ctx.S || U.store.get('hub.tradingEngine.v1', null); }; UPD.busy = true; UPD.lines = []; UPD.st = {}; UPD.at = Date.now(); UPD.phase = 'fetch'; UPD.calcOk = undefined; UPD.id = updId(UPD.at); UPD.dataOnly = !!opt.dataOnly;
     try { var R0 = U.store.get('hub.updrun.v1', null) || {}; U.store.set('hub.updrun.v1', Object.assign({}, R0, { cur: { id: UPD.id, at: UPD.at, dataOnly: UPD.dataOnly, st: 'running' } })); } catch (e) { /* optional */ }
     var say = function (i, t, k) { UPD.lines[i] = { t: t, k: k || '' }; var el = document.getElementById('upd-log'); if (el) { U.clear(el); UPD.lines.forEach(function (l) { if (l) el.appendChild(h('p', { class: 'small ' + l.k, 'data-notr': '1', text: l.t })); }); } };
@@ -1533,7 +1542,7 @@
     if (!X.n) ch.push({ level: 'warning', msg: 'هیچ دارایی با دادهٔ کافی نیست.' });
     return { X: X, checks: ch };
   }
-  TK.define({
+  var TEDEF = {
     id: 'trading-engine', title: 'Trading & intelligent signals', sections: ['trading'], priority: -20, version: 1, storeKey: 'hub.tradingEngine.v1', noFile: true,
     summary: 'One engine over all trading data: market regime, 23 voting models in one ensemble, standard actionable signals (entry, stop, three targets, R:R, size, confidence, horizon, reasons, invalidation, Iran execution notes), portfolio construction, position monitoring, VaR and stress tests, out-of-sample back-test, six test scenarios, report and Excel.',
     sample: sample, blank: sample, run: run, scenarios: false,
@@ -1547,13 +1556,44 @@
       ['Account risk', function () { return X().risk.state.split(/[:(]/)[0].trim(); }, function () { return isFinite(X().risk.dd) ? 'افت ' + pct(X().risk.dd, 1) : 'سرمایه را وارد کنید'; }]]; },
     tabs: [{ group: 'Intelligent trading', items: [['dash', 'داشبورد', dashTab], ['run', 'اجرا، تنظیمات و داده', runTab], ['plan', 'خروجی حالت انتخابی', planTab], ['sig', 'سیگنال‌ها', sigTab], ['mk', 'بازارها و موتور مرکزی', mkTab], ['pf', 'ساخت سبد', pfTab], ['pos', 'پایش موقعیت‌ها', posTab], ['risk', 'مدیریت ریسک', riskTab], ['models', 'بانک مدل‌ها', modelsTab], ['bt', 'بک‌تست', btTab], ['learn', 'یادگیری و بازبینی', learnTab], ['scen', 'سناریوهای آزمون', scenTab], ['report', 'گزارش', reportTab]] },
       { group: 'Trading tools', items: TOOLS.map(function (t) { return ['t-' + t[0], t[1], TK.embedTab(t[0], NOTE)]; }) }]
-  });
+  };
+  // phone: the light viewer (central record of the computer) unless the full engine was asked for in this session
+  if (viewerMode()) TK.define(Object.assign({}, TEDEF, { run: function () { return viewR() || { X: { viewer: true, n: 0 }, checks: [] }; }, kpis: function () { return []; },
+    tabs: [{ group: 'Intelligent trading', items: [['phone', 'نمای سبک گوشی', phoneTab]] }] }));
+  else TK.define(TEDEF);
   /* one engine run shared by every page (trading dashboard centre, alerts): recomputed only when the data, the settings or the journal change */
   var MEMO = null;
+  /* ---------- phone viewer (2026-11-24, «هنوز خیلی سنگینه»): on a phone the engine is not run. The verdicts, levels, ranks and
+     alerts are the central record the computer published (hub/data/central.json, ≈ 1.5 MB); the phone does not load 170 MB of stock
+     history or run 1,000+ analyses. One tap runs the full engine on the phone for this session (heavy: iOS may close the app). ---------- */
+  function fullOnPhone() { try { return sessionStorage.getItem('hub.fullEngine') === '1'; } catch (e) { return false; } }
+  function viewerMode() { return !!(U.lite && U.lite()) && !fullOnPhone(); }
+  function viewR() { var C = U.store.get('hub.central.v1', null); if (!C || !C.by) return null; var S0 = U.store.get('hub.tradingEngine.v1', null) || sample(), by = C.by, ks = Object.keys(by);
+    var cnt = { long: 0, strong: 0, close: 0 }; ks.forEach(function (k) { if (by[k].tier === 'ok') cnt.long++; });
+    return { X: { viewer: true, central: C, centralSaved: C, E: ensure(S0), zmap: {}, cards: [], list: [], n: ks.length, sample: false, counts: cnt, idxv: [], ixf: null, consistency: null, learn: {} }, checks: [] }; }
+  function goFull() { try { sessionStorage.setItem('hub.fullEngine', '1'); } catch (e) { /* private mode */ } location.reload(); }
+  function phoneTab(ctx) { return { el: phoneView(ctx) }; }
+  function phoneView(ctx) {
+    var C = U.store.get('hub.central.v1', null), D = Hub.dataSync, snap = D && D.lastPull ? D.lastPull() : null;
+    if (!C || !C.by) return h('div', { class: 'panel' }, [h('p', { class: 'small', text: 'هنوز حکم مرکزی از کامپیوتر دریافت نشده است. روی کامپیوتر «به‌روزرسانی همه» و سپس «انتشار برای گوشی» را بزنید؛ این صفحه در باز شدن بعدی آن را می‌گیرد.' })]);
+    var by = C.by, recs = Object.keys(by).map(function (k) { return by[k]; }), age = C.at ? (Date.now() - C.at) / 36e5 : null;
+    var nf = function (x) { return typeof x === 'number' && isFinite(x) ? fa(x, Math.abs(x) < 10 ? 2 : 0) : '—'; }, z = function (q) { return q && q.length === 2 ? nf(Math.min(q[0], q[1])) + ' – ' + nf(Math.max(q[0], q[1])) : '—'; };
+    var by2 = function (t) { return recs.filter(function (r) { return r.tier === t; }).sort(function (a, b) { return (a.rank || 1e9) - (b.rank || 1e9); }); };
+    var tbl = function (rows) { return h('div', { class: 'grid-wrap' }, [h('table', { class: 'grid aud' }, [h('thead', null, [h('tr', null, ['دارایی', 'قیمت', 'اقدام', 'محدودهٔ ورود', 'حد ضرر', 'هدف‌ها', 'رتبه'].map(function (t) { return h('th', { class: 'lbl', text: t }); }))]),
+      h('tbody', null, rows.map(function (r) { var lv = r.lv || {}; return h('tr', null, [r.sym, nf(r.px), r.actFa || '—', z(lv.buy), nf(lv.stop), (lv.tp || []).map(nf).join(' / ') || '—', r.rank ? fa(r.rank, 0) : '—'].map(function (c) { return h('td', { 'data-notr': '1', text: String(c) }); })); }))])]); };
+    var ok = by2('ok'), wait = by2('wait');
+    return h('div', null, [
+      h('div', { class: 'panel' }, [h('h3', { text: 'نمای سبک گوشی' }), h('p', { class: 'small', 'data-notr': '1', text: 'در گوشی موتور اجرا نمی‌شود تا اپ سبک بماند و بسته نشود. حکم‌ها، سطوح و رتبه‌ها همان حکم مرکزی کامپیوتر است (یک مرجع برای هر دو).' }),
+        h('p', { class: 'small', 'data-notr': '1', text: 'زمان محاسبه روی کامپیوتر: ' + (C.at ? new Date(C.at).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' }) : 'نامعلوم') + (age != null ? ' (' + (age < 24 ? fa(age, 1) + ' ساعت' : fa(age / 24, 1) + ' روز') + ' پیش)' : '') + ' · ' + fa(recs.length, 0) + ' دارایی' }),
+        age != null && age > 30 ? h('p', { class: 'small bad-t', 'data-notr': '1', text: 'حکم مرکزی بیش از یک روز پیش محاسبه شده است. برای تازه شدن: روی کامپیوتر «به‌روزرسانی همه» و «انتشار برای گوشی» (یا انتشار خودکار پس از به‌روزرسانی را روشن کنید).' }) : document.createTextNode(''),
+        h('div', { class: 'row-ctl' }, [h('a', { class: 'btn', href: 'desk.html#trade-center', text: 'داشبورد جامع بازارها' }), h('button', { class: 'btn ghost', type: 'button', text: 'اجرای کامل موتور روی همین گوشی (سنگین)', onclick: function () { if (window.confirm('اجرای کامل موتور در گوشی حافظهٔ زیادی می‌گیرد و ممکن است iOS اپ را ببندد. ادامه می‌دهید؟')) goFull(); } })])]),
+      h('div', { class: 'panel' }, [h('h3', { text: 'فرصت‌های خرید تأییدشده (' + fa(ok.length, 0) + ')' }), ok.length ? tbl(ok.slice(0, 40)) : h('p', { class: 'small', text: 'در حکم مرکزی فعلی فرصت تأییدشده‌ای نیست.' })]),
+      h('div', { class: 'panel' }, [h('h3', { text: 'در انتظار تأیید (' + fa(wait.length, 0) + ')' }), wait.length ? tbl(wait.slice(0, 40)) : h('p', { class: 'small', text: '—' })])]); }
   function engineNow(force) {
     var S = U.store.get('hub.tradingEngine.v1', null) || sample(), u = U.store.get('hub.updrun.v1', null) || {}, ce = U.store.get('hub.central.v1', null) || {};
     var sig = [u.id, u.doneAt, JSON.stringify(S.e || {}).length, (S.j || []).length, FEEDIDS.map(feed).concat(SG.feeds).filter(Boolean).map(function (f) { var x = U.store.get(f.storeKey, null); return x && x.meta ? x.meta.asOfTs || x.meta.asOf || '' : ''; }).join(',')].join('|');
     if (!force && MEMO && MEMO.sig === sig && Date.now() - MEMO.at < 15 * 60e3) return MEMO.R;
+    if (viewerMode()) { var VR = viewR(); if (VR) { MEMO = { sig: sig, at: Date.now(), R: VR }; return VR; } }
     var R = run(S); MEMO = { sig: sig, at: Date.now(), R: R };
     // directive 22 · 11, test 7: after every engine run the integrity monitor checks every section against the new central record
     if (Hub.integrity && !INTEG) { INTEG = setTimeout(function () { INTEG = null; try { Hub.integrity.run({ why: 'پس از اجرای موتور / به‌روزرسانی' }); } catch (e) { /* reported on the monitor page */ } }, 1500); }

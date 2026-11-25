@@ -28,8 +28,10 @@
   function tokOK(t) { return /^(github_pat_[A-Za-z0-9_]{40,}|gh[pousr]_[A-Za-z0-9]{30,})$/.test(t); }
   function cfg() { var c = Object.assign({}, DEF, get(KEY, {}) || {}); c.token = cleanTok(c.token); return c; }
   function setCfg(c) { if (c && 'token' in c) c = Object.assign({}, c, { token: cleanTok(c.token) }); put(KEY, Object.assign(cfg(), c)); }
-  function live(S) { return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
-  function ts(S) { return (S && S.meta && S.meta.asOfTs) || 0; }
+  // the central record has no meta (it is a computed verdict, not a feed): it counts as live when it has records, its time is its «at»
+  // (before 2026-11-24 the phone skipped it as «not live», so the phone never received the computer's verdicts)
+  function live(S) { if (S && S.by && !S.meta) return Object.keys(S.by).length > 0; return S && S.meta && S.meta.source && !/synthetic|illustrative/i.test(S.meta.source); }
+  function ts(S) { if (S && S.by && !S.meta) return S.at || 0; return (S && S.meta && S.meta.asOfTs) || 0; }
   function served() { var L = root.location || {}; return /^https?:$/.test(L.protocol || '') && !/claude|anthropic|localhost|127\.0\.0\.1/.test(L.host || ''); }
   function round(k, v) { return typeof v === 'number' && isFinite(v) && v % 1 ? +v.toPrecision(7) : v; }
 
@@ -44,7 +46,10 @@
     // the stock shards: stocks.json says how many; the rows come packed as arrays
     var shardSet = function (pre, n) { var L = [fetchSnap(pre)]; for (var i = 1; i < n; i++) L.push(fetchSnap(pre + '-' + i)); return Promise.all(L); };
     var unpackAll = function (files) { var D = {}; files.forEach(function (f) { var st = f.stores && f.stores[SKEY]; Object.keys((st && st.data) || {}).forEach(function (k) { D[k] = unpackSym(st.data[k]); }); }); return D; };
-    var stocks = fetchSnap('stocks').then(function (s0) { var n = s0.shards || 1, more = [];
+    /* phone viewer: the stock history (≈ 170 MB) is not pulled; the phone shows the computer's central record (central.json).
+       Pulled only when the full engine was asked for on this phone in this session, or by «force» from the sync tab. */
+    var viewer = !!(Hub.util && Hub.util.lite && Hub.util.lite()) && !force; try { if (viewer && sessionStorage.getItem('hub.fullEngine') === '1') viewer = false; } catch (e) { /* ignore */ }
+    var stocks = viewer ? Promise.resolve(null).then(function () { out.same.push(SKEY); out.snaps.stocks = { skipped: true, viewer: true }; }) : fetchSnap('stocks').then(function (s0) { var n = s0.shards || 1, more = [];
       /* already current here (same or newer time, enough history): the other shards are not downloaded or unpacked at all — on a phone that
          download and its unpacking (≈ 60 MB of JSON) ran on every opening, next to the engine run, and the page was killed for memory */
       var S00 = s0.stores && s0.stores[SKEY], L00 = get(SKEY, null);
