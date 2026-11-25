@@ -1139,7 +1139,7 @@
     var d = h('div', { class: 'opp-chart', style: 'max-width:680px' }); d.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="نمودار قیمت با سطوح طرح">' + lines + '<path d="' + path + '" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'; return d; }
   // the stored daily rows of one asset (fast view: the engine's zmap is not built) — read-only, nothing recomputed
   function rowsOf(r) { try { var k = String(r.key || ''), m, RO = U.store.getRO || U.store.get;
-      if ((m = /^s:(.+)$/.exec(k))) { var SS = U.store.get('hub.sigstocks.v1', null), d = SS && SS.data && SS.data[m[1]]; return d && d.px ? d.px.map(function (q) { return { close: isF(q.close) ? q.close : isF(q.pc) ? q.pc : q.c }; }) : null; }
+      if ((m = /^s:(.+)$/.exec(k))) { if (U.lite && U.lite()) return null;   /* phone: the 110 MB stock store is never loaded for a chart */ var SS = U.store.get('hub.sigstocks.v1', null), d = SS && SS.data && SS.data[m[1]]; return d && d.px ? d.px.map(function (q) { return { close: isF(q.close) ? q.close : isF(q.pc) ? q.pc : q.c }; }) : null; }
       if ((m = /^g:(.+)$/.exec(k))) { var T = ['hub.sig-gold.v1', 'hub.sig-fx.v1'].map(function (x) { return U.store.get(x, null); }).filter(function (x) { return x && x.data && x.data[m[1]]; })[0]; return T ? T.data[m[1]] : null; }
       return null; } catch (e) { return null; } }
   function oppDetail(ctx, S, R) { var r = S.sel && R.C && R.C.by[S.sel]; if (!r) return null;
