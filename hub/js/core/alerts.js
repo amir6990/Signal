@@ -259,9 +259,12 @@
     switch (e.t) {
       case 'preCeil': return !L.ceil ? { k: 'stale', fa: 'منقضی: در محاسبهٔ ' + at + ' محدودهٔ سقف احتمالی تعریف نشده است' } : inZ(L.ceil) ? { k: 'valid', fa: 'هنوز معتبر: قیمت ' + fa(px) + ' داخل محدودهٔ سقف احتمالی ' + zs(L.ceil) + hzNote } : { k: 'stale', fa: 'منقضی: با محاسبهٔ ' + at + ' سقف احتمالی ' + zs(L.ceil) + ' است و قیمت ' + fa(px) + ' داخل آن نیست' + hzNote };
       case 'preFloor': return !L.floor ? { k: 'stale', fa: 'منقضی: در محاسبهٔ ' + at + ' محدودهٔ کف احتمالی تعریف نشده است' } : inZ(L.floor) ? { k: 'valid', fa: 'هنوز معتبر: قیمت داخل محدودهٔ کف احتمالی ' + zs(L.floor) + hzNote } : { k: 'stale', fa: 'منقضی: کف احتمالی فعلی ' + zs(L.floor) + '؛ قیمت ' + fa(px) + hzNote };
-      case 'preBuy': case 'preBreak': case 'touch': return r.tier === 'ok' ? { k: 'done', fa: 'رخ داد: خرید تأیید شد (' + at + ')' } : isF(L.up) && px < L.up ? { k: 'valid', fa: 'هنوز معتبر: منتظر بسته‌شدن بالای ' + fa(L.up) + ' (' + tierFa + ')' } : isF(L.up) ? { k: 'stale', fa: 'منقضی: قیمت ' + fa(px) + ' از سطح تأیید ' + fa(L.up) + ' گذشته ولی خرید تأیید نشد — ' + (r.why || tierFa).slice(0, 90) } : { k: 'stale', fa: 'منقضی: سطح تأیید در محاسبهٔ ' + at + ' وجود ندارد' };
+      case 'preBuy': case 'preBreak': case 'touch': if (r.sell === 'confirmed' && r.tier !== 'ok') return { k: 'stale', fa: 'منقضی: حکم فعلی (' + at + ') برگشت نزولی را تأیید کرده است' };
+        return r.tier === 'ok' ? { k: 'done', fa: 'رخ داد: خرید تأیید شد (' + at + ')' } : isF(L.up) && px < L.up ? { k: 'valid', fa: 'هنوز معتبر: منتظر بسته‌شدن بالای ' + fa(L.up) + ' (' + tierFa + ')' } : isF(L.up) ? { k: 'stale', fa: 'منقضی: قیمت ' + fa(px) + ' از سطح تأیید ' + fa(L.up) + ' گذشته ولی خرید تأیید نشد — ' + (r.why || tierFa).slice(0, 90) } : { k: 'stale', fa: 'منقضی: سطح تأیید در محاسبهٔ ' + at + ' وجود ندارد' };
       case 'buyOk': return r.tier === 'ok' ? { k: 'valid', fa: 'هنوز قابل اقدام' } : { k: 'stale', fa: 'دیگر قابل اقدام نیست: ' + r.stFa };
-      case 'sellOk': case 'stop': case 'reduce': return { k: 'info', fa: r.held ? r.actFa : 'اطلاعی (دارایی در پرتفوی ثبت نشده)' };
+      case 'sellOk': if (!r.held && r.sell !== 'confirmed') return { k: 'stale', fa: 'منقضی: در محاسبهٔ ' + at + ' برگشت نزولی دیگر تأییدشده نیست (' + tierFa + ')' };
+        return { k: 'info', fa: r.held ? r.actFa : 'اطلاعی (دارایی در پرتفوی ثبت نشده)' };
+      case 'stop': case 'reduce': return { k: 'info', fa: r.held ? r.actFa : 'اطلاعی (دارایی در پرتفوی ثبت نشده)' };
       case 'move': case 'moveLive': case 'brk': case 'brkDn': return { k: 'event', fa: 'رویداد رخ‌داده؛ حکم فعلی: ' + tierFa + (r.tier !== 'ok' && r.why ? ' — ' + r.why.slice(0, 80) : '') };
       default: return { k: 'info', fa: r.tier ? 'وضعیت فعلی: ' + tierFa : '—' }; } }
   function statusOf(e) { return check(e).fa; }
