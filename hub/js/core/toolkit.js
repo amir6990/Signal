@@ -35,6 +35,9 @@
     var ctx = {
       get S() { return S; }, get R() { return R; },
       recompute: recompute, rerender: rerender,
+      // switch to another tab of this tool (a summary row opens the full list with its filter already set)
+      tab: function (id) { if (findTab(id)) { renderTab(id); try { root.scrollTo(0, 0); } catch (e) { /* ignore */ } } },
+      get active() { return active; },
       setState: function (s) { S = s; S.sources = S.sources || {}; rerender(); },
       panel: function (title, kids, cls) {
         var nodes = (kids || []).map(function (k) { if (k && k.el && !k.nodeType) { if (k.refresh) tabRefs.push(k.refresh); return k.el; } return k; });
@@ -86,7 +89,7 @@
       tabBody = h('div', { class: 'tab-body', role: 'tabpanel' });
       view.appendChild(tabBody);
       var first = cfg.tabs[0].items[0][0];
-      var saved = U.store.get(cfg.storeKey + '.tab', first);
+      var saved = U.store.get(cfg.storeKey + '.tab', first), want = root.HUB_SUBTAB; root.HUB_SUBTAB = null; if (want && findTab(want)) saved = want;
       renderTab(findTab(saved) ? saved : first);
       document.addEventListener('hub:theme', onTheme);
     }

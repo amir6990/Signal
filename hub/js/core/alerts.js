@@ -28,7 +28,7 @@
                                    inside a probable floor / ceiling zone, a time-cycle window. Never a trading instruction. */
   var KIND = { notif: 'اطلاع‌رسانی (رویداد رخ‌داده)', early: 'پیش‌آگاهی (احتمال رویداد)' };
   var KOF = { buyOk: 'notif', sellOk: 'notif', stop: 'notif', tp: 'notif', actChg: 'notif', reduce: 'notif', touch: 'notif', weak: 'notif', expired: 'notif', data: 'notif', watch: 'notif', cycInvalid: 'notif',
-    move: 'notif', moveLive: 'notif', brk: 'notif', brkDn: 'notif', preBuy: 'early', preMove: 'early', preMoveDn: 'early', preBreak: 'early', preFloor: 'early', preCeil: 'early', cycEarly: 'early', cycSerious: 'early', cycConfirmed: 'early' };
+    move: 'notif', moveLive: 'notif', brk: 'notif', brkDn: 'notif', preBuy: 'early', preMove: 'early', preMoveDn: 'early', preBreak: 'early', preFloor: 'early', preCeil: 'early', cycEarly: 'early', cycSerious: 'early', cycConfirmed: 'early', entryOff: 'notif', reEntry: 'notif' };
   var TYPE = {
     buyOk: ['urgent', 'فرصت خرید تأیید شد', 'buy'], sellOk: ['urgent', 'فرصت فروش / خروج تأیید شد', 'sell'], stop: ['critical', 'حد ضرر فعال شد', 'sell'],
     tp: ['important', 'هدف سود محقق شد', 'sell'], actChg: ['important', 'اقدام پیشنهادی تغییر کرد', 'sell'], reduce: ['important', 'ذخیرهٔ سود / کاهش موقعیت', 'sell'],
@@ -42,7 +42,9 @@
     cycConfirmed: ['important', 'چرخهٔ زمانی: هشدار تأییدشده — قیمت هم سناریو را تأیید کرد', 'pre'], cycInvalid: ['info', 'چرخهٔ زمانی: ابطال هشدار', 'info'],
     // directive 26 · 1, 5, 8: price moves are events of their own — reported whether or not a buy is (still) confirmable
     move: ['important', 'حرکت مهم قیمت', 'move'], moveLive: ['important', 'جهش قیمت از آخرین تحلیل (قیمت لحظه‌ای؛ هنوز بسته نشده)', 'move'],
-    brk: ['important', 'شکست مقاومت: بسته‌شدن بالای سقف ۲۰ جلسه', 'move'], brkDn: ['important', 'شکست حمایت: بسته‌شدن زیر کف ۲۰ جلسه', 'move'] };
+    brk: ['important', 'شکست مقاومت: بسته‌شدن بالای سقف ۲۰ جلسه', 'move'], brkDn: ['important', 'شکست حمایت: بسته‌شدن زیر کف ۲۰ جلسه', 'move'],
+    // directive 28 · 4: the entry of a confirmed buy stops (or starts again) being valid between two engine runs — live price against the plan
+    entryOff: ['important', 'ورود سیگنال خرید دیگر معتبر نیست — اقدام قبلی را اجرا نکنید', 'info'], reEntry: ['important', 'فرصت ورود مجدد: قیمت به محدودهٔ ورود برگشت', 'buy'] };
   // floor / ceiling states of the central record (directive 18 · 2-3); the watchlist (hub.watch.v1) is alerted on every change into one of them
   var S4FA = { nearFloor: 'نزدیک کف احتمالی (برگشت تأیید نشده)', upConf: 'تأیید برگشت صعودی', nearCeil: 'نزدیک سقف احتمالی', dnConf: 'تأیید برگشت نزولی' };
   var CLSFA = { stock: 'سهام', fund: 'صندوق', gold: 'طلا و سکه', fx: 'ارز', crypto: 'رمزارز', commodity: 'کالا و انرژی', intl: 'شاخص‌های جهانی', option: 'اختیار معامله' };
@@ -62,8 +64,10 @@
     return Object.assign({ key: r.key, sym: r.sym, cls: r.cls, mk: CLSFA[r.cls] || r.cls, sid: r.sid || null, act: r.actFa || '', st: r.stFa || '', tier: r.tierFa || '', px: r.px,
       zone: buy && isF(buy[0]) ? [buy[0], buy[1]] : null, up: isF(L.upConf) ? L.upConf : L.up, dn: isF(L.dnConf) ? L.dnConf : L.dn, stop: L.stop, tp1: tp[0], tp2: tp[1], rr: isF(r.rr) ? r.rr : L.rr,
       hz: r.hz || '', conf: r.conf, why: r.why || r.rcWhy || '', inv: isF(L.inv) ? 'بسته‌شدن ' + (r.tier === 'ok' ? 'زیر ' + fa(L.stop) : 'بالای ' + fa(L.inv)) : isF(L.stop) ? 'بسته‌شدن زیر ' + fa(L.stop) : '',
-      dataAt: r.date || '', floor: L.floor || null, ceil: L.ceil || null, tzConf: L.tzConf }, extra || {});
+      dataAt: r.date || '', floor: L.floor || null, ceil: L.ceil || null, tzConf: L.tzConf, stage: lifeOf(r) }, extra || {});
   }
+  // directive 28 · 7: the alert carries the opportunity's life stage from the same central function the opportunities centre uses
+  function lifeOf(r) { try { var CE = Hub.central, cen = U() && U().store.get('hub.central.v1', null); if (!CE || !CE.life) return null; var o = CE.life(Object.assign({}, cen && cen.by && cen.by[r.key] || {}, r), { C: cen }); return o ? { k: o.k, fa: o.fa } : null; } catch (e) { return null; } }
   // «next action» in one line (directive 17 · closing note): what to do now, not only what happened
   function nextAct(t, c) {
     switch (t) {
@@ -82,6 +86,8 @@
       case 'weak': return 'اقدام قبلی دیگر معتبر نیست؛ وضعیت جدید را در داشبورد ببینید.';
       case 'cycEarly': case 'cycSerious': case 'cycConfirmed': return c.cy && c.cy.win ? 'پنجرهٔ احتمالی ' + c.cy.win.typeFa + ': ' + fd(c.cy.win.a) + ' تا ' + fd(c.cy.win.b) + '. هشدار زمانی دستور معامله نیست؛ با قیمت و سایر موتورها بسنجید.' : '';
       case 'cycInvalid': return 'پیش‌بینی زمانی قبلی دیگر معتبر نیست.';
+      case 'entryOff': return 'خرید نکنید (اگر هنوز نخریده‌اید). اگر خریده‌اید: حد ضرر ' + fa(c.stop) + ' را نگه دارید و قیمت را تعقیب نکنید؛ منتظر حکم تازه بمانید.';
+      case 'reEntry': return 'قیمت دوباره داخل محدودهٔ ورود ' + (c.zone ? fa(c.zone[0]) + '–' + fa(c.zone[1]) : '') + ' است: ورود با سفارش محدود، حد ضرر ' + fa(c.stop) + '. حکم را پیش از خرید در مرکز فرصت‌ها ببینید.';
       case 'move': case 'moveLive': case 'brk': return c.entry ? (c.entry.k === 'passed' ? 'قیمت را تعقیب نکنید: ' + c.entry.fa + '.' : c.entry.k === 'in' ? 'قیمت داخل محدودهٔ ورود طرح مرکزی است؛ اقدام فقط طبق حکم مرکزی (' + (c.act || c.tier || '—') + ').' : c.entry.fa + '؛ حرکت قیمت به‌تنهایی سیگنال خرید نیست.') : 'حرکت قیمت به‌تنهایی سیگنال خرید یا فروش نیست؛ حکم مرکزی را ببینید.';
       case 'brkDn': return 'اگر دارید: حد ضرر و طرح خروج را بررسی کنید؛ شکست حمایت به‌تنهایی دستور فروش نیست مگر حکم مرکزی آن را تأیید کند.';
       case 'watch': return c.s4 === 'nearFloor' ? 'هنوز خرید نکنید؛ شرط تأیید: بسته‌شدن بالای ' + fa(c.tzConf) + '.' : c.s4 === 'upConf' ? 'برگشت صعودی تأیید شد؛ وضعیت سیگنال را در مرکز اعلان‌ها ببینید.' : c.s4 === 'nearCeil' ? 'اگر دارید: ذخیرهٔ بخشی از سود را بررسی کنید.' : c.s4 === 'dnConf' ? 'اگر دارید: خروج یا کاهش طبق سطح تأیید نزولی.' : '';
@@ -112,6 +118,8 @@
       case 'preCeil': return { ok: isF(c.tzConf) ? 'بسته‌شدن زیر ' + fa(c.tzConf) + ' (برگشت نزولی)' : '—', no: g && isF(g[0]) ? 'بسته‌شدن بالای سقف محدوده ' + fa(Math.max(g[0], g[1])) : '—' };
       case 'preMove': case 'preMoveDn': return { ok: 'شروع حرکت مهم (' + (t === 'preMove' ? 'صعود' : 'افت') + ' ≥ ۲٫۵ برابر نوسان معمول) در ۵ جلسهٔ آینده', no: 'نبود چنین حرکتی تا ۱۵ جلسه؛ یا بسته‌شدن ' + (t === 'preMove' ? 'زیر' : 'بالای') + ' قیمت مبنا به اندازهٔ ۲ برابر نوسان' };
       case 'buyOk': return { ok: 'تأییدشده', no: isF(c.stop) ? 'بسته‌شدن زیر ' + fa(c.stop) : '—' };
+      case 'reEntry': return { ok: 'قیمت داخل محدودهٔ ورود', no: isF(c.stop) ? 'بسته‌شدن زیر ' + fa(c.stop) : '—' };
+      case 'entryOff': return { ok: 'رخ داده است', no: '—' };
       case 'move': case 'moveLive': case 'brk': case 'brkDn': return { ok: 'رویداد رخ داده است (شرط تأیید ندارد)', no: '—' };
       default: return { ok: '—', no: c.inv || '—' }; } }
   function ev(t, r, extra, why) { var c = card(r, extra), T = TYPE[t]; c.t = t; c.lvl = T[0]; c.lvlFa = LVL[T[0]].fa; c.title = T[1]; c.side = T[2]; c.next = nextAct(t, c); c.reason = why || c.why; c.at = Date.now();
@@ -200,6 +208,9 @@
       if (open && up(L.upConf)) { out.push(ev('touch', r, X, 'قیمت ' + fa(px) + ' از سطح تأیید صعود ' + fa(L.upConf) + ' گذشت (هنوز بسته نشده).')); touched.push(k); }
       else if (open && into(L.buy)) out.push(ev('preBuy', r, X, 'قیمت ' + fa(px) + ' وارد محدودهٔ ورود ' + fa(L.buy[0]) + '–' + fa(L.buy[1]) + ' شد؛ شرط تأیید هنوز برقرار نیست.'));
       else if (open && w(L.upConf) && px < L.upConf && Math.abs(prev / L.upConf - 1) > np) out.push(ev('preBreak', r, X, 'قیمت ' + fa(px) + ' به فاصلهٔ کمتر از ' + fa(S.set.nearPct, 1) + '٪ از سطح تأیید ' + fa(L.upConf) + ' رسید.'));
+      if (r0.tier === 'ok' && !held && L.buy && isF(L.buy[0])) { var zl0 = Math.min(L.buy[0], L.buy[1]), zh0 = Math.max(L.buy[0], L.buy[1]), inv0 = r0.lv && r0.lv.inv, wasIn = prev >= zl0 * 0.998 && prev <= zh0 * 1.002, isIn = px >= zl0 * 0.998 && px <= zh0 * 1.002;
+        if (wasIn && px > zh0 * 1.002) out.push(ev('entryOff', r, Object.assign({ eo: isF(inv0) && px >= inv0 ? 'invalid' : 'above' }, X), 'قیمت ' + fa(px) + (isF(inv0) && px >= inv0 ? ' از سطح ابطال ورود ' + fa(inv0) + ' گذشت.' : ' از سقف محدودهٔ ورود ' + fa(zh0) + ' بالاتر رفت (ورود گذشت؛ تعقیب نکنید).')));
+        else if (!wasIn && prev > zh0 * 1.002 && isIn && !(isF(L.stop) && px <= L.stop)) out.push(ev('reEntry', r, X, 'قیمت ' + fa(px) + ' پس از خروج به بالا، دوباره به محدودهٔ ورود ' + fa(zl0) + '–' + fa(zh0) + ' برگشت.')); }
       if (r0.tier === 'floor' && up(L.tzConf)) { out.push(ev('touch', r, X, 'قیمت ' + fa(px) + ' از سطح تأیید برگشت ' + fa(L.tzConf) + ' گذشت؛ تأیید با بسته‌شدن.')); touched.push(k); }
       if (L.ceil && up(L.ceil[0]) && r0.sell !== 'inZone') out.push(ev('preCeil', r, X, 'قیمت ' + fa(px) + ' وارد محدودهٔ سقف احتمالی ' + fa(L.ceil[0]) + '–' + fa(L.ceil[1]) + ' شد.'));
     });
@@ -208,7 +219,7 @@
   }
 
   /* ---- 3 · delivery: dedup, history, toast, system notification ---- */
-  function idOf(e) { if (e.t === 'move' || e.t === 'brk' || e.t === 'brkDn') return [e.key, e.t, (e.mvx && e.mvx.d) || '', e.dir || ''].join('|'); if (e.t === 'moveLive') return [e.key, e.t, new Date(e.at).toISOString().slice(0, 10), e.dir || ''].join('|');
+  function idOf(e) { if (e.t === 'move' || e.t === 'brk' || e.t === 'brkDn') return [e.key, e.t, (e.mvx && e.mvx.d) || '', e.dir || ''].join('|'); if (e.t === 'moveLive' || e.t === 'reEntry' || e.t === 'entryOff') return [e.key, e.t, e.sid || '', new Date(e.at).toISOString().slice(0, 10), e.dir || ''].join('|');
     var lv = e.t === 'stop' ? e.stop : e.t === 'tp' ? e.tp1 : e.t === 'preBreak' || e.t === 'touch' ? e.up || e.tzConf : e.t === 'preFloor' || e.t === 'preCeil' ? e.tzConf : ''; return [e.key, e.t, e.sid || '', isF(lv) ? Math.round(lv) : ''].join('|') + (e.t === 'watch' ? '|' + e.s4 : ''); }
   function allowed(S, e) {
     var s = S.set; if (!s.on) return false; if (e.watch) return true;   // the user asked to watch this asset: class and side switches do not mute it

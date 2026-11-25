@@ -46,7 +46,7 @@
   var PLACE = { 'strategy-engine': 'strategy', company: 'statements', auditor: 'statements', valsummary: 'valuation', dcf: 'valuation', comps: 'valuation', precedents: 'valuation', wacc: 'valuation', 'rm-valuation': 'valuation',
     financing: 'financing', fundraise: 'financing', 'rm-capital': 'financing', 'rm-finmgmt': 'financing', 'debt-capacity': 'bonds', 'bond-issue': 'bonds', bond: 'bonds', 'bond-suite': 'bonds',
     ipo: 'ipo', 'ipo-suite': 'ipo', 'rm-governance': 'ipo', 'ma-suite': 'ib', accretion: 'ib', 'acq-pricing': 'ib', 'target-screen': 'ib', 'buyer-universe': 'ib', 'bid-compare': 'ib',
-    lbo: 'pe', 'pe-suite': 'pe', 'trading-engine': 'trading', astro: 'trading', 'trade-center': 'desk', 'long-view': 'iran', 'efi': 'iran' };
+    lbo: 'pe', 'pe-suite': 'pe', 'trading-engine': 'trading', astro: 'trading', 'trade-center': 'desk', 'analysis-center': 'desk', 'long-view': 'iran', 'efi': 'iran' };
   var OLD = { audit: 'statements', finmgmt: 'financing', finance: 'financing', buyside: 'ib', sellside: 'ib', signals: 'trading' };
   // tools shown inside another page (the strategy engine or a suite): reachable, but not listed twice
   var STRAT_IN = { 'strategy-studio': 'studio', 'rm-strategy': 'rm', 'five-forces': 'ff', kernel: 'kn', 'blue-ocean': 'bo', 'playing-to-win': 'pw' };
@@ -90,7 +90,7 @@
     // module page: the shared tools it hosts (data update centre) come first, as top links
     if (MOD && MAN()) sharedHere().concat(modOf('data-center') === MOD ? ['data-center'] : []).forEach(function (id) { var t = byId(id); if (t) nav.appendChild(link(id, id === 'data-center' ? 'مرکز به‌روزرسانی داده‌ها' : t.title, null, true)); });
     // module page: only this module (its own tools); the hub and the single-file build keep the system-wide links
-    if (!MOD) [['trade-center', 'مرکز داشبورد معاملاتی'], ['data-center', 'مرکز به‌روزرسانی داده‌ها']].forEach(function (x) { if (byId(x[0])) nav.appendChild(link(x[0], x[1], null, true)); else if (M && M.tools[x[0]]) nav.appendChild(xlink(x[0], x[1], true)); });
+    if (!MOD) [['trade-center', 'مرکز جامع فرصت‌های معاملاتی'], ['data-center', 'مرکز به‌روزرسانی داده‌ها']].forEach(function (x) { if (byId(x[0])) nav.appendChild(link(x[0], x[1], null, true)); else if (M && M.tools[x[0]]) nav.appendChild(xlink(x[0], x[1], true)); });
     nav.appendChild(q);
     var groups = [];
     var addGrp = function (sid, label, items) {
@@ -127,7 +127,7 @@
       [h('span', { text: title }), status === 'planned' ? h('span', { class: 'chip', text: 'planned' }) : null]);
   }
   function markActive() {
-    var id = (location.hash || '#home').slice(1), t = byId(id), sid = t ? home(t) : null;
+    var id = (location.hash || '#home').slice(1).split('/')[0], t = byId(id), sid = t ? home(t) : null;
     document.querySelectorAll('.nav-link').forEach(function (a) { a.classList.toggle('active', a.dataset.id === id); a.setAttribute('aria-current', a.dataset.id === id ? 'page' : 'false'); });
     // keep the section of the open tool expanded
     if (sid) document.querySelectorAll('.nav-grp[data-sec="' + sid + '"]').forEach(function (g) { g.classList.add('open'); var b = g.querySelector('.nav-sec'); if (b) b.setAttribute('aria-expanded', 'true'); });
@@ -136,10 +136,12 @@
   /* ---------- router ----------------------------------------------- */
   function route() {
     var id = (location.hash || '#home').slice(1) || 'home';
+    // «#tool/tab» opens a tool on one of its tabs (directive 28: links straight to the opportunities centre or the analysis centre)
+    if (id.indexOf('/') > 0) { root.HUB_SUBTAB = id.slice(id.indexOf('/') + 1); id = id.slice(0, id.indexOf('/')); }
     // single-tool build: every address opens that tool (Data sources & keys stays reachable)
     if (root.HUB_ONLY && id !== root.HUB_ONLY && id !== 'data-sources') { if (location.hash !== '#' + root.HUB_ONLY) { location.replace('#' + root.HUB_ONLY); return; } id = root.HUB_ONLY; }
     // a tool hosted by another module page (or any tool, on the hub): open that page
-    if (id !== 'home' && id !== 'data-sources' && MAN()) { var m = modOf(id); if (m && m !== MOD && !here(id)) { var u = urlOf(id); if (u) { go(u); return; } } }
+    if (id !== 'home' && id !== 'data-sources' && MAN()) { var m = modOf(id); if (m && m !== MOD && !here(id)) { var u = urlOf(id); if (u) { go(u + (root.HUB_SUBTAB && /#/.test(u) ? '/' + root.HUB_SUBTAB : '')); return; } } }
     var par = !root.HUB_ONLY && parentOf(id);
     if (par && byId(par.id)) { try { localStorage.setItem(par.key + '.tab', JSON.stringify(par.tab)); } catch (e) { /* ignore */ } location.replace('#' + par.id); return; }
     var main = document.getElementById('view');
@@ -152,7 +154,10 @@
     else {
       var t = byId(id);
       if (!t) renderHome(main);
-      else if (t.status === 'ready') { current = t; t.mount(main); }
+      else if (t.status === 'ready') { current = t;
+        // directive 28: the trading module's pages are analysis — their labels are model inputs; the decision is shown in one place only
+        if (MOD === 'trading') main.appendChild(h('div', { class: 'callout info', 'data-notr': '1', style: 'margin-bottom:.6rem' }, [h('span', { text: 'این صفحه بخشی از تحلیل و محاسبات است: خروجی مدل‌ها ورودی موتور مرکزی‌اند، نه تصمیم نهایی. همهٔ سیگنال‌ها و فرصت‌ها با حکم نهایی فقط در ' }), h('a', { href: 'desk.html#trade-center/opp', text: 'مرکز جامع فرصت‌های معاملاتی' }), h('span', { text: ' نمایش داده می‌شوند.' })]));
+        t.mount(main); }
       else renderPlanned(main, t);
     }
     markActive();

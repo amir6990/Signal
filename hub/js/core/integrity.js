@@ -31,10 +31,11 @@
      opt.fields: the fields this section shows (only those are compared) */
   function register(id, title, fn, opt) { CONS = CONS.filter(function (c) { return c.id !== id; }); CONS.push({ id: id, title: title, fn: fn, fields: (opt && opt.fields) || ['act', 'st', 'tier', 'rank', 'px', 'buy', 'stop', 'tp1', 'ver'], kind: opt && opt.kind || 'page' }); }
   function consumers() { return CONS.map(function (c) { return { id: c.id, title: c.title, fields: c.fields, kind: c.kind }; }); }
-  var FFA = { act: 'اقدام', st: 'وضعیت', tier: 'سطح فرصت', rank: 'رتبه', rankCls: 'رتبهٔ بازار', px: 'قیمت مبنا', buy: 'محدودهٔ ورود', stop: 'حد ضرر', tp1: 'هدف ۱', up: 'تأیید صعود', dn: 'تأیید نزول', ver: 'نسخهٔ سیگنال', date: 'تاریخ داده' };
-  var TFA = { T1: 'فهرست دارایی‌ها', T2: 'سیگنال‌ها', T3: 'قیمت‌ها', T4: 'سطوح معاملاتی', T5: 'رتبه‌بندی', T6: 'دادهٔ قدیمی', T7: 'پس از به‌روزرسانی', T8: 'اعلان‌ها در برابر حکم مرکزی', T9: 'پوشش صندوق‌های طلا و نقره', T10: 'پوشش تشخیص حرکت' };
-  var TEST = { act: 'T2', st: 'T2', tier: 'T2', px: 'T3', date: 'T3', buy: 'T4', stop: 'T4', tp1: 'T4', up: 'T4', dn: 'T4', rank: 'T5', rankCls: 'T5', ver: 'T6' };
-  function factsOf(key, r) { var p = C().present(Object.assign({ key: key }, r)); return { key: key, act: p.act, st: p.st, tier: p.tier, rank: p.rank, rankCls: p.rankCls, px: p.px, buy: p.buy, stop: p.stop, tp1: p.tp.length ? p.tp[0] : null, up: p.up, dn: p.dn, ver: p.ver, date: p.date, sym: p.sym }; }
+  var FFA = { act: 'اقدام', st: 'وضعیت', tier: 'سطح فرصت', rank: 'رتبه', rankCls: 'رتبهٔ بازار', px: 'قیمت مبنا', buy: 'محدودهٔ ورود', stop: 'حد ضرر', tp1: 'هدف ۱', up: 'تأیید صعود', dn: 'تأیید نزول', ver: 'نسخهٔ سیگنال', date: 'تاریخ داده', life: 'وضعیت فرصت' };
+  var TFA = { T1: 'فهرست دارایی‌ها', T2: 'سیگنال‌ها', T3: 'قیمت‌ها', T4: 'سطوح معاملاتی', T5: 'رتبه‌بندی', T6: 'دادهٔ قدیمی', T7: 'پس از به‌روزرسانی', T8: 'اعلان‌ها در برابر حکم مرکزی', T9: 'پوشش صندوق‌های طلا و نقره', T10: 'پوشش تشخیص حرکت', T11: 'وضعیت فرصت (چرخهٔ عمر) و فهرست فعال' };
+  var TEST = { act: 'T2', st: 'T2', tier: 'T2', px: 'T3', date: 'T3', buy: 'T4', stop: 'T4', tp1: 'T4', up: 'T4', dn: 'T4', rank: 'T5', rankCls: 'T5', ver: 'T6', life: 'T11' };
+  function factsOf(key, r) { var p = C().present(Object.assign({ key: key }, r)); return { key: key, act: p.act, st: p.st, tier: p.tier, rank: p.rank, rankCls: p.rankCls, px: p.px, buy: p.buy, stop: p.stop, tp1: p.tp.length ? p.tp[0] : null, up: p.up, dn: p.dn, ver: p.ver, date: p.date, sym: p.sym, life: lifeK(key, r) }; }
+  function lifeK(key, r) { var CE = C(); if (!CE.life) return null; try { var o = CE.life(Object.assign({ key: key }, r), { C: CE.get() }); return o ? o.k : null; } catch (e) { return null; } }
   function same(a, b) { if (a == null && b == null) return true; if (a == null || b == null) return false;
     if (Array.isArray(a) || Array.isArray(b)) { if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false; for (var i = 0; i < a.length; i++) if (!same(a[i], b[i])) return false; return true; }
     if (isF(a) && isF(b)) return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b)); return a === b; }
@@ -98,6 +99,12 @@
         else out.info.push('صندوق ' + o.sym + ' بیرون از موتور: ' + (w.active === false ? 'غیرفعال' : outW[o.sym])); }); }
     keys.forEach(function (k) { var r = by[k]; if (r.cls === 'option') return; out.tests.T10.n++;
       if (!r.mvx && (r.n || 0) >= 32) bad('T10', { sec: 'تشخیص حرکت', key: k, sym: r.sym, field: 'پروفایل حرکت', cen: (r.n || 0) + ' مشاهده', shown: 'محاسبه نشد', cause: 'خطای پردازشی در تشخیص حرکت', fix: 'اجرای دوبارهٔ موتور' }); });
+    /* ---- T11 (directive 28): the active opportunity list — one row per asset, no confirmed buy whose entry is not valid now, no ended / expired
+       signal among the active ones ---- */
+    if (C().life) { var seenA = {}; keys.forEach(function (k) { var r = by[k], o = null; try { o = C().life(Object.assign({ key: k }, r), { C: Cs }); } catch (e) { o = null; } if (!o) return; out.tests.T11.n++;
+      if (o.k === 'confirmed' && o.side === 'buy' && o.e && o.e.k !== 'none' && !o.e.ok) bad('T11', { sec: 'مرکز جامع فرصت‌ها', key: k, sym: r.sym, field: 'وضعیت فرصت', cen: o.fa, shown: o.e.fa, cause: 'سیگنال تأییدشده با ورود نامعتبر در قیمت فعلی', fix: '' });
+      if ((o.k === 'confirmed' || o.k === 'progress') && !r.held && (r.st === 'exp' || (o.e && (o.e.k === 'stopped' || o.e.k === 'invalid')))) bad('T11', { sec: 'مرکز جامع فرصت‌ها', key: k, sym: r.sym, field: 'وضعیت فرصت', cen: o.fa, shown: r.stFa || '—', cause: 'سیگنال منقضی یا ابطال‌شده در فهرست فعال', fix: '' });
+      if (o.k !== 'none' && o.k !== 'ended') { var aid = r.aid || C().aidOf(k); if (seenA[aid]) bad('T11', { sec: 'مرکز جامع فرصت‌ها', key: k, sym: r.sym, field: 'یکتایی', cen: aid, shown: 'تکرار با ' + seenA[aid], cause: 'یک دارایی دو بار در فهرست فعال', fix: '' }); else seenA[aid] = k; } }); }
     /* ---- every registered section against the stored record ---- */
     CONS.concat(opt.extra || []).forEach(function (cn) { var res = null, t1 = Date.now(); try { res = cn.fn(); } catch (e) { out.cons.push({ id: cn.id, title: cn.title, err: e.message }); return; }
       if (!res) { out.cons.push({ id: cn.id, title: cn.title, skip: 'در این دستگاه داده ندارد' }); return; }

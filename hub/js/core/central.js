@@ -129,5 +129,59 @@
     else { o.k = 'in'; o.short = 'داخل محدوده'; o.fa = 'قیمت ' + f(px) + ' داخل محدودهٔ ورود ' + f(lo) + '–' + f(hi) + ' است.'; }
     if (stale) o.fa += ' حکم ' + (ageD).toFixed(1).replace('.', '٫') + ' روز پیش محاسبه شده است؛ پیش از خرید به‌روزرسانی کنید.';
     o.ok = o.k === 'in' && !stale; return o; }
-  Hub.central = { entryNow: entryNow, livePx: livePx, LPX: LPX, trend: trend, trendFa: trendFa, TFA: TFA, CKEY: CKEY, LKEY: LKEY, AKEY: AKEY, CLSFA: CLSFA, aidOf: aidOf, buildMaster: buildMaster, master: master, stamp: stamp, ledger: ledger, asOf: asOf, get: get, rec: rec, present: present, cmp: cmp, list: list, whyNot: whyNot, verdictFa: verdictFa, content: content, hashOf: hashOf };
+  /* ---------- directive 28 · 3-2: the life stage of an opportunity — ONE function, used by the opportunities centre, the summary dashboard,
+     the alerts and the integrity monitor. It reads only the central record (full engine record or the stored / published slim one) and the
+     latest live quote (entryNow), so every page shows the same stage for the same asset.
+       watch      فرصت تحت پایش      — first evidence (awaiting confirmation, inside a probable floor zone, weak pre-move reading); not actionable
+       pre        پیش‌آگاهی معاملاتی  — the probability of the move / of reaching the entry rose (near the confirmation level, price inside the
+                                      entry zone without confirmation, the pre-move model on, inside a probable ceiling for holders); not actionable
+       confirmed  سیگنال تأییدشده      — the rules are met AND the entry is valid now (live price inside the zone, verdict not older than 1.2 days)
+       progress   در حال تحقق         — the move started: price left the zone upward (no chasing), or an open position is being managed
+       ended      خاتمه‌یافته          — stop hit, entry invalidated, or a confirmed signal withdrawn / expired in the last 7 days
+       none       بدون فرصت
+     A confirmed verdict with a limitation (stale verdict, data that failed control, sample data) is NOT shown as confirmed (directive 28 · 9-12):
+     it is shown one stage lower with the limitation named. */
+  var LIFE = { confirmed: 'سیگنال تأییدشده', progress: 'در حال تحقق', pre: 'پیش‌آگاهی معاملاتی', watch: 'تحت پایش', ended: 'خاتمه‌یافته', none: 'بدون فرصت' };
+  var LIFEO = { confirmed: 0, progress: 1, pre: 2, watch: 3, ended: 4, none: 5 };
+  var BLOCKRC = { model: 1, valNone: 1, data: 1 };
+  // pre-move model reading of either shape: full {up:{p,thr,on,watch}} or slim {u:[p,thr,flag]}
+  function pmOf(r) { var q = r && r.pm; if (!q) return { u: null, d: null };
+    var f = function (x, y) { return x ? { p: x.p, thr: x.thr, on: !!x.on, watch: !!x.watch } : Array.isArray(y) ? { p: y[0], thr: y[1], on: y[2] === 1, watch: y[2] === 2 } : null; };
+    return { u: f(q.up, q.u), d: f(q.dn, q.d) }; }
+  function endedRecent(r, now) { var aid = r.aid || aidOf(r.key), H = aid ? ledger(aid) : []; if (!H.length) return null; var cur = H[H.length - 1];
+    if (cur.c && cur.c.tier === 'ok') return null; for (var i = H.length - 2; i >= 0; i--) { if (H[i].c && H[i].c.tier === 'ok') { var endAt = H[i + 1].at; return now - endAt <= 7 * 864e5 ? { at: endAt, from: H[i] } : null; } } return null; }
+  // when the signal entered its current state (the first ledger version of the current run of that state)
+  function sinceSt(r, stv) { var aid = r.aid || aidOf(r.key), H = aid ? ledger(aid) : [], at = null; for (var i = H.length - 1; i >= 0; i--) { if (H[i].c && H[i].c.st === stv) at = H[i].at; else break; } return at || r.updAt || null; }
+  function life(r, opt) {
+    opt = opt || {}; if (!r) return null; var now = opt.now || Date.now(), lv = r.lv || {}, L = r.L || {}, z = lv.buy || L.buy, up = isF(lv.up) ? lv.up : L.upConf, px = r.px;
+    var e = entryNow(r, opt), pm = pmOf(r), out = function (k, side, why, extra) { return Object.assign({ k: k, fa: LIFE[k], o: LIFEO[k], side: side || 'buy', why: why || '', e: e,
+      isNew: !!(r.created && now - r.created <= 36 * 36e5 && (k === 'confirmed' || k === 'pre' || k === 'progress')), pm: pm }, extra || {}); };
+    var limWhy = r.dataState === 'sample' ? 'دادهٔ نمونه' : r.heldPrev ? 'دادهٔ تازه از کنترل کیفیت عبور نکرد (آخرین حکم معتبر حفظ شده)' : r.dataState === 'stale' || r.dataBad ? 'دادهٔ این دارایی کهنه یا ناقص است' : e && e.stale ? 'حکم ' + (e.ageD || 0).toFixed(1).replace('.', '٫') + ' روز پیش محاسبه شده' : '';
+    // an open position: the move is in progress; the action (hold / reduce / exit) comes from the central verdict
+    if (r.held) return out('progress', /^(close|sell|reduce)$/.test(r.act) ? 'sell' : 'buy', 'موقعیت باز — ' + (r.actFa || ''), { lim: limWhy || null });
+    // an expired plan (its horizon ran out without the trade) is never active, whatever tier it still carries; «ended» for 7 days, then nothing
+    if (r.st === 'exp') { var xa = opt.noLedger ? null : sinceSt(r, 'exp'); return xa && now - xa <= 7 * 864e5 ? out('ended', 'buy', 'سیگنال منقضی شد: افق طرح بدون تحقق تمام شد' + (r.rcFa ? ' — ' + r.rcFa : '') + '.', { endAt: xa }) : out('none', 'buy', 'طرح قبلی منقضی شده است' + (r.rcFa ? ' — ' + r.rcFa : '') + '.'); }
+    if (r.tier === 'ok' || r.act === 'buy') {
+      if (e && (e.k === 'stopped' || e.k === 'invalid')) return out('ended', 'buy', e.fa);
+      if (e && e.k === 'above') return out('progress', 'buy', e.fa);
+      if (e && e.k === 'below') return out('watch', 'buy', e.fa);
+      if (limWhy) return out('pre', 'buy', 'سیگنال خرید با محدودیت: ' + limWhy + ' — تا رفع محدودیت اقدام نکنید.', { lim: limWhy });
+      return out('confirmed', 'buy', e && e.fa ? e.fa : 'شرایط ورود طبق قواعد سیستم احراز شده است.'); }
+    if (r.sell === 'confirmed') return limWhy ? out('pre', 'sell', 'برگشت نزولی با محدودیت: ' + limWhy + ' — پیش از اقدام به‌روزرسانی کنید.', { lim: limWhy }) : out('confirmed', 'sell', 'برگشت نزولی تأیید شده (برای دارندگان: خروج).');
+    var er = opt.noLedger ? null : endedRecent(r, now);
+    if (er) return out('ended', 'buy', 'سیگنال خرید تأییدشدهٔ قبلی (نسخهٔ ' + er.from.v + ') ' + new Date(er.at).toLocaleDateString('fa-IR') + ' کنار رفت: ' + (r.stFa || '') + (r.rcFa ? ' — ' + r.rcFa : ''), { endAt: er.at });
+    var blocked = BLOCKRC[r.rc], nearUp = isF(up) && isF(px) && px < up && up / px - 1 <= 0.03, inZ = z && isF(px) && px >= Math.min(z[0], z[1]) && px <= Math.max(z[0], z[1]);
+    if (r.tier === 'wait' && !blocked) {
+      if (nearUp) return out('pre', 'buy', 'قیمت کمتر از ۳٪ تا سطح تأیید صعود فاصله دارد؛ شرط تأیید: بسته‌شدن بالای سطح تأیید.');
+      if (inZ) return out('pre', 'buy', 'قیمت داخل محدودهٔ ورود است؛ شرط تأیید هنوز برقرار نیست.');
+      if (pm.u && pm.u.on) return out('pre', 'buy', 'مدل یادگیرندهٔ پیش‌آگاهی احتمال شروع حرکت صعودی را بالا می‌بیند.');
+      return out('watch', 'buy', 'در انتظار تأیید: ' + (r.rcFa || r.stFa || '')); }
+    if (r.tier === 'floor') return r.tzState === 'inZone' ? out('pre', 'buy', 'قیمت داخل محدودهٔ احتمالی کف است؛ ورود فقط پس از تأیید برگشت.') : out('watch', 'buy', 'نزدیک محدودهٔ احتمالی کف؛ برگشت تأیید نشده.');
+    if (r.sell === 'inZone') return out('pre', 'sell', 'قیمت در محدودهٔ احتمالی سقف است (برای دارندگان: ذخیرهٔ سود را بررسی کنید).');
+    if (pm.u && pm.u.on && !blocked) return out('pre', 'buy', 'مدل یادگیرندهٔ پیش‌آگاهی احتمال شروع حرکت صعودی را بالا می‌بیند؛ حکم مرکزی هنوز فرصت نمی‌بیند.');
+    var cy = r.cyc ? { l: r.cyc.lvl, w: r.cyc.win } : r.cy ? { l: r.cy.l, w: r.cy.w } : null;
+    if (cy && cy.w && cy.w.type === 'L' && (cy.l === 'serious' || cy.l === 'confirmed')) return out('watch', 'buy', 'چرخهٔ زمانی معتبرِ همین دارایی پنجرهٔ احتمالی کف را نشان می‌دهد (' + (cy.l === 'confirmed' ? 'قیمت هم تأیید کرده' : 'چند چرخه هم‌جهت') + ')؛ حکم مرکزی هنوز فرصت نمی‌بیند.');
+    if (r.tier === 'wait' || (pm.u && pm.u.watch)) return out('watch', 'buy', blocked ? 'تحت پایش؛ ' + (r.rcFa || 'مدل یا اعتبارسنجی اجازهٔ تأیید نمی‌دهد') : 'نشانهٔ اولیهٔ مدل پیش‌آگاهی (زیر آستانه).');
+    return out('none', 'buy', r.rcFa || r.stFa || ''); }
+  Hub.central = { life: life, LIFE: LIFE, LIFEO: LIFEO, pmOf: pmOf, entryNow: entryNow, livePx: livePx, LPX: LPX, trend: trend, trendFa: trendFa, TFA: TFA, CKEY: CKEY, LKEY: LKEY, AKEY: AKEY, CLSFA: CLSFA, aidOf: aidOf, buildMaster: buildMaster, master: master, stamp: stamp, ledger: ledger, asOf: asOf, get: get, rec: rec, present: present, cmp: cmp, list: list, whyNot: whyNot, verdictFa: verdictFa, content: content, hashOf: hashOf };
 })(typeof window !== 'undefined' ? window : globalThis);

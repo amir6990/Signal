@@ -17,13 +17,14 @@
   var Hub = root.Hub = root.Hub || {};
   if (!root.document) return;
   var SKEY = 'hub.smartref.v1', STKEY = 'hub.smartref.state';
-  var MK = { tse: 'بورس و فرابورس (سهام، صندوق‌ها)', tgju: 'طلا، سکه و ارز (TGJU)', full: 'به‌روزرسانی کامل و محاسبهٔ دوباره', eod: 'بازبینی پایان روز' };
+  var MK = { tse: 'بورس و فرابورس (سهام، صندوق‌ها)', tgju: 'طلا، سکه و ارز (TGJU)', glb: 'رمزارز (بازار ۲۴ ساعته)', full: 'به‌روزرسانی کامل و محاسبهٔ دوباره', eod: 'بازبینی پایان روز' };
   function U() { return Hub.util; }
   function defaults() {
     return { on: true, tse: { open: '09:00', close: '12:30', light: 10, near: 5 }, tgju: { from: '08:00', to: '22:00', light: 15, near: 5, days: [0, 1, 2, 3, 4, 5] },
+      glb: { on: true, light: 15, near: 5 },   // directive 28 · 3-3: crypto trades around the clock — its own light layer, every day, all day
       eodTse: '13:15', eodTgju: '21:30', fullOnEvent: true, minFullGap: 30, fullEod: true };
   }
-  function set() { var s = Object.assign(defaults(), (U() && U().store.get(SKEY, null)) || {}); s.tse = Object.assign(defaults().tse, s.tse || {}); s.tgju = Object.assign(defaults().tgju, s.tgju || {}); return s; }
+  function set() { var s = Object.assign(defaults(), (U() && U().store.get(SKEY, null)) || {}); s.tse = Object.assign(defaults().tse, s.tse || {}); s.tgju = Object.assign(defaults().tgju, s.tgju || {}); s.glb = Object.assign(defaults().glb, s.glb || {}); return s; }
   function st() { var s = (U() && U().store.get(STKEY, null)) || {}; s.last = s.last || {}; s.err = s.err || {}; s.next = s.next || {}; s.near = s.near || []; s.log = Array.isArray(s.log) ? s.log : []; s.m = s.m || { checks: 0, events: 0, full: 0, lagMin: [] }; return s; }
   function saveSt(s) { s.log = s.log.slice(-200); s.m.lagMin = (s.m.lagMin || []).slice(-200); try { U().store.set(STKEY, s); } catch (e) { /* ignore */ } }
   // Tehran clock: day of week (0 = Saturday) and minutes since midnight
@@ -57,11 +58,24 @@
       return { map: out, bad: bad, n: Object.keys(out).length }; });
   }
 
+  /* crypto (directive 28 · 3-3): one public ticker call for every crypto series the engine analyses (Binance; CoinGecko as the fallback) */
+  function glbPrices() {
+    var D = Hub.data, G = Hub.globalMkt; if (!D || !D.web || !G || !G.SER) return Promise.reject(new Error('ماژول دادهٔ جهانی در دسترس نیست'));
+    var cen = U().store.get('hub.central.v1', null), want = cen && cen.by || {}, ser = G.SER.filter(function (x) { return x.mk === 'crypto' && want['x:' + x.id]; });
+    if (!ser.length) return Promise.resolve({ map: {}, bad: [], n: 0 });
+    var now = Date.now(), map = {}, put = function (x, px, src) { if (px > 0) map['x:' + x.id] = { px: px, at: now, src: src }; };
+    var bn = ser.filter(function (x) { return x.bn; });
+    var a = bn.length ? D.web('https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(bn.map(function (x) { return x.bn; }))), 'Binance').then(function (j) {
+      var by = {}; (Array.isArray(j) ? j : []).forEach(function (q) { by[q.symbol] = +q.price; }); bn.forEach(function (x) { put(x, by[x.bn], 'Binance (لحظه‌ای)'); }); }) : Promise.resolve();
+    return a.catch(function () { /* fallback below */ }).then(function () { var rest = ser.filter(function (x) { return !map['x:' + x.id] && x.cg; }); if (!rest.length) return;
+      return D.web('https://api.coingecko.com/api/v3/simple/price?vs_currencies=usd&ids=' + rest.map(function (x) { return x.cg; }).join(','), 'CoinGecko').then(function (j) { rest.forEach(function (x) { put(x, j && j[x.cg] && +j[x.cg].usd, 'CoinGecko (لحظه‌ای)'); }); }); })
+      .then(function () { var n = Object.keys(map).length; if (!n) throw new Error('قیمت لحظه‌ای رمزارز دریافت نشد (Binance و CoinGecko)'); return { map: map, bad: [], n: n }; }); }
+  var PFX = { tse: 's:', tgju: 'g:', glb: 'x:' };
   var BUSY = false;
   function light(m, S, T) {
-    var p = m === 'tse' ? tsePrices() : tgjuPrices(T);
+    var p = m === 'tse' ? tsePrices() : m === 'glb' ? glbPrices() : tgjuPrices(T);
     return p.then(function (r) { var A = Hub.alerts, res = A ? A.evaluatePrices(r.map, { m: m }) : { events: [], near: [], touched: [] };
-      S.m.checks++; S.near = (S.near || []).filter(function (k) { return k.indexOf(m === 'tse' ? 's:' : 'g:') !== 0; }).concat(res.near);
+      S.m.checks++; S.near = (S.near || []).filter(function (k) { return k.indexOf(PFX[m] || 'g:') !== 0; }).concat(res.near);
       log(S, m, true, fa(r.n) + ' قیمت بررسی شد' + (r.bad.length ? '؛ ' + fa(r.bad.length) + ' قیمت کنار گذاشته شد (اعتبارسنجی)' : '') + (res.events.length ? '؛ ' + fa(res.events.length) + ' رویداد' : ''));
       if (res.events.length) { S.m.events += res.events.length; if (A) A.deliver(res.events); }
       return res; }).catch(function (e) { log(S, m, false, String(e && e.message || e).slice(0, 160)); return { events: [], near: [], touched: [] }; });
@@ -99,12 +113,14 @@
     var nearT = (S.near || []).some(function (k) { return k.indexOf('s:') === 0; }), nearG = (S.near || []).some(function (k) { return k.indexOf('g:') === 0; });
     if (M.tse && due(S.last.tse, nearT ? s.tse.near : s.tse.light)) jobs.push(['tse']);
     if (M.tgju && due(S.last.tgju, nearG ? s.tgju.near : s.tgju.light)) jobs.push(['tgju']);
+    var nearX = (S.near || []).some(function (k) { return k.indexOf('x:') === 0; });
+    if (s.glb.on && due(S.last.glb, nearX ? s.glb.near : s.glb.light)) jobs.push(['glb']);
     // end-of-day review: once per day after each market's own end time
     var eodT = M.tseDay && T.min >= mins(s.eodTse) && S.eodTse !== T.g, eodG = s.tgju.days.indexOf(T.wd) >= 0 && T.min >= mins(s.eodTgju) && S.eodTgju !== T.g;
     // a full update already done after today's end-of-day time counts as the review (no second heavy run)
     var at = function (hm) { return Date.now() - (T.min - mins(hm)) * 60e3; }, lastFull = Math.max(S.last.full || 0, run && run.doneAt || 0);
     if (eodT && lastFull >= at(s.eodTse)) { S.eodTse = T.g; eodT = false; } if (eodG && lastFull >= at(s.eodTgju)) { S.eodTgju = T.g; eodG = false; }
-    S.next = { tse: M.tse ? (S.last.tse || Date.now()) + (nearT ? s.tse.near : s.tse.light) * 60e3 : null, tgju: M.tgju ? (S.last.tgju || Date.now()) + (nearG ? s.tgju.near : s.tgju.light) * 60e3 : null };
+    S.next = { tse: M.tse ? (S.last.tse || Date.now()) + (nearT ? s.tse.near : s.tse.light) * 60e3 : null, tgju: M.tgju ? (S.last.tgju || Date.now()) + (nearG ? s.tgju.near : s.tgju.light) * 60e3 : null, glb: s.glb.on ? (S.last.glb || Date.now()) + (nearX ? s.glb.near : s.glb.light) * 60e3 : null };
     if (!jobs.length && !(s.fullEod && (eodT || eodG))) { saveSt(S); return; }
     BUSY = true;
     jobs.reduce(function (p, j) { return p.then(function (acc) { return light(j[0], S, T).then(function (r) { return acc.concat(r.touched || []); }); }); }, Promise.resolve([]))
