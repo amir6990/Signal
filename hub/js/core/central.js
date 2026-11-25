@@ -106,5 +106,28 @@
     var o = TE && TE.trendRows && rows ? TE.trendRows(rows, key) : null; if (!o) return null; return { src: 'rule', date: o.date, s: o.s, m: o.m, l: o.l }; }
   function trendFa(T) { if (!T) return 'روند: دادهٔ کافی نیست'; var f = function (x) { return (TFA[x.v] || x.v) + (x.sub === 'pullback' ? ' (در اصلاح)' : x.sub === 'bounce' ? ' (در برگشت)' : ''); };
     return 'روند (قاعدهٔ واحد سیستم) کوتاه: ' + f(T.s) + ' · میان: ' + f(T.m) + ' · بلند: ' + f(T.l); }
-  Hub.central = { trend: trend, trendFa: trendFa, TFA: TFA, CKEY: CKEY, LKEY: LKEY, AKEY: AKEY, CLSFA: CLSFA, aidOf: aidOf, buildMaster: buildMaster, master: master, stamp: stamp, ledger: ledger, asOf: asOf, get: get, rec: rec, present: present, cmp: cmp, list: list, whyNot: whyNot, verdictFa: verdictFa, content: content, hashOf: hashOf };
+  /* entry validity NOW (2026-11-25, خودران: the phone showed a 3-day-old «buy» while the live price was 4 % above the entry zone and above the
+     entry-invalidation level; the user bought there). Every buy is checked against the latest price — the live quote of the light price check
+     when it is newer than the verdict — and against the verdict's age. Returns { k, px, at, src, fa, short, stale, ageD }:
+       in      — inside the entry zone: the verdict stands
+       above   — above the zone: entry passed, do not buy; wait for a return to the zone
+       invalid — above the entry-invalidation level: this plan no longer holds; a new verdict is needed
+       below   — under the zone (not at the stop): wait; the setup is weakening
+       stopped — at or under the stop: the plan failed                                                                      */
+  var LPX = 'hub.livepx.v1';
+  function livePx(k) { var L = U() && U().store.get(LPX, null), q = L && L.by && L.by[k]; return q && q[0] > 0 ? { px: q[0], at: q[1] || L.at } : null; }
+  function entryNow(r, opt) { opt = opt || {}; if (!r) return null; var lv = r.lv || {}, L = r.L || {}, z = lv.buy || L.buy, stop = isF(lv.stop) ? lv.stop : L.stop, inv = isF(lv.inv) ? lv.inv : L.inv;
+    var q = livePx(r.key || opt.key), t0 = r.pxAt || (opt.C && opt.C.at) || 0, px = r.px, at = t0, src = 'حکم';
+    if (q && q.at > t0 && q.px > 0) { px = q.px; at = q.at; src = 'قیمت لحظه‌ای'; }
+    var ageD = opt.C && opt.C.at ? (Date.now() - opt.C.at) / 864e5 : null, stale = ageD != null && ageD > 1.2;
+    var buy = r.act === 'buy' || r.tier === 'ok', o = { px: px, at: at, src: src, stale: stale, ageD: ageD, k: 'none', fa: '', short: '' }; if (!buy || !z || !isF(px)) return o;
+    var lo = Math.min(z[0], z[1]), hi = Math.max(z[0], z[1]), f = function (x) { return Hub.util && Hub.util.fmtNum ? Hub.util.fmtNum(x) : Math.round(x).toLocaleString('fa-IR'); }, pc = function (x) { return (100 * x).toFixed(1) + '٪'; };
+    if (isF(stop) && px <= stop) { o.k = 'stopped'; o.short = 'حد ضرر خورده'; o.fa = 'قیمت ' + f(px) + ' به حد ضرر ' + f(stop) + ' رسیده است: طرح شکست خورده؛ خرید نکنید.'; }
+    else if (isF(inv) && px >= inv) { o.k = 'invalid'; o.short = 'ورود باطل'; o.fa = 'قیمت ' + f(px) + ' از سطح ابطال ورود ' + f(inv) + ' گذشته است: این طرح دیگر معتبر نیست؛ خرید نکنید و منتظر حکم تازه باشید.'; }
+    else if (px > hi * 1.002) { o.k = 'above'; o.short = 'ورود گذشته'; o.fa = 'قیمت ' + f(px) + ' ' + pc(px / hi - 1) + ' بالای سقف محدودهٔ ورود (' + f(lo) + '–' + f(hi) + ') است: خرید نکنید؛ فقط با بازگشت به محدوده، با سفارش محدود حداکثر ' + f(hi) + '.'; }
+    else if (px < lo * 0.998) { o.k = 'below'; o.short = 'زیر محدوده'; o.fa = 'قیمت ' + f(px) + ' زیر محدودهٔ ورود است: صبر کنید تا دوباره به محدوده برگردد یا حکم تازه بیاید.'; }
+    else { o.k = 'in'; o.short = 'داخل محدوده'; o.fa = 'قیمت ' + f(px) + ' داخل محدودهٔ ورود ' + f(lo) + '–' + f(hi) + ' است.'; }
+    if (stale) o.fa += ' حکم ' + (ageD).toFixed(1).replace('.', '٫') + ' روز پیش محاسبه شده است؛ پیش از خرید به‌روزرسانی کنید.';
+    o.ok = o.k === 'in' && !stale; return o; }
+  Hub.central = { entryNow: entryNow, livePx: livePx, LPX: LPX, trend: trend, trendFa: trendFa, TFA: TFA, CKEY: CKEY, LKEY: LKEY, AKEY: AKEY, CLSFA: CLSFA, aidOf: aidOf, buildMaster: buildMaster, master: master, stamp: stamp, ledger: ledger, asOf: asOf, get: get, rec: rec, present: present, cmp: cmp, list: list, whyNot: whyNot, verdictFa: verdictFa, content: content, hashOf: hashOf };
 })(typeof window !== 'undefined' ? window : globalThis);

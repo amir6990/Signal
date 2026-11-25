@@ -45,7 +45,7 @@
   function sample() { return { version: 2, tool: 'trade-center', g: null, cmp: [], sel: null, icat: 'all', bsub: 'idx', lim: 60 }; }
   function run(S) {
     var R = Hub.tradeUI && Hub.tradeUI.engineNow ? Hub.tradeUI.engineNow() : null, X = R && R.X, C = X && X.central;
-    var recs = C ? Object.keys(C.by).map(function (k) { return C.by[k]; }) : [];
+    var recs = C ? Object.keys(C.by).map(function (k) { if (!C.by[k].key) C.by[k].key = k; return C.by[k]; }) : [];
     // the published record (phone) keeps only the priority score as a number: the same shape as the computer's record, without the parts
     recs.forEach(function (r) { if (typeof r.pri === 'number') r.pri = { s: r.pri, base: r.pri, pen: [] }; if (!r.L && r.lv) r.L = { buy: r.lv.buy, stop: r.lv.stop, tp: r.lv.tp || [], upConf: r.lv.up, dnConf: r.lv.dn, floor: r.lv.floor, ceil: r.lv.ceil, tzConf: r.lv.tzConf }; if (r.grpFa == null) r.grpFa = ''; if (r.execFa == null) r.execFa = (r.ex && r.ex.fa) || ''; });
     // phone viewer: the inbox categories, groups and execution states come from the same rules (opprank) applied to the published record;
@@ -53,6 +53,11 @@
     if (X && X.viewer && Hub.oppRank && Hub.oppRank.enrich && C && !C.__viewEnriched) { var keepP = {}; Object.keys(C.by).forEach(function (k) { keepP[k] = C.by[k].pri; });
       try { Hub.oppRank.enrich(C.by, null); } catch (e) { /* the inbox stays empty rather than the page failing */ }
       Object.keys(C.by).forEach(function (k) { C.by[k].pri = keepP[k]; if (!C.by[k].grpFa) C.by[k].grpFa = ''; }); C.__viewEnriched = true; }
+    // every buy against the latest price and the verdict's age (Hub.central.entryNow): outside the entry zone or from an old verdict → «do not buy»
+    if (Hub.central && Hub.central.entryNow) recs.forEach(function (r) { var e = Hub.central.entryNow(r, { C: C }); r.entryNow = e; if (!e || e.k === 'none') return;
+      if (!r.__act0) { r.__act0 = r.actFa; r.__exec0 = r.execFa; }
+      if (e.k !== 'in' || e.stale) { r.actFa = 'خرید نکنید — ' + (e.stale && e.k === 'in' ? 'حکم قدیمی' : e.short); r.execFa = e.fa; if (Array.isArray(r.cats)) r.cats = r.cats.filter(function (c) { return c !== 'buy'; }).concat(r.cats.indexOf('watch') < 0 ? ['watch'] : []); }
+      else { r.actFa = r.__act0; r.execFa = r.__exec0; } });
     var ch = []; if (!X) ch.push({ level: 'critical', msg: 'موتور معاملاتی در دسترس نیست.' }); else if (X.sample) ch.push({ level: 'warning', msg: 'بخشی از داده‌ها نمونه است؛ هیچ سیگنالی قابل اجرا نیست.' });
     return { X: X, C: C, recs: recs, checks: ch };
   }
@@ -60,7 +65,7 @@
     return u >= 2 && !d ? 'up' : d >= 2 && !u ? 'down' : u && d ? 'mixed' : u ? 'up' : d ? 'down' : 'flat'; }
   var TRFA = { up: 'صعودی', down: 'نزولی', mixed: 'متضاد میان افق‌ها', flat: 'خنثی' };
   function strengthOf(r) { return isF(r.conf) ? (r.conf >= 70 ? 'strong' : r.conf >= 55 ? 'mid' : 'weak') : 'weak'; }
-  var STRFA = { strong: 'قوی (اطمینان ≥ ۷۰٪)', mid: 'متوسط (۵۵ تا ۷۰٪)', weak: 'ضعیف (< ۵۵٪)' };
+  var STRFA = { strong: 'قوی (امتیاز قاعده ≥ ۷۰؛ احتمال نیست)', mid: 'متوسط (امتیاز ۵۵ تا ۷۰)', weak: 'ضعیف (امتیاز < ۵۵)' };
 
   /* ---------------- priority actions (directive 15 · 1-2) ---------------- */
   // label → priority bucket; inside a bucket the order is quality: confidence × reward/risk × liquidity
@@ -132,7 +137,7 @@
       ['محدودهٔ فروش / ذخیرهٔ سود', L.ceil ? zone(L.ceil) + ' (سقف احتمالی)' : isF(tp[0]) ? n(tp[0]) + (isF(tp[1]) ? ' – ' + n(tp[1]) : '') + ' (اهداف سود)' : fv(F.ceil, zone)],
       ['اهداف احتمالی نزولی', (L.floor && L.tzT && L.tzT.length ? L.tzT : (L.dnTp || [])).filter(isF).slice(0, 3).map(function (v) { return n(v); }).join(' / ') || (F.dnTp.length ? lst(F.dnTp) + ' (' + (F.dnEst || '') + ')' : NC)],
       ['حمایت‌ها / مقاومت‌های مهم', ((L.sup || []).filter(isF).slice(0, 3).map(function (v) { return n(v); }).join('، ') || '—') + ' / ' + ((L.res || []).filter(isF).slice(0, 3).map(function (v) { return n(v); }).join('، ') || '—')],
-      ['درجهٔ اطمینان و اعتبار تحلیل', (isF(r.conf) ? 'اطمینان مدل ' + fa(r.conf, 0) + '٪' : 'اطمینان نامشخص') + (r.grade ? ' · درجهٔ اعتبارسنجی ' + r.grade : '') + (r.bt && r.bt.oos && isF(r.bt.oos.n) ? ' · برون‌نمونه: ' + fa(r.bt.oos.n, 0) + ' معامله، میانگین ' + (isF(r.bt.oos.avgR) ? fa(r.bt.oos.avgR, 2) + 'R' : '—') + (isF(r.bt.oos.pf) ? '، PF ' + fa(r.bt.oos.pf, 2) : '') : ' · شواهد برون‌نمونه ندارد')],
+      ['درجهٔ اطمینان و اعتبار تحلیل', (isF(r.conf) ? 'امتیاز قاعده ' + fa(r.conf, 0) + ' از ۱۰۰ (احتمال موفقیت نیست)' : 'امتیاز نامشخص') + (r.bt && isF(r.bt.hit) ? ' · موفقیت تاریخی همین قاعده روی همین دارایی: ' + fa(100 * r.bt.hit, 0) + '٪ از ' + fa(r.bt.n, 0) + ' معامله (یعنی حدود ' + fa(100 - 100 * r.bt.hit, 0) + '٪ معاملات مشابه زیان دادند)' : '') + (r.grade ? ' · درجهٔ اعتبارسنجی ' + r.grade : '') + (r.bt && r.bt.oos && isF(r.bt.oos.n) ? ' · برون‌نمونه: ' + fa(r.bt.oos.n, 0) + ' معامله، میانگین ' + (isF(r.bt.oos.avgR) ? fa(r.bt.oos.avgR, 2) + 'R' : '—') + (isF(r.bt.oos.pf) ? '، PF ' + fa(r.bt.oos.pf, 2) : '') : ' · شواهد برون‌نمونه ندارد')],
       ['قابلیت اجرا', (r.execFa || '—') + (r.execWhy && r.execWhy.length ? ' — ' + r.execWhy.join(' ') : '')],
       ['چرخهٔ زمانی (موتور مستقل)', r.cyc ? r.cyc.stFa + (r.cyc.win ? ' · پنجرهٔ ' + r.cyc.win.typeFa + ' ' + sh(r.cyc.win.a) + ' تا ' + sh(r.cyc.win.b) + ' (' + r.cyc.hz + ')' : '') + ' · ' + (r.cyc.valid.length ? 'سطح: ' + r.cyc.lvFa : 'روش معتبری برای این بازار نیست؛ هشدار صادر نمی‌شود') : 'محاسبه نشده (اعتبارسنجی چرخه‌ها هنوز اجرا نشده یا تاریخچه کوتاه است)'],
       ['امتیاز اولویت', r.pri ? fa(r.pri.s, 0) + ' از ۱۰۰ (رتبهٔ ' + fa(r.rank, 0) + ') — ' + priWhy(r) : 'فرصت خرید نیست؛ امتیاز ندارد']]);
@@ -404,7 +409,7 @@
     var rows = shown.map(function (r) { var L = r.L || {}, F = fbOf(r), w = L.win, tp = (L.tp || []).filter(isF), dn = (L.floor && L.tzT && L.tzT.length ? L.tzT : L.dnTp || []).filter(isF); if (!tp.length && F.tp.v && F.tp.v.length) tp = F.tp.v; if (!dn.length) dn = F.dnTp;
       return [star(ctx, r), cmpBox(ctx, S, r), symBtn(ctx, S, r), opt.grp ? r.grpFa : CLS[r.cls] || r.cls, pxTime(r), r.st4Fa || '—', fv(F.floor, zone, r), fv(F.ceil, zone, r), L.buy ? zone(L.buy) : L.far ? 'طرح آزموده‌شده: ' + pct(L.far.dist, 1) + ' بالاتر از قیمت؛ ' + fv(F.buy, zone) : fv(F.buy, zone),
         (isF(L.upConf) ? '↑ ' + n(L.upConf) + ' (' + pct(L.upConf / r.px - 1, 1) + ')' : '↑ —') + ' / ' + (isF(L.dnConf) ? '↓ ' + n(L.dnConf) + ' (' + pct(L.dnConf / r.px - 1, 1) + ')' : '↓ —'), isF(L.stop) ? n(L.stop) : fv(F.stop), (tp.length ? '↑ ' + tp.slice(0, 2).map(function (v) { return n(v); }).join('، ') : '') + (dn.length ? (tp.length ? ' · ' : '') + '↓ ' + dn.slice(0, 2).map(function (v) { return n(v); }).join('، ') : '') || '—',
-        w && w.from ? sh(w.from) + ' تا ' + sh(w.to) : F.winT || '—', TRFA[trendOf(r)], isF(r.conf) ? fa(r.conf, 0) + '٪' + (r.grade ? ' · ' + r.grade : '') : '—', (actionOf(r) || [0, 0, r.actFa])[2] + ' · ' + (r.execFa || ''), r.pri ? fa(r.pri.s, 0) : '—']; });
+        w && w.from ? sh(w.from) + ' تا ' + sh(w.to) : F.winT || '—', TRFA[trendOf(r)], isF(r.conf) ? 'امتیاز ' + fa(r.conf, 0) + (r.bt && isF(r.bt.hit) ? ' · موفقیت تاریخی ' + fa(100 * r.bt.hit, 0) + '٪' : '') + (r.grade ? ' · ' + r.grade : '') : '—', (actionOf(r) || [0, 0, r.actFa])[2] + ' · ' + (r.execFa || ''), r.pri ? fa(r.pri.s, 0) : '—']; });
     var more = A.length > lim ? h('button', { class: 'btn ghost', type: 'button', text: 'نمایش ' + fa(Math.min(60, A.length - lim), 0) + ' مورد بیشتر (از ' + fa(A.length, 0) + ')', onclick: function () { S.lim = lim + 60; ctx.rerender(); } }) : null;
     return h('div', null, [rows.length ? table(['پایش', 'مقایسه', 'نماد', opt.grp ? 'گروه' : 'بازار', 'قیمت · زمان', 'وضعیت کف/سقف', 'کف احتمالی', 'سقف احتمالی', 'محدودهٔ خرید', 'تأیید صعود / نزول', 'حد ضرر', 'اهداف ↑ / ↓', 'بازهٔ زمانی', 'روند', 'اطمینان', 'اقدام · اجرا', 'امتیاز'], rows) : P('موردی با این فیلترها نیست.'), more]); }
   // the full sheet of the selected asset, shown on top of any market page

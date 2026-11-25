@@ -177,6 +177,8 @@
 
   /* ---- 2 · light layer: a fresh price against the levels the central engine published ---- */
   function evaluatePrices(map, meta) {
+    // keep the latest live quote per asset: Hub.central.entryNow checks every displayed buy against it
+    try { var LQ = U().store.get('hub.livepx.v1', null) || { by: {} }, now0 = Date.now(); Object.keys(map || {}).forEach(function (k) { var q = map[k]; if (q && q.px > 0) LQ.by[k] = [q.px, q.at || now0]; }); LQ.at = now0; U().store.set('hub.livepx.v1', LQ); } catch (e) { /* optional */ }
     var S = load(), cen = U().store.get('hub.central.v1', null), by = cen && cen.by || {}, out = [], near = [], touched = [], np = (S.set.nearPct || 1.5) / 100;
     // a level matters only where the central verdict can still turn into a trade: blocked by the model gate, by data or by an ended setup → no pre-alert
     var BLOCK = { model: 1, valNone: 1, data: 1, expired: 1 };
