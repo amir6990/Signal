@@ -29,7 +29,7 @@
 (function (root) {
   'use strict';
   var Hub = root.Hub = root.Hub || {};
-  var KEY = 'hub.cycprof.v1', LOG = 'hub.cyclog.v1', CRIT = 'hub.cycles.crit', VER = 'p2';
+  var KEY = 'hub.cycprof.v1', LOG = 'hub.cyclog.v1', PLOG = 'hub.ptplog.v1', CRIT = 'hub.cycles.crit', VER = 'p2', PVER = 1;   // PVER: the price–time progress layer (2026-11-26), added to existing profiles without recomputing them
   var HZ = [{ id: 's', fa: 'کوتاه‌مدت', lo: 0, hi: 40, pmin: 8, pmax: 40 }, { id: 'm', fa: 'میان‌مدت', lo: 40, hi: 120, pmin: 40, pmax: 120 }, { id: 'l', fa: 'بلندمدت', lo: 120, hi: 1e9, pmin: 120, pmax: 400 }];
   var KG = [1.5, 2, 3, 4, 6, 8, 12], STRIDE = 5, BLOCK = 60, TRAIL = 750, MINRES = 8;
   var MFA = { int: 'فاصلهٔ نقاط عطف', fib: 'فیبوناچی زمانی', agree: 'هم‌پوشانی فاصلهٔ نقاط عطف و فیبوناچی', spec: 'تحلیل طیفی (فوریه، پریودوگرام)', wav: 'موجک (برازش محلی مورله)', acf: 'خودهمبستگی (دورهٔ ACF با لنگر نقطهٔ عطف)', hil: 'تبدیل هیلبرت (فاز لحظه‌ای سیگنال باندگذر)' };
@@ -244,7 +244,10 @@
         if (bB) bB.c.F.forEach(function (f) { if (f.t >= tau2 && f.t < tau2 + BLOCK) oosB.push(f); }); }
       var stA = stats(oos, S), stB = stats(oosB, S), cpsN = changePts(lr, 60), fromN = Math.max(cpsN.length ? cpsN[cpsN.length - 1] + 1 : 0, n - 1 - TRAIL), curB = null;
       cf.forEach(function (c) { var R = c.F.filter(function (f) { return f.res <= n - 1 && f.t >= fromN; }); if (R.length < MINRES) return; var sc2 = 0; R.forEach(function (f) { sc2 += (f.hit ? 1 : 0) - f.p0; }); sc2 /= R.length; if (sc2 > 0 && (!curB || sc2 > curB.sc)) curB = { c: c, sc: sc2, nR: R.length }; });
-      return { id: H.id, fa: H.fa, pmin: H.pmin, pmax: H.pmax, oosB: stB, curB: curB ? { id: curB.c.id, m: curB.c.m, k: curB.c.k, sc: curB.sc, nR: curB.nR } : null, pow: stA.ne ? power(stA.ne, stA.p0) : null,
+      // directive 29: the price–time progress layer on this horizon's scale — its own walk-forward record against a same-width benchmark
+      // (decides whether its windows are shown as validated) and its own calibration of temporary / main turn / continuation
+      var kP = cur ? cur.c.k : sc.length ? sc.slice().sort(function (a2, b2) { return b2.nPiv - a2.nPiv; })[0].k : null, ptp = kP ? ptpProfile(S, kP, start, (sc.filter(function (x2) { return x2.k === kP; })[0] || {}).P) : null;
+      return { id: H.id, fa: H.fa, pmin: H.pmin, pmax: H.pmax, oosB: stB, ptp: ptp, curB: curB ? { id: curB.c.id, m: curB.c.m, k: curB.c.k, sc: curB.sc, nR: curB.nR } : null, pow: stA.ne ? power(stA.ne, stA.p0) : null,
         scales: sc.map(function (s) { return { k: s.k, nPiv: s.nPiv, C: s.C, iv: s.iv }; }),
         cfg: cf.map(function (c) { var t2 = c.st; return { id: c.id, m: c.m, k: c.k, n: t2.n, ne: t2.ne, prec: t2.prec, p0: t2.p0, skill: t2.skill, p: t2.p }; }),
         oos: stA, nCfg: cf.length, hist: hist.slice(-12), cur: cur ? { id: cur.c.id, m: cur.c.m, k: cur.c.k, sc: cur.sc, nR: cur.nR } : null };
@@ -258,6 +261,14 @@
     return Object.assign(base, { ok: true, W: W, hl: hl > n * 0.5, start: S.d[start], hz: hz, peaks: pk, reg: hm, cps: cpL.slice(-5) });
   }
 
+  // the progress layer's own walk-forward record and calibration on one scale (stored in the profile; PVER marks its version)
+  function ptpProfile(S, kP, start, P) { try { P = P || zigzag(S, kP); var BT = ptpBacktest(S, P, start), sm = ptpSummary(BT), ki = KG.indexOf(kP), Psm = KG[ki - 1] ? zigzag(S, KG[ki - 1]) : null, cl = ptpCalib(S, P, Psm, start);
+      return { v: PVER, k: kP, sum: { n: sm.n, hitM: sm.hitM, hitBw: sm.hitBw, disc: sm.disc, pCond: sm.pCond, pBench: sm.pBench, wM: sm.wM, eM: sm.eM, prM: sm.prM, prB: sm.prB, pErr: sm.pErr, delay: sm.delay },
+        sel: sm.disc >= 8 && sm.pCond < 0.1 ? 'valid' : sm.disc >= 8 && sm.pBench < 0.1 ? 'worse' : 'none', cal: cl }; } catch (e) { return { v: PVER, k: kP, err: e.message, sel: 'none' }; } }
+  function ptpScale(H) { return H.cur ? H.cur.k : H.scales && H.scales.length ? H.scales.slice().sort(function (a, b) { return b.nPiv - a.nPiv; })[0].k : null; }
+  function needsPtp(p) { return !!(p && p.ok && p.hz && p.hz.some(function (h) { return ptpScale(h) && (!h.ptp || h.ptp.v !== PVER); })); }
+  // adds the layer to a stored profile (no recomputation of the profile itself)
+  function addPtp(p, x) { var S = x.S || ser(x.rows), start = Math.max(150, Math.floor(S.n * 0.4)); p.hz.forEach(function (h) { var k = ptpScale(h); if (k && (!h.ptp || h.ptp.v !== PVER)) h.ptp = ptpProfile(S, k, start); }); p.ptpAt = Date.now(); return p; }
   /* ---------- multiple testing, within each universe (markets / shares / funds) ---------- */
   function famOf(cls) { return cls === 'stock' ? 'stock' : cls === 'fund' ? 'fund' : 'market'; }
   function crit() { var c = U() && U().store.get(CRIT, null); return c === 'fdr' ? 'fdr' : 'holm'; }
@@ -296,10 +307,11 @@
      a week old, or a new engine version. Corrections and the cross-market layer are recomputed at the end. */
   function refresh(progress, opt) {
     opt = opt || {}; var D = load() || { v: VER, P: {} }, A = assets(), now = Date.now();
-    var todo = A.filter(function (a) { var p = D.P[a.key]; return opt.force || !p || p.v !== VER || (p.last !== a.last && (a.raw - p.raw >= 5 || now - p.at > 7 * 864e5)) || now - p.at > 14 * 864e5; }).sort(function (a, b) { return a.pri - b.pri; });
+    var todo = A.filter(function (a) { var p = D.P[a.key]; return opt.force || !p || p.v !== VER || (p.last !== a.last && (a.raw - p.raw >= 5 || now - p.at > 7 * 864e5)) || now - p.at > 14 * 864e5 || needsPtp(p); }).sort(function (a, b) { return a.pri - b.pri; });
     var i = 0, t0 = Date.now(), budget = opt.budget || Infinity;
     return new Promise(function (res) {
-      var step = function () { var t1 = Date.now(); while (i < todo.length && Date.now() - t1 < 40) { var a = todo[i++]; try { var x = a.px ? { key: a.key, sym: a.sym, cls: a.cls, rows: stockRows(a.px), raw: a.raw } : a; D.P[a.key] = profile(x); } catch (e) { D.P[a.key] = { key: a.key, sym: a.sym, cls: a.cls, v: VER, at: Date.now(), raw: a.raw, last: a.last, ok: false, why: 'خطای محاسبه: ' + e.message }; } }
+      var step = function () { var t1 = Date.now(); while (i < todo.length && Date.now() - t1 < 40) { var a = todo[i++]; try { var x = a.px ? { key: a.key, sym: a.sym, cls: a.cls, rows: stockRows(a.px), raw: a.raw } : a, p0 = D.P[a.key];
+          var fresh = p0 && p0.v === VER && !opt.force && !(p0.last !== a.last && (a.raw - p0.raw >= 5 || now - p0.at > 7 * 864e5)) && now - p0.at <= 14 * 864e5; D.P[a.key] = fresh ? addPtp(p0, x) : profile(x); } catch (e) { D.P[a.key] = { key: a.key, sym: a.sym, cls: a.cls, v: VER, at: Date.now(), raw: a.raw, last: a.last, ok: false, why: 'خطای محاسبه: ' + e.message }; } }
         if (progress) progress(i, todo.length, A.length);
         if (i < todo.length && Date.now() - t0 < budget) return setTimeout(step, 0);
         correct(D); try { D.sync = syncLayer(D); } catch (e) { D.sync = { err: e.message }; } D.at = Date.now(); D.pending = todo.length - i; D.total = A.length; save(D); res(D); };
@@ -330,17 +342,25 @@
   /* ---------- the current view of one asset, from its own profile only ---------- */
   var STFA = { up: 'چرخهٔ صعودی', down: 'چرخهٔ نزولی', approach: 'نزدیک‌شدن به نقطهٔ عطف', inWin: 'داخل پنجرهٔ زمانی حساس', endCorr: 'احتمال پایان اصلاح', startCorr: 'احتمال شروع اصلاح', pressure: 'احتمال تداوم فشار فروش', invalid: 'چرخهٔ نامعتبر یا بدون الگوی قابل اتکا', none: 'بدون روش دارای برتری در این افق' };
   var LVFA = { early: 'هشدار اولیه', serious: 'هشدار جدی', confirmed: 'هشدار تأییدشده', invalid: 'ابطال هشدار', none: '—' };
+  // the progress layer of one horizon in a view: on the scale the profile tested; dates from the asset's own calendar
+  function ptpOf(S, H, t, cal, P) { var M = H.ptp && H.ptp.v === PVER ? H.ptp : null; if (!M) { var k0 = ptpScale(H); if (!k0) return null; M = { k: k0, sel: 'pending', cal: null, sum: null }; } try { var Pz = P && H.cur && H.cur.k === M.k ? P : zigzag(S, M.k), o = ptpView(S, Pz, M.k, t, M.cal); if (!o) return null;
+      o.k = M.k; o.sel = M.sel; o.rec = M.sum; o.selFa = M.sel === 'pending' ? 'آزمون رو به جلوی این دارایی هنوز اجرا نشده (در پس‌زمینه انجام می‌شود)' : M.sel === 'valid' ? 'پنجره‌ها در آزمون رو به جلوی همین دارایی از معیار هم‌عرض بهتر بوده‌اند' : M.sel === 'worse' ? 'پنجره‌ها در آزمون رو به جلوی همین دارایی از معیار هم‌عرض بدتر بوده‌اند — فقط توصیفی' : 'آزمون رو به جلو برتری معناداری نشان نداد — فقط توصیفی';
+      var dd = function (a) { return a ? [cal(a[0]), cal(a[1])] : null; }; o.dates = o.win ? { main: dd(o.win.main), early: dd(o.win.early), late: dd(o.win.late), med: cal(o.win.med), bench: dd(o.bw) } : null; o.d0 = S.d[o.i0]; o.dExt = S.d[o.ie]; return o; } catch (e) { return null; } }
   function view(x, opt) {
     opt = opt || {}; var D = opt.D || load(), p = D && D.P[x.key]; if (!p) return { key: x.key, sym: x.sym, cls: x.cls, ok: false, why: 'پروفایل چرخهٔ این دارایی هنوز محاسبه نشده است' };
     if (!p.ok) return { key: x.key, sym: x.sym, cls: x.cls, ok: false, why: p.why, prof: p };
     var S = x.S || (x.px ? ser(stockRows(x.px)) : ser(x.rows.filter(function (r) { return !r.live; }))), n = S.n, t = n - 1;
-    var cal = function (i) { if (i <= t) return S.d[i]; var MC = Hub.mktCal; if (MC && MC.nextSessions) { var L = MC.nextSessions(x.cls === 'index' || x.cls === 'stock' || x.cls === 'fund' ? 'stock' : x.cls, S.d[t], i - t, S.d.slice(-60)); return L[L.length - 1]; } return null; };
+    var cal = function (i) { if (i <= t) return S.d[i]; var MC = Hub.mktCal; if (MC && MC.nextSessions) { var L = MC.nextSessions(x.cls === 'index' || x.cls === 'stock' || x.cls === 'fund' ? 'stock' : x.cls, S.d[t], i - t, S.d.slice(-60)); return L[L.length - 1]; }
+      // no market calendar loaded: calendar days per session from the asset's own last 60 sessions (an estimate of the date, not of the session count)
+      var g = function (d) { return Date.UTC(Math.floor(d / 1e4), Math.floor(d / 100) % 100 - 1, d % 100); }, k0 = Math.max(0, t - 60), per = (g(S.d[t]) - g(S.d[k0])) / Math.max(1, t - k0), z = new Date(g(S.d[t]) + Math.round((i - t) * per / 864e5) * 864e5);
+      return z.getUTCFullYear() * 1e4 + (z.getUTCMonth() + 1) * 100 + z.getUTCDate(); };
     var hz = p.hz.map(function (H) {
       var CU = H.test && H.test.viaB && H.curB ? H.curB : H.cur; H = Object.assign({}, H, { cur: CU, oos: H.test && H.test.viaB && H.oosB ? H.oosB : H.oos });
       var o = { k: H.cur ? H.cur.k : null, hz: H.id, hzFa: H.fa, H: H, test: H.test, F: [], base: null, agree: [], st: 'none', lvl: 'none' };
       var sc0 = H.scales.filter(function (s) { return s.k === o.k; })[0]; o.cyc = sc0 && sc0.iv.full ? { med: sc0.iv.full.med, q1: sc0.iv.full.q1, q3: sc0.iv.full.q3, cv: sc0.iv.full.cv } : null;
-      if (!H.cur) { o.stFa = STFA.none; o.lvFa = LVFA.none; return o; }
+      if (!H.cur) { o.ptp = ptpOf(S, H, t, cal, null); o.stFa = STFA.none; o.lvFa = LVFA.none; return o; }
       var k = H.cur.k, P = zigzag(S, k), Pk = known(P, t), last = Pk[Pk.length - 1], m = H.cur.m;
+      o.ptp = ptpOf(S, H, t, cal, P);
       var f = m === 'int' ? mInt(Pk, t) : m === 'fib' ? mFib(Pk, t) : m === 'agree' ? mAgree(Pk, t) : m === 'spec' ? mSpec(S, t, { W: p.W, pmin: H.pmin, pmax: Math.min(H.pmax, p.W / 2), sig: !opt.fast }) : m === 'acf' ? mAcf(Pk, t, acfPeriod(S, t, { W: p.W, pmin: H.pmin, pmax: Math.min(H.pmax, p.W / 2) })) : m === 'hil' ? mHil(S, t, { W: p.W, pmin: H.pmin, pmax: Math.min(H.pmax, p.W / 2) }) : mWav(S, t, { pmin: H.pmin, pmax: H.pmax });
       o.last = last ? { type: last.type, d: S.d[last.i], p: last.p, since: t - last.i } : null; o.leg = P.cur.dir === 1 ? 'up' : P.cur.dir === -1 ? 'down' : 'flat';
       if (!f) { o.stFa = 'روش منتخب امروز پنجره‌ای نمی‌دهد'; o.lvFa = LVFA.none; return o; }
@@ -418,21 +438,178 @@
   }
   /* compact verdict on the central record (tradeengine.centralBuild), from each asset's own stored profile (nothing is computed here) */
   function central(by, R0) {
-    var D = load(); if (!D) return 0; var zmap = (R0 && R0.zmap) || {}, SL = null, nOk = 0;
+    var D = load(); if (!D) return 0; var zmap = (R0 && R0.zmap) || {}, SL = null, nOk = 0, PL = ptpLog();
     Object.keys(by).forEach(function (k) { var r = by[k], x = null;
       if (r.cls === 'stock' || r.cls === 'fund') { var z = zmap[k]; if (z && z.R && z.R.X && z.R.X.n >= 300) x = { key: k, sym: r.sym, cls: r.cls, S: fromX(z.R.X) }; }
       else { SL = SL || seriesList(); var alt = k.replace(/^g:/, 'x:'); x = SL.filter(function (s) { return s.key === k || s.key === alt; })[0] || null; }
-      if (!x) return; var v = view(x, { D: D, fast: true }); if (!v.ok) return; var h = v.head;
+      if (!x) return; var v = view(x, { D: D, fast: true, keepS: true }); if (!v.ok) return; var h = v.head; try { ptpGrade(PL, v.S, v.key); ptpTrack(PL, v); } catch (e) { /* the record never blocks the verdict */ } v.S = undefined;
       r.cyc = { lvl: h.lvl, lvFa: h.lvFa, st: h.st, stFa: h.stFa, hz: h.hzFa, win: h.win || null, pr: h.pr || null, prX: h.prX || 0, conf: isF(h.conf) ? h.conf : null, sc: h.sc ? Math.round(h.sc.s) : null, m: h.base ? h.base.m : null,
-        valid: v.hz.filter(function (g) { return g.base && g.base.valid; }).map(function (g) { return g.hz + ':' + g.base.m; }) }; nOk++; });
+        valid: v.hz.filter(function (g) { return g.base && g.base.valid; }).map(function (g) { return g.hz + ':' + g.base.m; }),
+        pt: ptCompact(v) }; nOk++; });
+    if (PL.dirty) { PL.f = PL.f.slice(-4000); delete PL.dirty; try { U().store.set(PLOG, PL); } catch (e) { /* ignore */ } }
     return nOk;
   }
+  // the compact progress record that travels in the central record (and to the phone): one row per horizon with a progress reading
+  var R4 = function (x) { return isF(x) ? Math.round(x * 1e4) / 1e4 : null; };
+  function ptCompact(v) { var L = []; v.hz.forEach(function (h) { var o = h.ptp; if (!o) return; L.push({ hz: h.hz, k: o.k, dir: o.dir, st: o.state, fl: o.flags, sy: o.sync, tp: R4(o.tProg), pp: R4(o.pProg), tq: R4(o.tPct), pq: R4(o.pPct), el: o.el, n: o.nLeg,
+      td: o.tDebt != null ? o.tDebt : null, pd: R4(o.pDebt), tg: o.target, d0: o.d0, p0: o.p0, ext: o.ext, dx: o.dExt, cf: o.confirm, w: o.dates, pr: o.pr, prW: o.prW, dvP: R4(o.devP), dvT: R4(o.devT), by: o.beyond ? 1 : 0, ss: o.scaleSensitive ? 1 : 0,
+      tr: o.trend ? { t: R4(o.trend.tau), p: R4(o.trend.p) } : null, sel: o.sel, rec: o.rec ? { h: R4(o.rec.hitM), b: R4(o.rec.hitBw), n: o.rec.n, l: o.rec.disc } : null, tu: o.turn && o.turn.calibrated ? { M: R4(o.turn.major), m: R4(o.turn.minor), c: R4(o.turn.cont), n: o.turn.n } : null }); });
+    return L.length ? L : null; }
+  // compact form for the stored / published central record (the phone): positional arrays, prices to 5 significant digits, no benchmark
+  var PTK = ['hz', 'k', 'dir', 'st', 'fl', 'sy', 'tp', 'pp', 'tq', 'pq', 'el', 'n', 'td', 'pd', 'tg', 'd0', 'p0', 'ext', 'dx', 'cf', 'wm', 'we', 'wl', 'pr', 'pm', 'pe', 'pl', 'sel', 'tu', 'ss', 'tr', 'rc', 'by'];
+  var FLC = { normal: 'n', extended: 'x', contracting: 'c', lengthening: 'g', accelerating: 'a', decelerating: 'd', completing: 'p', invalidated: 'i' }, FLD = {}; Object.keys(FLC).forEach(function (k) { FLD[FLC[k]] = k; });
+  var S5 = function (x) { return isF(x) ? +x.toPrecision(5) : null; }, A5 = function (a) { return a ? a.map(S5) : null; }, R2 = function (x) { return isF(x) ? Math.round(x * 100) / 100 : null; };
+  function ptPack(L) { if (!L || !L.length) return null; return L.map(function (o) { var w = o.w || {};
+    return [o.hz, o.k, o.dir, FLC[o.st] || o.st, (o.fl || []).map(function (f) { return FLC[f] || f; }).join(''), o.sy[0], R2(o.tp), R2(o.pp), R2(o.tq), R2(o.pq), o.el, o.n, o.td, R2(o.pd), S5(o.tg), o.d0, S5(o.p0), S5(o.ext), o.dx, S5(o.cf), w.main || null, w.early || null, w.late || null,
+      A5(o.pr), A5(o.prW && o.prW.main), A5(o.prW && o.prW.early), A5(o.prW && o.prW.late), o.sel ? o.sel[0] : null, o.tu ? [R2(o.tu.M), R2(o.tu.m), R2(o.tu.c), o.tu.n] : null, o.ss, o.tr ? [R2(o.tr.t), R2(o.tr.p)] : null, o.rec ? [R2(o.rec.h), R2(o.rec.b), o.rec.n] : null, o.by]; }); }
+  function ptUnpack(P) { if (!P || !P.length) return null; if (!Array.isArray(P[0])) return P; var SYD = { a: 'ahead', b: 'behind', s: 'sync' }, SLD = { v: 'valid', w: 'worse', n: 'none', p: 'pending' };
+    return P.map(function (a) { var o = {}; PTK.forEach(function (k, i) { o[k] = a[i]; }); o.st = FLD[o.st] || o.st; o.fl = String(o.fl || '').split('').map(function (c) { return FLD[c] || c; }); o.sy = SYD[o.sy] || o.sy; o.sel = SLD[o.sel] || o.sel;
+      o.w = { main: o.wm, early: o.we, late: o.wl }; o.prW = { main: o.pm, early: o.pe, late: o.pl }; o.tu = o.tu ? { M: o.tu[0], m: o.tu[1], c: o.tu[2], n: o.tu[3] } : null; o.tr = o.tr ? { t: o.tr[0], p: o.tr[1] } : null; o.rec = o.rc ? { h: o.rc[0], b: o.rc[1], n: o.rc[2] } : null; return o; }); }
+  /* ---------- preregistered progress forecasts (directive 29 · 7): written when first issued for a leg, never edited, graded when the
+     leg's end is confirmed by this asset's own ZigZag; the same-width benchmark window is stored with each forecast ---------- */
+  function ptpLog() { var L = U() && U().store.get(PLOG, null); return L && L.v === 1 ? L : { v: 1, f: [] }; }
+  function ptpTrack(L, v) { (v.hz || []).forEach(function (h) { var o = h.ptp; if (!o || !o.dates || o.state === 'invalidated') return; var id = v.key + '|' + h.hz + '|' + o.k + '|' + o.d0;
+      if (L.f.some(function (r) { return r.id === id; })) return;
+      L.f.push({ id: id, at: Date.now(), key: v.key, sym: v.sym, cls: v.cls, hz: h.hz, k: o.k, d0: o.d0, p0: o.p0, dir: o.dir, d: v.d, px: v.px, el: o.el, st: o.state, sy: o.sync, tq: o.tPct, pq: o.pPct, sel: o.sel,
+        w: o.dates, pr: o.pr, prW: o.prW ? o.prW.main : null, tg: o.target, tu: o.turn && o.turn.calibrated ? { M: o.turn.major, m: o.turn.minor, c: o.turn.cont } : null }); L.dirty = 1; }); }
+  function ptpGrade(L, S, key) { if (!S) return; var open = L.f.filter(function (r) { return r.key === key && !r.res; }); if (!open.length) return; var n = S.n, idx = function (d) { for (var i = 0; i < n; i++) if (S.d[i] >= d) return i; return n; };
+    open.forEach(function (r) { var P = zigzag(S, r.k), toT = r.dir > 0 ? 'H' : 'L', e = P.filter(function (p) { return p.type === toT && S.d[p.i] > r.d0 && p.t < n; })[0];
+      if (!e) { var lt = r.w && r.w.late && r.w.late[1]; if (lt && idx(lt) + 30 < n) { r.res = { r: 'none', at: Date.now(), note: 'تا ۳۰ جلسه پس از پنجرهٔ دیر هم پایان این موج تأیید نشد' }; L.dirty = 1; } return; }
+      var de = S.d[e.i], inW = function (w) { return !!(w && de >= w[0] && de <= w[1]); }, iMed = r.w && r.w.med ? idx(r.w.med) : null, inP = function (pr) { return !!(pr && e.p >= pr[0] && e.p <= pr[1]); };
+      r.res = { r: inW(r.w.main) ? 'main' : inW(r.w.early) ? 'early' : inW(r.w.late) ? 'late' : 'out', at: Date.now(), end: de, endPx: e.p, bench: inW(r.w.bench), tErr: iMed != null ? e.i - iMed : null, pIn: inP(r.pr), pInW: inP(r.prW),
+        pErr: r.tg ? Math.abs(Math.log(e.p / r.tg)) : null, delay: e.t - e.i, falseDone: r.st === 'completing' && !inW(r.w.main) && !inW(r.w.early), tu: r.tu ? (e.i - idx(r.d) <= 10 ? 'major' : 'other') : null }; L.dirty = 1; }); }
+  function ptpStats() { var L = ptpLog(), G = L.f.filter(function (r) { return r.res && r.res.r !== 'none'; }), N = L.f.filter(function (r) { return r.res && r.res.r === 'none'; }).length;
+    var agg = function (A) { if (!A.length) return { n: 0 }; var m = function (f) { return A.filter(f).length / A.length; }, md = function (f) { return q(A.map(f).filter(isF), 0.5); };
+      return { n: A.length, main: m(function (r) { return r.res.r === 'main'; }), alt: m(function (r) { return r.res.r === 'early' || r.res.r === 'late'; }), bench: m(function (r) { return r.res.bench; }), tErr: md(function (r) { return r.res.tErr != null ? Math.abs(r.res.tErr) : null; }),
+        pIn: m(function (r) { return r.res.pIn; }), pErr: md(function (r) { return r.res.pErr; }), delay: md(function (r) { return r.res.delay; }), falseDone: A.filter(function (r) { return r.st === 'completing'; }).length ? A.filter(function (r) { return r.res.falseDone; }).length / A.filter(function (r) { return r.st === 'completing'; }).length : null }; };
+    var by = {}; G.forEach(function (r) { (by[r.hz] = by[r.hz] || []).push(r); });
+    return { all: agg(G), byHz: Object.keys(by).map(function (k) { return Object.assign({ hz: k }, agg(by[k])); }), open: L.f.filter(function (r) { return !r.res; }).length, noEnd: N, total: L.f.length, list: L.f.slice(-200).reverse() }; }
   /* depth and quality of each market's own data (the «why not valid» panel) */
   function dataQuality() { var D = load(); return seriesList().map(function (x) { var p = D && D.P[x.key]; if (!p) return { key: x.key, sym: x.sym, cls: x.cls, n: x.rows.length, note: 'محاسبه نشده' };
       var sc = {}; (p.hz || []).forEach(function (h) { sc[h.id] = h.scales.reduce(function (s, a) { return Math.max(s, a.nPiv); }, 0); });
       var note = !p.ok ? p.why : p.n < 1000 ? 'تاریخچهٔ کوتاه (' + p.n + ' جلسه)' : !(sc.l >= 12) ? 'نقاط عطف بلندمدت کم' : p.dropped > p.n * 0.05 ? 'جلسه‌های بی‌معاملهٔ زیاد' : 'کافی';
       return { key: x.key, sym: x.sym, cls: x.cls, n: p.n, from: p.from, to: p.to, dropped: p.dropped || 0, piv: sc, hl: !!p.hl, note: note }; }); }
+  /* =====================================================================
+   * PRICE–TIME PROGRESS OF THE CURRENT CYCLE (directive 29, 2026-11-26) — an upgrade of this engine, on ITS pivots, not a second model.
+   *
+   * The current leg runs from the last confirmed turn of the asset's chosen scale (k) toward the opposite turn. From the asset's OWN
+   * finished legs of the same direction, known at time t (causal):
+   *   time      elapsed sessions; time progress = elapsed ÷ median leg length; time percentile = share of past legs that were shorter
+   *   price     amplitude so far (log move from the leg start to the leg extreme); price progress = ÷ median amplitude; price percentile
+   *   sync      price percentile − time percentile > +0.25 → price ahead of schedule; < −0.25 → behind; else in step
+   *   windows   SURVIVAL-CONDITIONED: only the past legs that lasted at least as long as this one so far → main window (their 25–75 %),
+   *             early alternative (10–25 %), late alternative (75–90 %); a price range per window from the amplitudes of the past legs
+   *             whose length fell in that window (never below the extreme already reached)
+   *   debts     time debt = median of the conditioned remaining length (sessions); price debt = log distance from the price to the median
+   *             conditioned completion price, in the leg's direction (> 0: still to go; < 0: price already beyond it)
+   *   deviation price: (move − expected move on a straight path) ÷ dispersion of amplitudes; time: (elapsed − median) ÷ dispersion of lengths
+   *   states    invalidated (price back beyond the leg start: the leg's structure failed) · extended (elapsed ≥ 90th percentile of this
+   *             asset's leg lengths, ≥ 8 legs) · lengthening / contracting (Kendall trend of the last ≤ 16 full-cycle lengths, p < 0.10) ·
+   *             accelerating (leg speed ≥ 80th percentile) · decelerating (no new extreme for ≥ 30 % of the leg, ≥ 3 sessions) ·
+   *             completing (inside the main window AND the amplitude at least at its 25th percentile) · normal (none of these)
+   *   robustness the time percentile is recomputed on the neighbouring scales; when they disagree about «extended», the state is flagged
+   *             as sensitive to the choice of turning points (not a change in the market)
+   *   turns     temporary vs main turn vs continuation in the next 10 sessions: frequencies of this asset's own history in the same
+   *             (sync × time-zone) cell, estimated walk-forward; shown as probabilities ONLY when they beat the base rate out of
+   *             sample (Brier skill > 0), the cell has ≥ 30 cases and the history ≥ 200 — otherwise «not calibrated»
+   * Nothing here is a trade signal; the central verdict reads it as context (Hub.central.life).
+   * ===================================================================== */
+  var PTST = { normal: 'عادی', extended: 'طولانی‌تر از معمول', contracting: 'کوتاه‌شونده', lengthening: 'بلندشونده', accelerating: 'شتاب‌گیرنده', decelerating: 'کندشونده', completing: 'در محدودهٔ تکمیل', invalidated: 'باطل' };
+  var PTEN = { normal: 'Normal', extended: 'Extended', contracting: 'Contracting', lengthening: 'Lengthening', accelerating: 'Accelerating', decelerating: 'Decelerating', completing: 'Completing', invalidated: 'Invalidated' };
+  var SYFA = { ahead: 'قیمت جلوتر از زمان', behind: 'قیمت عقب‌تر از زمان', sync: 'قیمت و زمان هم‌گام' };
+  function ecdf(A, x) { if (!A.length) return null; var c = 0; for (var i = 0; i < A.length; i++) if (A[i] <= x) c++; return c / A.length; }
+  function erf(x) { var s = x < 0 ? -1 : 1; x = Math.abs(x); var t = 1 / (1 + 0.3275911 * x), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return s * y; }
+  function kendall(L) { var n = L.length; if (n < 8) return null; var S = 0; for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) S += Math.sign(L[j] - L[i]);
+    var v = n * (n - 1) * (2 * n + 5) / 18, z = (S - Math.sign(S)) / Math.sqrt(v), p = 2 * (1 - 0.5 * (1 + erf(Math.abs(z) / Math.SQRT2))); return { tau: S / (n * (n - 1) / 2), p: p, n: n }; }
+  // finished legs that END in a turn of type toType: lengths (sessions), log amplitudes, speeds
+  function legStats(Pk, toType) { var D = [], A = [], V = []; for (var j = 1; j < Pk.length; j++) if (Pk[j].type === toType) { var d = Pk[j].i - Pk[j - 1].i, a = Math.abs(Math.log(Pk[j].p / Pk[j - 1].p)); if (d > 0 && isF(a)) { D.push(d); A.push(a); V.push(a / d); } } return { D: D, A: A, V: V }; }
+  function fullLens(Pk) { var F = []; for (var j = 2; j < Pk.length; j++) if (Pk[j].type === Pk[j - 2].type) F.push(Pk[j].i - Pk[j - 2].i); return F; }
+  function ampBand(LS, lo, hi, ach) { var A = []; for (var j = 0; j < LS.D.length; j++) if (LS.D[j] >= lo && LS.D[j] <= hi) A.push(Math.max(ach, LS.A[j])); return A.length >= 3 ? [q(A, 0.25), q(A, 0.75)] : null; }
+  function hdi(A, mass) { var s = A.slice().sort(function (x, y) { return x - y; }), m = Math.max(1, Math.ceil(mass * s.length)) - 1, best = [s[0], s[s.length - 1]];
+    for (var i = 0; i + m < s.length; i++) if (s[i + m] - s[i] < best[1] - best[0]) best = [s[i], s[i + m]]; return best; }
+  function zoneOf(tPct) { return tPct < 0.25 ? 'pre' : tPct <= 0.75 ? 'main' : 'late'; }
+  /* the progress of the leg in progress at session t (core; no calibration). P: the scale's ZigZag; Pk: turns known at t */
+  function ptpCore(S, P, t, Pk) {
+    Pk = Pk || known(P, t); if (Pk.length < 10) return null; var last = Pk[Pk.length - 1], toType = last.type === 'L' ? 'H' : 'L', dir = toType === 'H' ? 1 : -1, LS = legStats(Pk, toType);
+    if (LS.D.length < 6) return null;
+    var i0 = last.i, p0 = last.p, el = t - i0, ext = p0, ie = i0; for (var i = i0; i <= t; i++) { var c = S.c[i]; if (dir > 0 ? c > ext : c < ext) { ext = c; ie = i; } }
+    var px = S.c[t], ach = Math.abs(Math.log(ext / p0)), now = dir * Math.log(px / p0), Dm = q(LS.D, 0.5), Am = q(LS.A, 0.5);
+    var tPct = ecdf(LS.D, el), pPct = ecdf(LS.A, ach), Dc = LS.D.filter(function (d) { return d >= el; }), Ac = LS.A.filter(function (a) { return a >= ach; });
+    var o = { dir: dir, toType: toType, i0: i0, p0: p0, el: el, ext: ext, ie: ie, px: px, ach: ach, now: now, nLeg: LS.D.length, Dm: Dm, Am: Am, tPct: tPct, pPct: pPct, tProg: el / Dm, pProg: Am > 0 ? ach / Am : null,
+      sync: pPct - tPct > 0.25 ? 'ahead' : pPct - tPct < -0.25 ? 'behind' : 'sync', zone: zoneOf(tPct), nC: Dc.length };
+    if (Dc.length >= 4) { var qq = function (p) { return i0 + Math.round(q(Dc, p)); }, hd = hdi(Dc.map(function (d) { return Math.max(d, el + 1); }), 0.5);
+      // main window = the NARROWEST span holding half of the conditioned lengths (the remaining-time distribution is right-skewed: a 25–75 %
+      // span skips the legs that end soon and lost to a same-width benchmark in the walk-forward test); the alternatives sit on either side
+      var ea = Math.max(t + 1, qq(0.1)), eb = i0 + hd[0] - 1, la = i0 + hd[1] + 1, lb = qq(0.9);
+      o.win = { main: [i0 + hd[0], i0 + hd[1]], early: eb >= ea ? [ea, eb] : null, late: lb >= la ? [la, lb] : null, med: Math.max(t + 1, qq(0.5)) };   // no alternative when it would be empty
+      var band = function (a, b) { var r = ampBand(LS, a - i0, b - i0, ach); return r ? r.map(function (x2) { return p0 * Math.exp(dir * x2); }).sort(function (x, y) { return x - y; }) : null; };
+      o.prW = { main: band(o.win.main[0], o.win.main[1]), early: o.win.early ? band(o.win.early[0], o.win.early[1]) : null, late: o.win.late ? band(o.win.late[0], o.win.late[1]) : null };
+      o.tDebt = Math.max(0, Math.round(q(Dc, 0.5) - el));
+      var wB = o.win.main[1] - o.win.main[0], bc = Math.max(t + 1, i0 + Math.round(Dm) - Math.round(wB / 2)); o.bw = [bc, bc + wB]; }   // the same-width benchmark, recorded with every forecast
+    else o.beyond = true;   // longer than (almost) every past leg of this asset: no survival-conditioned window
+    var Atar = Ac.length >= 4 ? q(Ac, 0.5) : Math.max(ach, Am); o.target = p0 * Math.exp(dir * Atar); o.pDebt = dir * Math.log(o.target / px);
+    o.pr = Ac.length >= 4 ? [q(Ac, 0.25), q(Ac, 0.75)].map(function (a) { return p0 * Math.exp(dir * a); }).sort(function (x, y) { return x - y; }) : null;
+    var sA = sd(LS.A) || Am || 1, sD = sd(LS.D) || Dm || 1; o.devP = (now - Am * Math.min(1, el / Dm)) / sA; o.devT = (el - Dm) / sD;
+    o.vPct = el >= 1 ? ecdf(LS.V, ach / el) : null; o.since = t - ie;
+    var kt = kendall(fullLens(Pk).slice(-16)); o.trend = kt;
+    var F = [], inval = dir > 0 ? px < p0 : px > p0;
+    if (inval) F.push('invalidated');
+    else { if (o.win && el >= q(LS.D, 0.25) && el <= q(LS.D, 0.9) && pPct >= 0.25) F.push('completing');
+      if (tPct >= 0.9 && LS.D.length >= 8) F.push('extended');
+      if (kt && kt.p < 0.1 && kt.tau > 0) F.push('lengthening'); if (kt && kt.p < 0.1 && kt.tau < 0) F.push('contracting');
+      if (o.vPct != null && o.vPct >= 0.8 && el >= 3) F.push('accelerating'); if (el >= 5 && o.since >= Math.max(3, 0.3 * el)) F.push('decelerating'); }
+    o.flags = F; o.state = F[0] || 'normal'; return o; }
+  /* walk-forward calibration of «temporary turn / main turn / continuation within 10 sessions» per (sync × time zone) cell, this asset only */
+  var PH = 10;
+  function ptpCalib(S, P, Psmall, start) {
+    var n = S.n, cnt = {}, tot = { major: 0, minor: 0, cont: 0, n: 0 }, pend = [], bM = 0, bB = 0, nE = 0, smallIdx = (Psmall || []).map(function (p) { return p; });
+    var nextOf = function (i) { for (var j = 0; j < P.length; j++) if (P[j].i > i) return P[j]; return null; };
+    var flush = function (s) { while (pend.length && pend[0].s + PH < s) { var x = pend.shift(), c = cnt[x.cell] = cnt[x.cell] || { major: 0, minor: 0, cont: 0, n: 0 }; c[x.y]++; c.n++; tot[x.y]++; tot.n++; } };
+    var prob = function (c, y) { return (c[y] + 1) / (c.n + 3); };
+    for (var s = start; s < n - PH; s += 3) { flush(s); var Pk = known(P, s); if (Pk.length < 10) continue; var o = ptpCore(S, P, s, Pk); if (!o || o.state === 'invalidated') continue;
+      var cell = o.sync + '|' + o.zone, nx = nextOf(o.i0), y;
+      if (nx && nx.type === o.toType && nx.i > s && nx.i <= s + PH) y = 'major';
+      else { var mi = false; for (var j = 0; j < smallIdx.length; j++) { var pp = smallIdx[j]; if (pp.i > s && pp.i <= s + PH && pp.type === o.toType) { mi = true; break; } if (pp.i > s + PH) break; } y = mi ? 'minor' : 'cont'; }
+      if (tot.n >= 60 && cnt[cell] && cnt[cell].n >= 10) { ['major', 'minor', 'cont'].forEach(function (k) { var pm = prob(cnt[cell], k), pb = (tot[k] + 1) / (tot.n + 3), yy = y === k ? 1 : 0; bM += (pm - yy) * (pm - yy); bB += (pb - yy) * (pb - yy); }); nE++; }
+      pend.push({ s: s, cell: cell, y: y }); }
+    flush(1e12);
+    var out = { n: tot.n, nEval: nE, skill: nE >= 50 && bB > 0 ? 1 - bM / bB : null, base: tot.n ? { major: tot.major / tot.n, minor: tot.minor / tot.n, cont: tot.cont / tot.n } : null, cells: {} };
+    Object.keys(cnt).forEach(function (k) { var c = cnt[k]; out.cells[k] = { n: c.n, major: prob(c, 'major'), minor: prob(c, 'minor'), cont: prob(c, 'cont') }; });
+    out.ok = out.skill != null && out.skill > 0 && tot.n >= 200; return out; }
+  // the neighbouring scales (robustness to the choice of turning points)
+  function ptpRobust(S, k, t) { var i = KG.indexOf(k), nb = [KG[i - 1], KG[i + 1]].filter(isF), r = [];
+    nb.forEach(function (k2) { var P2 = zigzag(S, k2), o2 = ptpCore(S, P2, t); if (o2) r.push({ k: k2, ext: o2.tPct >= 0.9, tPct: o2.tPct, dir: o2.dir }); }); return r; }
+  // the full view of one horizon: core + robustness + calibrated turn probabilities (from the stored profile)
+  function ptpView(S, P, k, t, cal, cal2) {
+    var o = ptpCore(S, P, t); if (!o) return null; var rb = ptpRobust(S, k, t), me = o.tPct >= 0.9;
+    o.robust = rb; o.scaleSensitive = rb.some(function (x) { return x.ext !== me || x.dir !== o.dir; });
+    var cell = o.sync + '|' + o.zone, c = cal && cal.cells ? cal.cells[cell] : null;
+    o.turn = cal && cal.ok && c && c.n >= 30 ? { major: c.major, minor: c.minor, cont: c.cont, n: c.n, skill: cal.skill, calibrated: true } : { calibrated: false, n: c ? c.n : 0, skill: cal ? cal.skill : null, why: !cal ? 'کالیبراسیون این دارایی هنوز محاسبه نشده' : !cal.ok ? 'در آزمون رو به جلو بهتر از نرخ پایه نبود' : 'نمونهٔ این حالت کمتر از ۳۰ مورد است' };
+    o.confirm = o.dir < 0 ? o.ext + k * S.atr[t] : o.ext - k * S.atr[t];   // a close beyond this confirms the turn at the leg extreme
+    o.stateFa = PTST[o.state]; o.stateEn = PTEN[o.state]; o.syncFa = SYFA[o.sync]; return o; }
+  /* historical walk-forward test of the progress model on one asset/scale (directive 29 · 7, 9): at the moment each leg start becomes known
+     and every 5 sessions inside the leg, the windows from past legs only, against the leg's actual end. Benchmark: the unconditioned window
+     (25–75 % of all past leg lengths, from the leg start). */
+  function ptpBacktest(S, P, start) {
+    var R = [], n = S.n;
+    for (var j = 1; j < P.length; j++) { var st = P[j - 1], en = P[j]; if (en.t >= n) continue;
+      for (var s = Math.max(st.t, start); s < en.i; s += 5) { var Pk = known(P, s); if (!Pk.length || Pk[Pk.length - 1].i !== st.i) continue; var o = ptpCore(S, P, s, Pk); if (!o || !o.win) continue;
+        var LS = legStats(Pk, o.toType), bm = [st.i + Math.round(q(LS.D, 0.25)), st.i + Math.round(q(LS.D, 0.75))], bmMed = st.i + Math.round(q(LS.D, 0.5)), med = o.win.med;
+        var inR = function (r) { return r && en.p >= r[0] && en.p <= r[1]; }, Abm = [q(LS.A, 0.25), q(LS.A, 0.75)].map(function (a) { return st.p * Math.exp(o.dir * a); }).sort(function (x, y) { return x - y; });
+        var wM0 = o.win.main[1] - o.win.main[0], bc = Math.max(s + 1, bmMed - Math.round(wM0 / 2));   // width-matched benchmark: same width, centred on the unconditioned median
+        R.push({ s: s, el: o.el, sync: o.sync, zone: o.zone, state: o.state, hitM: en.i >= o.win.main[0] && en.i <= o.win.main[1], hitB: en.i >= Math.max(s + 1, bm[0]) && en.i <= Math.max(s + 1, bm[1]),
+          hitBw: en.i >= bc && en.i <= bc + wM0, endIn: en.i - s, tProg: o.tProg, leg: st.i,
+          wM: o.win.main[1] - o.win.main[0] + 1, wB: Math.max(s + 1, bm[1]) - Math.max(s + 1, bm[0]) + 1, eM: Math.abs(en.i - med), eB: Math.abs(en.i - Math.max(s + 1, bmMed)),
+          inAlt: !!(o.win.early && en.i >= o.win.early[0] && en.i <= o.win.early[1]) || !!(o.win.late && en.i >= o.win.late[0] && en.i <= o.win.late[1]), late: en.i > o.win.main[1], early: en.i < o.win.main[0],
+          prM: inR(o.prW.main) || inR(o.pr), prB: inR(Abm), pErr: o.target ? Math.abs(Math.log(en.p / o.target)) : null, delay: en.t - en.i, ach: o.ach, Am: o.Am, el0: o.el, Dm: o.Dm, pPct: o.pPct, tPct: o.tPct, flags: o.flags.slice() }); } }
+    return R; }
+  function ptpSummary(R) { if (!R.length) return { n: 0 }; var m = function (f) { return R.reduce(function (s, r) { return s + (f(r) ? 1 : 0); }, 0) / R.length; }, md = function (f) { return q(R.map(f).filter(isF), 0.5); };
+    // the test counts each leg once (its samples are not independent): the leg's share of samples where the window beat the benchmark
+    var legs = {}; R.forEach(function (r) { var g = legs[r.leg] = legs[r.leg] || { w: 0, l: 0 }; if (r.hitM && !r.hitBw) g.w++; else if (!r.hitM && r.hitBw) g.l++; });
+    var both = Object.keys(legs).map(function (k) { return legs[k]; }).filter(function (g) { return g.w !== g.l; }), wins = both.filter(function (g) { return g.w > g.l; }).length;
+    return { n: R.length, hitM: m(function (r) { return r.hitM; }), hitB: m(function (r) { return r.hitB; }), hitBw: m(function (r) { return r.hitBw; }), disc: both.length, pCond: binomP(wins, both.length, 0.5), pBench: binomP(both.length - wins, both.length, 0.5), wM: md(function (r) { return r.wM; }), wB: md(function (r) { return r.wB; }), eM: md(function (r) { return r.eM; }), eB: md(function (r) { return r.eB; }),
+      prM: m(function (r) { return r.prM; }), prB: m(function (r) { return r.prB; }), pErr: md(function (r) { return r.pErr; }), delay: md(function (r) { return r.delay; }) }; }
   Hub.cycles = { VER: VER, KEY: KEY, LOG: LOG, HZ: HZ, KG: KG, MFA: MFA, STFA: STFA, LVFA: LVFA, profile: profile, refresh: refresh, load: load, cache: cache, correct: correct, crit: crit, setCrit: setCrit,
     view: view, all: all, central: central, track: track, grade: grade, dataQuality: dataQuality, syncLayer: syncLayer, assets: assets, stockRows: stockRows,
-    clean: clean, ser: ser, fromX: fromX, zigzag: zigzag, intervals: intervals, seriesList: seriesList, evalCfg: evalCfg, stats: stats, mSpec: mSpec, mWav: mWav, mInt: mInt, mFib: mFib, binomP: binomP };
+    clean: clean, ser: ser, fromX: fromX, zigzag: zigzag, known: known, ptpCore: ptpCore, ptpView: ptpView, ptpCalib: ptpCalib, ptpBacktest: ptpBacktest, ptpSummary: ptpSummary, ptpStats: ptpStats, addPtp: addPtp, needsPtp: needsPtp, PVER: PVER, ptCompact: ptCompact, ptPack: ptPack, ptUnpack: ptUnpack, ptpLog: ptpLog, PLOG: PLOG, kendall: kendall, PTST: PTST, PTEN: PTEN, SYFA: SYFA, intervals: intervals, seriesList: seriesList, evalCfg: evalCfg, stats: stats, mSpec: mSpec, mWav: mWav, mInt: mInt, mFib: mFib, binomP: binomP };
 })(typeof window !== 'undefined' ? window : globalThis);
