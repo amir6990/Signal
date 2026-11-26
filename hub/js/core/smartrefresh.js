@@ -100,7 +100,11 @@
     var learn = function () { try { var LR = Hub.learnRun, LS = LR && LR.load(), lc = LS && LS.cycles.length ? LS.cycles[LS.cycles.length - 1].at : 0; if (LR && !(U().lite && U().lite()) && Date.now() - lc > 20 * 36e5) {
       var lj = function () { return LR.run({ auto: true }).catch(function () { /* logged in the cycle */ }); };
       if (TU && TU.whenIdle) TU.whenIdle({ id: 'learn', title: 'در حال اجرای چرخهٔ روزانهٔ یادگیری', why: 'بازآموزی و آزمون رو به جلو پس از به‌روزرسانی کامل (روزی یک بار)', idle: 60000, run: lj }); else setTimeout(lj, 4000); } } catch (e) { /* optional */ } };
-    if (TU && TU.idleRun) { TU.idleRun('به‌روزرسانی کامل داده‌ها انجام شد', false, function (R) { evalAfter(R); }); learn(); return; }   // the engine first, then the learning cycle on its results
+    // directive 30: the asset cycle profiles and their model library are re-evaluated in quiet moments (40 ms slices; resumes until done)
+    var cyc = function () { var CY = Hub.cycles; if (!CY || !TU || !TU.whenIdle || (U().lite && U().lite())) return;
+      TU.whenIdle({ id: 'cyc', title: 'ارزیابی دوبارهٔ چرخه‌های زمانی و کتابخانهٔ مدل‌ها', why: 'بک‌تست رو به جلوی دارایی‌های تغییرکرده (بخش‌بخش؛ با کار شما متوقف می‌شود)', idle: 60000,
+        run: function () { return CY.refresh(null, { budget: 20000, stop: function () { return TU.idleFor && TU.idleFor() < 1500; } }).then(function (D) { if (D && D.pending > 0) setTimeout(cyc, 1000); return D; }); } }); };
+    if (TU && TU.idleRun) { TU.idleRun('به‌روزرسانی کامل داده‌ها انجام شد', false, function (R) { evalAfter(R); }); learn(); cyc(); return; }   // the engine first, then the learning cycle on its results
     evalAfter(TU && TU.engineNow ? TU.engineNow(true) : null); learn();
   }
   function evalAfter(R) {

@@ -29,7 +29,8 @@
 (function (root) {
   'use strict';
   var Hub = root.Hub = root.Hub || {};
-  var KEY = 'hub.cycprof.v1', LOG = 'hub.cyclog.v1', PLOG = 'hub.ptplog.v1', CRIT = 'hub.cycles.crit', VER = 'p2', PVER = 1;   // PVER: the price–time progress layer (2026-11-26), added to existing profiles without recomputing them
+  var KEY = 'hub.cycprof.v1', LOG = 'hub.cyclog.v1', PLOG = 'hub.ptplog.v1', CRIT = 'hub.cycles.crit', VER = 'p2', PVER = 1, XVER = 1, LIB = 'hub.cyclib.v1';   // XVER: the extended backtest record (directive 30), recomputed in the background
+    // PVER: the price–time progress layer (2026-11-26), added to existing profiles without recomputing them
   var HZ = [{ id: 's', fa: 'کوتاه‌مدت', lo: 0, hi: 40, pmin: 8, pmax: 40 }, { id: 'm', fa: 'میان‌مدت', lo: 40, hi: 120, pmin: 40, pmax: 120 }, { id: 'l', fa: 'بلندمدت', lo: 120, hi: 1e9, pmin: 120, pmax: 400 }];
   var KG = [1.5, 2, 3, 4, 6, 8, 12], STRIDE = 5, BLOCK = 60, TRAIL = 750, MINRES = 8;
   var MFA = { int: 'فاصلهٔ نقاط عطف', fib: 'فیبوناچی زمانی', agree: 'هم‌پوشانی فاصلهٔ نقاط عطف و فیبوناچی', spec: 'تحلیل طیفی (فوریه، پریودوگرام)', wav: 'موجک (برازش محلی مورله)', acf: 'خودهمبستگی (دورهٔ ACF با لنگر نقطهٔ عطف)', hil: 'تبدیل هیلبرت (فاز لحظه‌ای سیگنال باندگذر)' };
@@ -200,11 +201,42 @@
     var pv = { L: [], H: [] }, cnt = { L: new Int32Array(n + 1), H: new Int32Array(n + 1) }; P.forEach(function (p) { pv[p.type].push(p); });
     ['L', 'H'].forEach(function (ty) { var c = cnt[ty], mk = new Uint8Array(n); pv[ty].forEach(function (p) { mk[p.i] = 1; }); for (var i = 0; i < n; i++) c[i + 1] = c[i] + mk[i]; });
     var maxOff = 0; F.forEach(function (f) { maxOff = Math.max(maxOff, f.b - f.t); });
+    var RG = regimes(S);
     F.forEach(function (f) { var c = cnt[f.type], has = function (a, b) { return c[Math.min(n, b + 1)] - c[Math.max(0, Math.min(n, a))] > 0; };
-      f.hit = has(f.a, f.b); if (f.hit) { var p = pv[f.type].filter(function (x) { return x.i >= f.a && x.i <= f.b; })[0]; f.ti = p.i; f.res = Math.max(f.b, p.t); } else f.res = f.b + 20;
+      f.rg = RG[f.t]; if (!('pr' in f)) f.pr = prRange(known(P, f.t), f.type);   // the price range is fixed at issue, from turns known then
+      f.hit = has(f.a, f.b); if (f.hit) { var p = pv[f.type].filter(function (x) { return x.i >= f.a && x.i <= f.b; })[0]; f.ti = p.i; f.res = Math.max(f.b, p.t); f.dl = p.t - p.i;
+        if (f.pr) { f.pin = p.p >= f.pr[0] && p.p <= f.pr[1]; f.pe = Math.abs(Math.log(p.p / Math.sqrt(f.pr[0] * f.pr[1]))); } } else f.res = f.b + 20;
       var wd = f.b - f.a, ok = 0, tot = 0; for (var o = 1; o + wd <= maxOff && f.t + o + wd < n; o++) { tot++; if (has(f.t + o, f.t + o + wd)) ok++; } f.p0 = tot ? ok / tot : 0; });
     return F;
   }
+  /* ---------- directive 30: what a backtest must show beyond the hit rate ---------- */
+  // market regime at each session, from data up to that session: trend = 120-session return in units of its own volatility; vol = 60 vs 250
+  function regimes(S) { if (S._rg) return S._rg; var n = S.n, lr = [0], R = new Array(n); for (var i = 1; i < n; i++) lr.push(Math.log(S.c[i] / S.c[i - 1]));
+    var c1 = [0], c2 = [0]; for (var j = 0; j < n; j++) { c1.push(c1[j] + lr[j]); c2.push(c2[j] + lr[j] * lr[j]); }
+    var sdW = function (e, w) { var a = Math.max(1, e - w + 1), m = e - a + 1; if (m < 20) return null; var mu = (c1[e + 1] - c1[a]) / m, v = (c2[e + 1] - c2[a]) / m - mu * mu; return Math.sqrt(Math.max(v, 0)); };
+    for (var t = 0; t < n; t++) { var s250 = sdW(t, 250), s60 = sdW(t, 60), tr = null, vo = null;
+      if (t >= 120 && s250) { var z = Math.log(S.c[t] / S.c[t - 120]) / (s250 * Math.sqrt(120)); tr = z > 1 ? 'bull' : z < -1 ? 'bear' : 'flat'; }
+      if (s60 && s250) vo = s60 / s250 > 1.25 ? 'hiVol' : s60 / s250 < 0.8 ? 'loVol' : 'midVol'; R[t] = [tr, vo]; }
+    return (S._rg = R); }
+  // the price range of the next turn of a type, from the turns known at issue: ratio of that turn to the last turn, as seen in the past
+  function prRange(Pk, type) { if (Pk.length < 6) return null; var last = Pk[Pk.length - 1], Rr = [];
+    for (var j = 1; j < Pk.length; j++) { if (Pk[j].type !== type) continue; var prv = null; for (var i = j - 1; i >= 0; i--) if (Pk[i].type === last.type) { prv = Pk[i]; break; } if (prv && prv.p > 0) Rr.push(Pk[j].p / prv.p); }
+    if (Rr.length < 4) return null; return [last.p * q(Rr, 0.25), last.p * q(Rr, 0.75)].sort(function (x, y) { return x - y; }); }
+  var RGFA = { bull: 'بازار صعودی', bear: 'بازار نزولی', flat: 'بازار خنثی', hiVol: 'پرنوسان', loVol: 'کم‌نوسان', midVol: 'نوسان عادی' };
+  // the extended record of a set of OUT-OF-SAMPLE forecasts: periods, regimes, missed turns, delay, price error
+  function statsX(F, S, P, from, to) { if (!F || F.length < 8) return null; var G = F.slice().sort(function (a, b) { return a.t - b.t; }), sk = function (A) { if (A.length < 5) return null; var h = 0, p0 = 0; A.forEach(function (f) { h += f.hit ? 1 : 0; p0 += f.p0; }); return { n: A.length, prec: h / A.length, p0: p0 / A.length, skill: (h - p0) / A.length }; };
+    var th = [0, 1, 2].map(function (i) { return sk(G.slice(Math.floor(i * G.length / 3), Math.floor((i + 1) * G.length / 3))); });
+    var rg = {}; ['bull', 'bear', 'flat', 'hiVol', 'loVol', 'midVol'].forEach(function (k) { var A = G.filter(function (f) { return f.rg && (f.rg[0] === k || f.rg[1] === k); }); rg[k] = sk(A); });
+    var H = G.filter(function (f) { return f.hit; }), wP = G.filter(function (f) { return f.pr; }), hP = H.filter(function (f) { return f.pr; });
+    // missed turns: turns of the reference scale inside the evaluated span that no forecast window of the same type covered
+    var miss = null; if (P && P.length) { var span = P.filter(function (p) { return p.i >= from && p.i <= to; }), cov = function (p) { for (var i = 0; i < G.length; i++) { var f = G[i]; if (f.type === p.type && p.i >= f.a && p.i <= f.b && f.t < p.i) return true; } return false; };
+      if (span.length) { var mN = span.filter(function (p) { return !cov(p); }).length; miss = { n: span.length, missed: mN, rate: mN / span.length }; } }
+    return { thirds: th, stable: th.filter(function (x) { return x && x.skill > 0; }).length, rg: rg, fpr: 1 - H.length / G.length, miss: miss, delay: H.length ? q(H.map(function (f) { return f.dl; }).filter(isF), 0.5) : null,
+      prIn: hP.length ? hP.filter(function (f) { return f.pin; }).length / hP.length : null, prErr: hP.length ? q(hP.map(function (f) { return f.pe; }).filter(isF), 0.5) : null, prCov: wP.length / G.length, strict: G.filter(function (f) { return f.a > f.t; }).length / G.length }; }
+  // agreement between two configurations on the sessions both issued a forecast (φ of their hits): methods on the same turns are not independent evidence
+  function phi(F1, F2) { var m = {}; F1.forEach(function (f) { m[f.t + f.type] = f.hit ? 1 : 0; }); var a = 0, b = 0, c = 0, d = 0, nn = 0; F2.forEach(function (f) { var x = m[f.t + f.type]; if (x == null) return; nn++; var y = f.hit ? 1 : 0; if (x && y) a++; else if (x) b++; else if (y) c++; else d++; });
+    if (nn < 10) return null; var den = Math.sqrt((a + b) * (c + d) * (a + c) * (b + d)); return den ? { phi: (a * d - b * c) / den, n: nn } : null; }
+  var R3 = function (x) { return isF(x) ? Math.round(x * 1e3) / 1e3 : x; };
   function stats(F, S) {
     if (F.length < 8) return { n: F.length };
     var hit = 0, p0 = 0, err = [], dOk = 0, dN = 0; F.forEach(function (f) { if (f.hit) { hit++; err.push(Math.abs(f.ti - (f.a + f.b) / 2)); } p0 += f.p0; var e2 = Math.min(S.n - 1, f.b + 10); if (e2 > f.a) { dN++; if ((S.c[e2] > S.c[f.a]) === (f.type === 'L')) dOk++; } });
@@ -219,7 +251,7 @@
 
   /* ---------- the asset-specific cycle profile ---------- */
   function profile(x) {
-    var S = x.S || ser(x.rows), n = S.n, base = { key: x.key, sym: x.sym, cls: x.cls, v: VER, at: Date.now(), raw: x.raw || n, n: n, last: S.d[n - 1], from: S.d[0], to: S.d[n - 1], dropped: S.dropped || 0 };
+    var S = x.S || ser(x.rows), n = S.n, base = { key: x.key, sym: x.sym, cls: x.cls, v: VER, xv: XVER, at: Date.now(), raw: x.raw || n, n: n, last: S.d[n - 1], from: S.d[0], to: S.d[n - 1], dropped: S.dropped || 0 };
     if (n < 400) return Object.assign(base, { ok: false, why: 'تاریخچهٔ معامله‌شده کمتر از ۴۰۰ جلسه' });
     var start = Math.max(150, Math.floor(n * 0.4)), W = winOf(n), hl = 0; for (var i = 0; i < n; i++) if (S.h[i] > S.l[i]) hl++;
     var scales = KG.map(function (k) { var P = zigzag(S, k); if (P.length < 10) return null; var iv = intervals(P); return iv.full ? { k: k, P: P, nPiv: P.length, iv: iv, C: iv.full.med } : null; }).filter(Boolean);
@@ -232,7 +264,7 @@
         var cA = {}, cH = {}, gA = function (t) { return t in cA ? cA[t] : (cA[t] = acfPeriod(S, t, oS)); }, gH = function (t) { return t in cH ? cH[t] : (cH[t] = mHil(S, t, oS)); };
         sc.forEach(function (s) { cf.push({ id: 'spec@' + s.k, m: 'spec', k: s.k, P: s.P, gen: gS }); cf.push({ id: 'wav@' + s.k, m: 'wav', k: s.k, P: s.P, gen: gW });
           cf.push({ id: 'acf@' + s.k, m: 'acf', k: s.k, P: s.P, gen: function (t) { return mAcf(known(s.P, t), t, gA(t)); } }); cf.push({ id: 'hil@' + s.k, m: 'hil', k: s.k, P: s.P, gen: gH }); }); }
-      cf.forEach(function (c) { c.F = evalCfg(S, c.P, c.gen, start); c.st = stats(c.F, S); });
+      cf.forEach(function (c) { c.F = evalCfg(S, c.P, c.gen, start); c.F.forEach(function (f) { f.k = c.k; f.cid = c.id; }); c.st = stats(c.F, S); });
       // nested walk-forward: the choice made at each block is scored only on the block after it
       var oos = [], hist = [], prev = null; for (var tau = start + 120; tau < n - 15; tau += BLOCK) { var b = choose(cf, tau), id = b ? b.c.id : null; if (id !== prev) hist.push({ d: S.d[tau], id: id }); prev = id; if (b) b.c.F.forEach(function (f) { if (f.t >= tau && f.t < tau + BLOCK) oos.push(f); }); }
       var cur = choose(cf, n - 1);
@@ -242,14 +274,30 @@
       for (var tau2 = start + 120; tau2 < n - 15; tau2 += BLOCK) { var cps = changePts(lr.slice(0, tau2), 60), cp = cps.length ? cps[cps.length - 1] + 1 : 0, from = Math.max(cp, tau2 - TRAIL);
         var bB = null; cf.forEach(function (c) { var R = c.F.filter(function (f) { return f.res <= tau2 && f.t >= from; }); if (R.length < MINRES) return; var sc2 = 0; R.forEach(function (f) { sc2 += (f.hit ? 1 : 0) - f.p0; }); sc2 /= R.length; if (sc2 > 0 && (!bB || sc2 > bB.sc)) bB = { c: c, sc: sc2 }; });
         if (bB) bB.c.F.forEach(function (f) { if (f.t >= tau2 && f.t < tau2 + BLOCK) oosB.push(f); }); }
+      var span0 = start + 120, refK = function (A) { var c = {}; A.forEach(function (f) { if (isF(f.k)) c[f.k] = (c[f.k] || 0) + 1; }); var best = null; Object.keys(c).forEach(function (k) { if (!best || c[k] > c[best]) best = k; }); return best ? +best : null; };
+      var kA = refK(oos) || (sc[0] && sc[0].k), PA = kA ? (sc.filter(function (x2) { return x2.k === kA; })[0] || {}).P : null;
+      // policy C (directive 30 · benchmark): the same nested choice restricted to the simplest method (turning-point intervals), scale chosen
+      // on the trailing record — fewer candidates, less selection noise; it enters the corrected family like A and B
+      var cfI = cf.filter(function (c) { return c.m === 'int'; }), oosC = []; for (var tau3 = span0; tau3 < n - 15; tau3 += BLOCK) { var bC = choose(cfI, tau3); if (bC) bC.c.F.forEach(function (f) { if (f.t >= tau3 && f.t < tau3 + BLOCK) oosC.push(f); }); }
+      var curC = choose(cfI, n - 1), stC = stats(oosC, S);
+      var xA = statsX(oos, S, PA, span0, n - 16), xB = statsX(oosB, S, PA, span0, n - 16), xC = statsX(oosC, S, PA, span0, n - 16);
+      // the simplest benchmark: turning-point intervals on the same scale, on the same out-of-sample span
+      var bmC = cf.filter(function (c) { return c.m === 'int' && c.k === kA; })[0], bm = bmC ? stats(bmC.F.filter(function (f) { return f.t >= span0; }), S) : null;
+      // post-hoc optimism: the best configuration chosen on ALL its forecasts (what a chart-fitter would pick) vs the honest nested record
+      var bestIS = null; cf.forEach(function (c) { if (c.st && c.st.n >= 15 && isF(c.st.skill) && (!bestIS || c.st.skill > bestIS.skill)) bestIS = { id: c.id, skill: c.st.skill, prec: c.st.prec, n: c.st.n }; });
+      // dependency between the top configurations (shared turns, shared price window)
+      var top = cf.filter(function (c) { return c.st && c.st.n >= 15 && c.st.skill > 0; }).sort(function (a2, b2) { return b2.st.skill - a2.st.skill; }).slice(0, 4), dep = [];
+      for (var i1 = 0; i1 < top.length; i1++) for (var i2 = i1 + 1; i2 < top.length; i2++) { var ph = phi(top[i1].F, top[i2].F); if (ph) dep.push({ a: top[i1].id, b: top[i2].id, phi: ph.phi, n: ph.n }); }
       var stA = stats(oos, S), stB = stats(oosB, S), cpsN = changePts(lr, 60), fromN = Math.max(cpsN.length ? cpsN[cpsN.length - 1] + 1 : 0, n - 1 - TRAIL), curB = null;
       cf.forEach(function (c) { var R = c.F.filter(function (f) { return f.res <= n - 1 && f.t >= fromN; }); if (R.length < MINRES) return; var sc2 = 0; R.forEach(function (f) { sc2 += (f.hit ? 1 : 0) - f.p0; }); sc2 /= R.length; if (sc2 > 0 && (!curB || sc2 > curB.sc)) curB = { c: c, sc: sc2, nR: R.length }; });
       // directive 29: the price–time progress layer on this horizon's scale — its own walk-forward record against a same-width benchmark
       // (decides whether its windows are shown as validated) and its own calibration of temporary / main turn / continuation
       var kP = cur ? cur.c.k : sc.length ? sc.slice().sort(function (a2, b2) { return b2.nPiv - a2.nPiv; })[0].k : null, ptp = kP ? ptpProfile(S, kP, start, (sc.filter(function (x2) { return x2.k === kP; })[0] || {}).P) : null;
-      return { id: H.id, fa: H.fa, pmin: H.pmin, pmax: H.pmax, oosB: stB, ptp: ptp, curB: curB ? { id: curB.c.id, m: curB.c.m, k: curB.c.k, sc: curB.sc, nR: curB.nR } : null, pow: stA.ne ? power(stA.ne, stA.p0) : null,
+      return { id: H.id, fa: H.fa, pmin: H.pmin, pmax: H.pmax, oosB: stB, oosC: stC, curC: curC ? { id: curC.c.id, m: curC.c.m, k: curC.c.k, sc: curC.sc, nR: curC.nR } : null, ptp: ptp, x: xA, xB: xB, xC: xC, bm: bm ? { id: bmC.id, n: bm.n, prec: bm.prec, p0: bm.p0, skill: bm.skill, p: bm.p } : null, is: bestIS, dep: dep, curB: curB ? { id: curB.c.id, m: curB.c.m, k: curB.c.k, sc: curB.sc, nR: curB.nR } : null, pow: stA.ne ? power(stA.ne, stA.p0) : null,
         scales: sc.map(function (s) { return { k: s.k, nPiv: s.nPiv, C: s.C, iv: s.iv }; }),
-        cfg: cf.map(function (c) { var t2 = c.st; return { id: c.id, m: c.m, k: c.k, n: t2.n, ne: t2.ne, prec: t2.prec, p0: t2.p0, skill: t2.skill, p: t2.p }; }),
+        cfg: cf.map(function (c) { var t2 = c.st, H2 = (c.F || []).filter(function (f) { return f.hit; }), wh = (c.F || []).filter(function (f) { return f.t >= span0; }), so = wh.length >= 8 ? stats(wh, S) : null;
+          return { id: c.id, m: c.m, k: c.k, n: t2.n, ne: t2.ne, prec: R3(t2.prec), p0: R3(t2.p0), skill: R3(t2.skill), p: R3(t2.p), err: t2.err, dl: H2.length ? q(H2.map(function (f) { return f.dl; }).filter(isF), 0.5) : null,
+            prIn: H2.filter(function (f) { return f.pr; }).length ? R3(H2.filter(function (f) { return f.pin; }).length / H2.filter(function (f) { return f.pr; }).length) : null, late: so ? { n: so.n, skill: R3(so.skill), prec: R3(so.prec) } : null }; }),
         oos: stA, nCfg: cf.length, hist: hist.slice(-12), cur: cur ? { id: cur.c.id, m: cur.c.m, k: cur.c.k, sc: cur.sc, nR: cur.nR } : null };
     });
     // several cycles at once (descriptive): the strongest peaks of the asset's own spectrum on its last W sessions
@@ -275,8 +323,8 @@
   function correct(D) {
     // every asset × horizon carries two out-of-sample records (policy A: trailing 750 sessions; policy B: since the last change point);
     // both enter the family, so testing two policies is paid for in the correction
-    var fam = {}; Object.keys(D.P).forEach(function (k) { var p = D.P[k]; if (!p.ok) return; p.hz.forEach(function (h) { h.test = null; h.testB = null;
-      [['A', h.oos], ['B', h.oosB]].forEach(function (q2) { var o = q2[1]; if (!o || !(o.n >= 8) || !isF(o.p)) return; var f = famOf(p.cls); (fam[f] = fam[f] || []).push({ p: p, h: h, pol: q2[0], o: o }); }); }); });
+    var fam = {}; Object.keys(D.P).forEach(function (k) { var p = D.P[k]; if (!p.ok) return; p.hz.forEach(function (h) { h.test = null; h.testB = null; h.testC = null;
+      [['A', h.oos], ['B', h.oosB], ['C', h.oosC]].forEach(function (q2) { var o = q2[1]; if (!o || !(o.n >= 8) || !isF(o.p)) return; var f = famOf(p.cls); (fam[f] = fam[f] || []).push({ p: p, h: h, pol: q2[0], o: o }); }); }); });
     var cr = crit(); D.fam = {};
     Object.keys(fam).forEach(function (f) { var L = fam[f].sort(function (a, b) { return a.o.p - b.o.p; }), N = L.length, mx = 0, mn = 1; D.fam[f] = N;
       L.forEach(function (x, j) { mx = Math.max(mx, Math.min(1, (N - j) * x.o.p)); x.pH = mx; });
@@ -284,9 +332,12 @@
       L.forEach(function (x) { var o = x.o, eff = o.skill > 0 && o.lift >= 1.15 && o.ne >= 15, vH = eff && x.pH < 0.05, vF = eff && x.pB < 0.05, d = o.prec - o.p0, z = 3.5;
         var T = { pol: x.pol, p: o.p, pH: x.pH, pB: x.pB, vH: vH, vF: vF, valid: cr === 'fdr' ? vF : vH, fam: f, N: N,
           why: vH ? 'valid' : vF ? 'fdr' : !(o.skill > 0) || !(o.lift >= 1.05) ? 'noskill' : o.lift < 1.15 ? 'small' : o.ne < 15 ? 'thin' : 'power', neNeed: d > 0 ? Math.ceil(z * z * o.p0 * (1 - o.p0) / (d * d)) : null };
-        if (x.pol === 'A') x.h.test = T; else x.h.testB = T; }); });
+        x.h['test' + (x.pol === 'A' ? '' : x.pol)] = T; }); });
     // the horizon is valid if either policy passes after correction; the record says which one
-    Object.keys(D.P).forEach(function (k) { var p = D.P[k]; if (!p.ok) return; p.hz.forEach(function (h) { var A = h.test, B = h.testB; if (!A && B) { h.test = Object.assign({}, B); return; } if (A && B && !A.valid && B.valid) { h.test = Object.assign({}, B, { viaB: true }); } }); });
+    // (when several policies pass, the one with the larger out-of-sample skill; all three were paid for in the correction)
+    Object.keys(D.P).forEach(function (k) { var p = D.P[k]; if (!p.ok) return; p.hz.forEach(function (h) { h.testA = h.test; var L = [['A', h.test, h.oos], ['B', h.testB, h.oosB], ['C', h.testC, h.oosC]].filter(function (z) { return z[1]; });
+      if (!L.length) return; var V = L.filter(function (z) { return z[1].valid; }), pick = (V.length ? V : L).sort(function (a, b) { return (b[2].skill || 0) - (a[2].skill || 0); })[0];
+      if (!V.length) pick = L[0]; h.test = Object.assign({}, pick[1], { via: pick[0], viaB: pick[0] === 'B' }); }); });
     return D;
   }
   function load() { var D = U() && U().store.get(KEY, null); return D && D.v === VER ? D : null; }
@@ -307,14 +358,14 @@
      a week old, or a new engine version. Corrections and the cross-market layer are recomputed at the end. */
   function refresh(progress, opt) {
     opt = opt || {}; var D = load() || { v: VER, P: {} }, A = assets(), now = Date.now();
-    var todo = A.filter(function (a) { var p = D.P[a.key]; return opt.force || !p || p.v !== VER || (p.last !== a.last && (a.raw - p.raw >= 5 || now - p.at > 7 * 864e5)) || now - p.at > 14 * 864e5 || needsPtp(p); }).sort(function (a, b) { return a.pri - b.pri; });
+    var todo = A.filter(function (a) { var p = D.P[a.key]; return opt.force || !p || p.v !== VER || (p.last !== a.last && (a.raw - p.raw >= 5 || now - p.at > 7 * 864e5)) || now - p.at > 14 * 864e5 || needsPtp(p) || p.xv !== XVER; }).sort(function (a, b) { return a.pri - b.pri; });
     var i = 0, t0 = Date.now(), budget = opt.budget || Infinity;
     return new Promise(function (res) {
       var step = function () { var t1 = Date.now(); while (i < todo.length && Date.now() - t1 < 40) { var a = todo[i++]; try { var x = a.px ? { key: a.key, sym: a.sym, cls: a.cls, rows: stockRows(a.px), raw: a.raw } : a, p0 = D.P[a.key];
-          var fresh = p0 && p0.v === VER && !opt.force && !(p0.last !== a.last && (a.raw - p0.raw >= 5 || now - p0.at > 7 * 864e5)) && now - p0.at <= 14 * 864e5; D.P[a.key] = fresh ? addPtp(p0, x) : profile(x); } catch (e) { D.P[a.key] = { key: a.key, sym: a.sym, cls: a.cls, v: VER, at: Date.now(), raw: a.raw, last: a.last, ok: false, why: 'خطای محاسبه: ' + e.message }; } }
+          var fresh = p0 && p0.v === VER && p0.xv === XVER && !opt.force && !(p0.last !== a.last && (a.raw - p0.raw >= 5 || now - p0.at > 7 * 864e5)) && now - p0.at <= 14 * 864e5; D.P[a.key] = fresh ? addPtp(p0, x) : profile(x); } catch (e) { D.P[a.key] = { key: a.key, sym: a.sym, cls: a.cls, v: VER, at: Date.now(), raw: a.raw, last: a.last, ok: false, why: 'خطای محاسبه: ' + e.message }; } }
         if (progress) progress(i, todo.length, A.length);
-        if (i < todo.length && Date.now() - t0 < budget) return setTimeout(step, 0);
-        correct(D); try { D.sync = syncLayer(D); } catch (e) { D.sync = { err: e.message }; } D.at = Date.now(); D.pending = todo.length - i; D.total = A.length; save(D); res(D); };
+        if (i < todo.length && Date.now() - t0 < budget && !(opt.stop && opt.stop())) return setTimeout(step, 0);
+        correct(D); try { D.sync = syncLayer(D); } catch (e) { D.sync = { err: e.message }; } try { libBuild(D); } catch (e) { /* the library never blocks the profiles */ } D.at = Date.now(); D.pending = todo.length - i; D.total = A.length; save(D); res(D); };
       step(); });
   }
   function cache() { return load(); }
@@ -339,6 +390,72 @@
   }
   function pairQ(D, a, b) { var L = D && D.sync && D.sync.pairs || []; for (var i = 0; i < L.length; i++) if (L[i].a === a && L[i].b === b || L[i].a === b && L[i].b === a) return L[i]; return null; }
 
+
+  /* ---------- DIRECTIVE 30: the library of cycle models per asset × horizon ----------
+     A model here = the configuration (method @ ZigZag scale) the walk-forward policy uses now on that asset and horizon. Its status is decided
+     ONLY by out-of-sample evidence: the nested walk-forward record (corrected for the family of tests), its stability over the three periods
+     of that record, its live forecasts graded after their windows, and a same-scale benchmark. Fitting history (in-sample skill) never
+     makes a model primary; it is shown beside the honest record as the optimism gap. */
+  var LSTFA = { primary: 'اصلی', trial: 'آزمایشی', monitor: 'تحت پایش', weak: 'تضعیف‌شده', rejected: 'مردود', none: 'فاقد مدل تأییدشده', pending: 'در انتظار ارزیابی کامل' };
+  var LSTW = { primary: 'معتبر در آزمون خارج از نمونه (پس از اصلاح آزمون چندگانه) و پایدار در دست‌کم ۲ دوره از ۳ دوره',
+    trial: 'مهارت مثبت و معنی‌دار پیش از اصلاح، ولی پس از اصلاح آزمون چندگانه یا در پایداری بین دوره‌ها رد شده',
+    monitor: 'معتبر بوده ولی در دورهٔ آخر مهارت نداشته یا پیش‌بینی‌های زندهٔ ثبت‌شده‌اش کمتر از پایهٔ تصادفی درست بوده‌اند',
+    weak: 'پیش‌بینی‌های زندهٔ ثبت‌شده به‌طور معنی‌دار بدتر از سابقهٔ بک‌تست بوده‌اند (احتمال تصادف < ۵٪)',
+    rejected: 'در آزمون خارج از نمونه مهارتی بیش از پایهٔ تصادفی نداشته است', none: 'تعداد پیش‌بینی خارج از نمونه برای داوری کافی نیست', pending: 'سابقهٔ کامل بک‌تست این دارایی هنوز در پس‌زمینه محاسبه نشده' };
+  // the record of the policy the corrected test settled on (A: trailing window · B: since the last change point · C: intervals method only)
+  function polOf(H) { var v = H.test && H.test.via || (H.test && H.test.viaB ? 'B' : 'A'), sfx = v === 'A' ? '' : v;
+    return { via: v, oos: H['oos' + sfx] || H.oos, x: H['x' + sfx] || (v === 'A' ? H.x : null), cur: v === 'A' ? H.cur : H['cur' + v] || null }; }
+  function libLoad() { var L = U() && U().store.get(LIB, null); return L && L.v === 1 ? L : null; }
+  function liveOf() { var L = U() && U().store.get(LOG, null), by = {}; if (!L) return by;
+    L.f.forEach(function (f) { if (!f.res) return; var k = f.key + '|' + f.hz + '|' + f.m + '@' + f.k, b = by[k] = by[k] || { n: 0, hit: 0 }; b.n++; if (f.res.r === 'hit') b.hit++; }); return by; }
+  // P(X ≤ h | n, p): how surprising so few live hits are if the backtest precision were true
+  function lowP(h, n, p) { return h + 1 > n ? 1 : 1 - binomP(h + 1, n, p); }
+  // stability class of one scale's cycle (descriptive, full history): regular, variable, weakening (lengths drifting), non-repeating
+  function cycClass(s) { var f = s.iv && s.iv.full, cv = f ? f.cv : null, dr = s.iv ? s.iv.drift : null;
+    if (!f || !(s.nPiv >= 10) || !isF(cv) || cv >= 0.9) return 'none'; if (isF(dr) && (dr > 1.5 || dr < 0.67)) return 'drift'; return cv < 0.45 ? 'stable' : 'var'; }
+  var CCFA = { stable: 'پایدار', var: 'متغیر', drift: 'در حال تغییر (طول چرخه‌ها جابه‌جا شده)', none: 'غیرتکرارشونده' };
+  function libEntry(p, H, prev, live) {
+    var T = H.test, PO = polOf(H), o = PO.oos, X = PO.x, cur = PO.cur;
+    var e = { st: 'none', n: o ? o.n || 0 : 0, ne: o ? o.ne || 0 : 0, prec: o ? R3(o.prec) : null, p0: o ? R3(o.p0) : null, skill: o ? R3(o.skill) : null, lift: o ? R3(o.lift) : null, p: T ? R3(T.p) : null, pAdj: T ? R3(T.pH) : null, pFdr: T ? R3(T.pB) : null, pol: T ? T.pol : null,
+      m: cur ? cur.m : null, k: cur ? cur.k : null, nR: cur ? cur.nR : 0, via: PO.via, why: '' };
+    if (p.xv !== XVER) { e.st = 'pending'; e.why = LSTW.pending; e.legacy = !!(T && T.valid); return e; }
+    if (X) { e.th = X.thirds.map(function (t) { return t ? R3(t.skill) : null; }); e.stab = X.stable; e.miss = X.miss ? R3(X.miss.rate) : null; e.fpr = R3(X.fpr); e.dl = X.delay; e.prIn = R3(X.prIn); e.prErr = R3(X.prErr);
+      e.rg = {}; Object.keys(X.rg).forEach(function (k) { var r = X.rg[k]; if (r) e.rg[k] = [r.n, R3(r.skill)]; }); }
+    if (H.bm) e.bm = { id: H.bm.id, prec: R3(H.bm.prec), skill: R3(H.bm.skill), n: H.bm.n };
+    if (H.is) e.is = { id: H.is.id, skill: R3(H.is.skill) };   // the best fit on all of history (in-sample)
+    // the pin: keep the previous model unless it lost its edge; replace it only with a choice resting on ≥ 16 resolved forecasts
+    var pm = prev && prev.m, pk = prev && prev.k, pinCfg = pm ? (H.cfg || []).filter(function (c) { return c.m === pm && c.k === pk; })[0] : null;
+    if (pinCfg && prev.st !== 'rejected' && prev.st !== 'weak' && pinCfg.late && pinCfg.late.skill > 0 && (!cur || cur.m + '@' + cur.k !== pm + '@' + pk) && !(cur && cur.nR >= 16)) { e.m = pm; e.k = pk; e.held = 1; }
+    var lv = live[p.key + '|' + H.id + '|' + e.m + '@' + e.k]; if (lv) e.live = [lv.n, lv.hit];
+    if (!(e.n >= 8)) { e.st = 'none'; e.why = LSTW.none; return e; }
+    if (!(o.skill > 0) || !(o.lift >= 1.05)) { e.st = 'rejected'; e.why = LSTW.rejected; return e; }
+    var valid = !!(T && T.valid), stable = X ? X.stable >= 2 : false, lastBad = X && X.thirds[2] ? X.thirds[2].skill <= 0 : false;
+    if (lv && lv.n >= 8 && lowP(lv.hit, lv.n, o.prec) < 0.05) { e.st = 'weak'; e.why = LSTW.weak; return e; }
+    if (valid && (lastBad || lv && lv.n >= 5 && lv.hit / lv.n < o.p0)) { e.st = 'monitor'; e.why = LSTW.monitor; return e; }
+    var belowBm = e.via !== 'C' && H.bm && isF(H.bm.skill) && H.bm.n >= 8 && o.skill < H.bm.skill - 0.01;   // worse than the plain intervals method on the same span
+    if (valid && stable && !belowBm) { e.st = 'primary'; e.why = LSTW.primary; return e; }
+    if (valid && stable && belowBm) { e.st = 'trial'; e.bmLow = 1; e.why = 'معتبر و پایدار، ولی مهارتش کمتر از روش سادهٔ فاصلهٔ نقاط عطف روی همان دوره است (' + (100 * o.skill).toFixed(1) + ' در برابر ' + (100 * H.bm.skill).toFixed(1) + ' واحد درصد)'; return e; }
+    if (valid || isF(T && T.p) && T.p < 0.05) { e.st = 'trial'; e.why = valid ? 'معتبر پس از اصلاح، ولی فقط در ' + (X ? X.stable : 0) + ' دوره از ۳ دوره مهارت داشته (ناپایدار)' : LSTW.trial; return e; }
+    e.st = 'rejected'; e.why = 'مهارت مثبت ولی کوچک یا غیرمعنی‌دار (p=' + (T && isF(T.p) ? T.p.toFixed(3) : '—') + ')'; return e; }
+  function libBuild(D) {
+    var L0 = libLoad() || { v: 1, ver: 0, at: 0, E: {}, hist: [], snaps: [] }, live = liveOf(), E = {}, ch = [], now = Date.now();
+    Object.keys(D.P).forEach(function (key) { var p = D.P[key]; if (!p || !p.ok) return;
+      p.hz.forEach(function (H) { var id = key + '|' + H.id, prev = L0.E[id], e = libEntry(p, H, prev, live); e.sym = p.sym; e.cls = p.cls;
+        e.since = prev && prev.st === e.st && prev.m === e.m && prev.k === e.k ? prev.since : now; e.ver = prev && prev.st === e.st && prev.m === e.m && prev.k === e.k ? prev.ver : L0.ver + 1;
+        if (!prev || prev.st !== e.st || prev.m !== e.m || prev.k !== e.k) ch.push({ id: id, sym: p.sym, a: prev ? prev.st : null, b: e.st, ma: prev && prev.m ? prev.m + '@' + prev.k : null, mb: e.m ? e.m + '@' + e.k : null });
+        E[id] = e; }); });
+    var L = { v: 1, ver: L0.ver, at: now, E: E, hist: L0.hist || [], snaps: L0.snaps || [], rolled: L0.rolled || null };
+    if (ch.length) { L.ver = L0.ver + 1; L.hist.push({ ver: L.ver, at: now, n: ch.length, ch: ch.slice(0, 60) }); L.hist = L.hist.slice(-30);
+      var pins = {}; Object.keys(E).forEach(function (id) { var e = E[id]; if (e.m && e.st !== 'rejected' && e.st !== 'none') pins[id] = [e.st, e.m, e.k]; }); L.snaps.push({ ver: L.ver, at: now, pins: pins }); L.snaps = L.snaps.slice(-5); }
+    try { U().store.set(LIB, L); } catch (e) { /* ignore */ } return L; }
+  // rollback: the pins (model choices) and statuses of an earlier version come back; the next re-evaluation keeps those pins unless they
+  // lose their edge, but re-derives the status from the evidence (a rollback cannot make a model primary that the record does not support)
+  function libRollback(ver) { var L = libLoad(); if (!L) return false; var s = (L.snaps || []).filter(function (x) { return x.ver === ver; })[0]; if (!s) return false;
+    Object.keys(L.E).forEach(function (id) { var e = L.E[id], pn = s.pins[id]; if (pn) { e.st = pn[0]; e.m = pn[1]; e.k = pn[2]; e.rb = ver; } else if (e.st === 'primary' || e.st === 'trial' || e.st === 'monitor') { e.st = 'none'; e.rb = ver; } });
+    L.rolled = { ver: ver, at: Date.now() }; L.hist.push({ ver: L.ver, at: Date.now(), n: 0, rb: ver, ch: [] }); try { U().store.set(LIB, L); } catch (e) { return false; } return true; }
+  // the status of one asset × horizon as used by the views (null = no library yet → the corrected test alone decides, as before)
+  function libOf(LB, key, hz) { return LB && LB.E ? LB.E[key + '|' + hz] || null : null; }
+  var LUSE = { primary: 1, monitor: 1 };
   /* ---------- the current view of one asset, from its own profile only ---------- */
   var STFA = { up: 'چرخهٔ صعودی', down: 'چرخهٔ نزولی', approach: 'نزدیک‌شدن به نقطهٔ عطف', inWin: 'داخل پنجرهٔ زمانی حساس', endCorr: 'احتمال پایان اصلاح', startCorr: 'احتمال شروع اصلاح', pressure: 'احتمال تداوم فشار فروش', invalid: 'چرخهٔ نامعتبر یا بدون الگوی قابل اتکا', none: 'بدون روش دارای برتری در این افق' };
   var LVFA = { early: 'هشدار اولیه', serious: 'هشدار جدی', confirmed: 'هشدار تأییدشده', invalid: 'ابطال هشدار', none: '—' };
@@ -349,14 +466,16 @@
   function view(x, opt) {
     opt = opt || {}; var D = opt.D || load(), p = D && D.P[x.key]; if (!p) return { key: x.key, sym: x.sym, cls: x.cls, ok: false, why: 'پروفایل چرخهٔ این دارایی هنوز محاسبه نشده است' };
     if (!p.ok) return { key: x.key, sym: x.sym, cls: x.cls, ok: false, why: p.why, prof: p };
-    var S = x.S || (x.px ? ser(stockRows(x.px)) : ser(x.rows.filter(function (r) { return !r.live; }))), n = S.n, t = n - 1;
+    var S = x.S || (x.px ? ser(stockRows(x.px)) : ser(x.rows.filter(function (r) { return !r.live; }))), n = S.n, t = n - 1, LB = opt.LB !== undefined ? opt.LB : libLoad();
     var cal = function (i) { if (i <= t) return S.d[i]; var MC = Hub.mktCal; if (MC && MC.nextSessions) { var L = MC.nextSessions(x.cls === 'index' || x.cls === 'stock' || x.cls === 'fund' ? 'stock' : x.cls, S.d[t], i - t, S.d.slice(-60)); return L[L.length - 1]; }
       // no market calendar loaded: calendar days per session from the asset's own last 60 sessions (an estimate of the date, not of the session count)
       var g = function (d) { return Date.UTC(Math.floor(d / 1e4), Math.floor(d / 100) % 100 - 1, d % 100); }, k0 = Math.max(0, t - 60), per = (g(S.d[t]) - g(S.d[k0])) / Math.max(1, t - k0), z = new Date(g(S.d[t]) + Math.round((i - t) * per / 864e5) * 864e5);
       return z.getUTCFullYear() * 1e4 + (z.getUTCMonth() + 1) * 100 + z.getUTCDate(); };
     var hz = p.hz.map(function (H) {
-      var CU = H.test && H.test.viaB && H.curB ? H.curB : H.cur; H = Object.assign({}, H, { cur: CU, oos: H.test && H.test.viaB && H.oosB ? H.oosB : H.oos });
-      var o = { k: H.cur ? H.cur.k : null, hz: H.id, hzFa: H.fa, H: H, test: H.test, F: [], base: null, agree: [], st: 'none', lvl: 'none' };
+      var PO = polOf(H), CU = PO.cur, LE = libOf(LB, x.key, H.id);
+      if (LE && LE.m && (!CU || CU.m !== LE.m || CU.k !== LE.k) && (H.cfg || []).some(function (c) { return c.m === LE.m && c.k === LE.k; })) CU = Object.assign({}, CU || {}, { m: LE.m, k: LE.k, pinned: 1 });
+      H = Object.assign({}, H, { cur: CU, oos: PO.oos });
+      var o = { k: H.cur ? H.cur.k : null, hz: H.id, hzFa: H.fa, H: H, test: H.test, F: [], base: null, agree: [], st: 'none', lvl: 'none', lib: LE ? { st: LE.st, fa: LSTFA[LE.st], why: LE.why } : null };
       var sc0 = H.scales.filter(function (s) { return s.k === o.k; })[0]; o.cyc = sc0 && sc0.iv.full ? { med: sc0.iv.full.med, q1: sc0.iv.full.q1, q3: sc0.iv.full.q3, cv: sc0.iv.full.cv } : null;
       if (!H.cur) { o.ptp = ptpOf(S, H, t, cal, null); o.stFa = STFA.none; o.lvFa = LVFA.none; return o; }
       var k = H.cur.k, P = zigzag(S, k), Pk = known(P, t), last = Pk[Pk.length - 1], m = H.cur.m;
@@ -364,7 +483,7 @@
       var f = m === 'int' ? mInt(Pk, t) : m === 'fib' ? mFib(Pk, t) : m === 'agree' ? mAgree(Pk, t) : m === 'spec' ? mSpec(S, t, { W: p.W, pmin: H.pmin, pmax: Math.min(H.pmax, p.W / 2), sig: !opt.fast }) : m === 'acf' ? mAcf(Pk, t, acfPeriod(S, t, { W: p.W, pmin: H.pmin, pmax: Math.min(H.pmax, p.W / 2) })) : m === 'hil' ? mHil(S, t, { W: p.W, pmin: H.pmin, pmax: Math.min(H.pmax, p.W / 2) }) : mWav(S, t, { pmin: H.pmin, pmax: H.pmax });
       o.last = last ? { type: last.type, d: S.d[last.i], p: last.p, since: t - last.i } : null; o.leg = P.cur.dir === 1 ? 'up' : P.cur.dir === -1 ? 'down' : 'flat';
       if (!f) { o.stFa = 'روش منتخب امروز پنجره‌ای نمی‌دهد'; o.lvFa = LVFA.none; return o; }
-      f.m = m; f.k = k; f.valid = !!(H.test && H.test.valid); f.v = H.oos; f.from = cal(f.a); f.to = cal(f.b); o.F = [f]; o.base = f; o.agree = [f];
+      f.m = m; f.k = k; f.valid = !!(H.test && H.test.valid) && (!LE || LE.st === 'pending' || !!LUSE[LE.st]); f.v = H.oos; f.from = cal(f.a); f.to = cal(f.b); o.F = [f]; o.base = f; o.agree = [f];
       var swings = []; for (var j = 1; j < Pk.length; j++) if (Pk[j].type === f.type) swings.push(Math.abs(Pk[j].p / Pk[j - 1].p - 1));
       var lastOf = function (ty) { for (var j2 = Pk.length - 1; j2 >= 0; j2--) if (Pk[j2].type === ty) return Pk[j2].p; return S.c[t]; };
       var lp = f.type === 'L' ? (P.cur.dir === 1 ? P.cur.ep : lastOf('H')) : (P.cur.dir === -1 ? P.cur.ep : lastOf('L')); o.pr = null; o.prX = 0;
@@ -427,7 +546,7 @@
 
   /* views of every market and of the central records (shares / funds from the engine's adjusted series, the same series as their profile) */
   function all(R) {
-    var D = load(), SL = seriesList(), L = SL.map(function (x) { return view(x, { D: D, keepS: true }); });
+    var D = load(), LB = libLoad(), SL = seriesList(), L = SL.map(function (x) { return view(x, { D: D, LB: LB, keepS: true }); });
     var by = R && R.C ? R.C.by : null, zmap = R && R.X ? R.X.zmap || {} : {}, extra = [];
     if (by) Object.keys(by).forEach(function (k) { var r = by[k]; if (r.cls !== 'stock' && r.cls !== 'fund') return; var z = zmap[k]; if (!z || !z.R || !z.R.X || z.R.X.n < 300) return; extra.push(view({ key: k, sym: r.sym, cls: r.cls, S: fromX(z.R.X) }, { D: D, fast: true })); });
     // cross-market layer: current overlaps of valid windows (each from its own engine), with the historical evidence of each pair
@@ -438,14 +557,14 @@
   }
   /* compact verdict on the central record (tradeengine.centralBuild), from each asset's own stored profile (nothing is computed here) */
   function central(by, R0) {
-    var D = load(); if (!D) return 0; var zmap = (R0 && R0.zmap) || {}, SL = null, nOk = 0, PL = ptpLog();
+    var D = load(); if (!D) return 0; var zmap = (R0 && R0.zmap) || {}, SL = null, nOk = 0, PL = ptpLog(), LB = libLoad();
     Object.keys(by).forEach(function (k) { var r = by[k], x = null;
       if (r.cls === 'stock' || r.cls === 'fund') { var z = zmap[k]; if (z && z.R && z.R.X && z.R.X.n >= 300) x = { key: k, sym: r.sym, cls: r.cls, S: fromX(z.R.X) }; }
       else { SL = SL || seriesList(); var alt = k.replace(/^g:/, 'x:'); x = SL.filter(function (s) { return s.key === k || s.key === alt; })[0] || null; }
-      if (!x) return; var v = view(x, { D: D, fast: true, keepS: true }); if (!v.ok) return; var h = v.head; try { ptpGrade(PL, v.S, v.key); ptpTrack(PL, v); } catch (e) { /* the record never blocks the verdict */ } v.S = undefined;
+      if (!x) return; var v = view(x, { D: D, LB: LB, fast: true, keepS: true }); if (!v.ok) return; var h = v.head; try { ptpGrade(PL, v.S, v.key); ptpTrack(PL, v); } catch (e) { /* the record never blocks the verdict */ } v.S = undefined;
       r.cyc = { lvl: h.lvl, lvFa: h.lvFa, st: h.st, stFa: h.stFa, hz: h.hzFa, win: h.win || null, pr: h.pr || null, prX: h.prX || 0, conf: isF(h.conf) ? h.conf : null, sc: h.sc ? Math.round(h.sc.s) : null, m: h.base ? h.base.m : null,
         valid: v.hz.filter(function (g) { return g.base && g.base.valid; }).map(function (g) { return g.hz + ':' + g.base.m; }),
-        pt: ptCompact(v) }; nOk++; });
+        lib: v.hz.map(function (g) { return g.lib ? g.hz + ':' + g.lib.st : null; }).filter(Boolean), pt: ptCompact(v) }; nOk++; });
     if (PL.dirty) { PL.f = PL.f.slice(-4000); delete PL.dirty; try { U().store.set(PLOG, PL); } catch (e) { /* ignore */ } }
     return nOk;
   }
@@ -611,5 +730,6 @@
       prM: m(function (r) { return r.prM; }), prB: m(function (r) { return r.prB; }), pErr: md(function (r) { return r.pErr; }), delay: md(function (r) { return r.delay; }) }; }
   Hub.cycles = { VER: VER, KEY: KEY, LOG: LOG, HZ: HZ, KG: KG, MFA: MFA, STFA: STFA, LVFA: LVFA, profile: profile, refresh: refresh, load: load, cache: cache, correct: correct, crit: crit, setCrit: setCrit,
     view: view, all: all, central: central, track: track, grade: grade, dataQuality: dataQuality, syncLayer: syncLayer, assets: assets, stockRows: stockRows,
-    clean: clean, ser: ser, fromX: fromX, zigzag: zigzag, known: known, ptpCore: ptpCore, ptpView: ptpView, ptpCalib: ptpCalib, ptpBacktest: ptpBacktest, ptpSummary: ptpSummary, ptpStats: ptpStats, addPtp: addPtp, needsPtp: needsPtp, PVER: PVER, ptCompact: ptCompact, ptPack: ptPack, ptUnpack: ptUnpack, ptpLog: ptpLog, PLOG: PLOG, kendall: kendall, PTST: PTST, PTEN: PTEN, SYFA: SYFA, intervals: intervals, seriesList: seriesList, evalCfg: evalCfg, stats: stats, mSpec: mSpec, mWav: mWav, mInt: mInt, mFib: mFib, binomP: binomP };
+    clean: clean, ser: ser, fromX: fromX, zigzag: zigzag, known: known, ptpCore: ptpCore, ptpView: ptpView, ptpCalib: ptpCalib, ptpBacktest: ptpBacktest, ptpSummary: ptpSummary, ptpStats: ptpStats, addPtp: addPtp, needsPtp: needsPtp, PVER: PVER, ptCompact: ptCompact, ptPack: ptPack, ptUnpack: ptUnpack, ptpLog: ptpLog, PLOG: PLOG, kendall: kendall, PTST: PTST, PTEN: PTEN, SYFA: SYFA, intervals: intervals, seriesList: seriesList, evalCfg: evalCfg, stats: stats, mSpec: mSpec, mWav: mWav, mInt: mInt, mFib: mFib, binomP: binomP,
+    XVER: XVER, LIB: LIB, LSTFA: LSTFA, LSTW: LSTW, CCFA: CCFA, RGFA: RGFA, cycClass: cycClass, libBuild: libBuild, libLoad: libLoad, libRollback: libRollback, libEntry: libEntry, libOf: libOf, polOf: polOf, statsX: statsX, regimes: regimes, prRange: prRange, phi: phi, lowP: lowP, mAgree: mAgree, mAcf: mAcf, acfPeriod: acfPeriod, mHil: mHil, winOf: winOf };
 })(typeof window !== 'undefined' ? window : globalThis);

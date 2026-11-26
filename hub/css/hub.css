@@ -423,6 +423,7 @@ table.aud td:nth-child(3), table.aud td:nth-child(4) { min-width: 14rem; }
 .sev-high { color: var(--warn); }
 .sev-medium, .fit-cond { color: var(--accent); }
 .sev-low, .sev-info { color: var(--muted); }
+.sev-good { color: var(--good); }
 .fit-rec { color: var(--good); }
 .fit-ok { color: var(--accent-2); }
 tr[class^="sev-"], tr[class^="fit-"] { color: inherit; }

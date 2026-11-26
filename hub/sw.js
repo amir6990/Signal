@@ -1,7 +1,7 @@
-/* service worker — version 202611260001
+/* service worker — version 202611261300
  * app shell: network first (so a new version is picked up as soon as you are online), cache when offline
  * market data (/proxy, other hosts' APIs): network only — the app keeps its last good data itself */
-const V = 'hub-202611260001', SHELL = ['./', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'].concat(["desk.html","trading.html","iran.html","strategy.html","statements.html","valuation.html","financing.html","bonds.html","ipo.html","ib.html","pe.html","index.html"]);
+const V = 'hub-202611261300', SHELL = ['./', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'].concat(["desk.html","trading.html","iran.html","strategy.html","statements.html","valuation.html","financing.html","bonds.html","ipo.html","ib.html","pe.html","index.html"]);
 self.addEventListener('install', e => e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k.indexOf('hub-') === 0).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
