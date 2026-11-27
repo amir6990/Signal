@@ -1085,11 +1085,13 @@
     // directive 22: confirmation, order and levels come from the central record (one verdict, one rank, one set of levels)
     var CB = X.central && X.central.by || {}, rk = function (f) { var r = CB[f.key]; return r && isF(r.rank) ? r.rank : 1e9; };
     D.top.slice().sort(function (a, b) { return rk(a) - rk(b); }).forEach(function (f0) { var c = f0.key && X.cards.filter(function (x) { return x.key === f0.key; })[0], cr = CB[f0.key], Lc = cr && cr.L || {};
-      var f = Object.assign({}, f0, { confirmed: cr ? cr.tier === 'ok' : f0.confirmed }); if (cr) c = Object.assign({}, c || {}, { lo: Lc.buy ? Lc.buy[0] : c && c.lo, hi: Lc.buy ? Lc.buy[1] : c && c.hi, stop: isF(Lc.stop) ? Lc.stop : c && c.stop, tp1: (Lc.tp || [])[0], tp2: (Lc.tp || [])[1], tp3: (Lc.tp || [])[2], rr2: isF(cr.rr) ? cr.rr : c && c.rr2 });
-      P.push({ tier: f.confirmed ? 2 : 4, kind: f.confirmed ? 'now' : 'wait', key: f.key, asset: f.sym, market: CLSFA[f.cls] || f.cls, action: f.confirmed ? 'خرید' : 'خرید مشروط (هنوز نخرید)', horizon: c ? hzFa(c) : 'میان‌مدت', risk: c ? riskFa(c.vol) : 'متوسط', grade: f.grade, att: f.score,
+      if (cr && !(cr.act === 'buy' || cr.act === 'scale' || cr.act === 'wait')) return;   // directive 31: only the central buy / wait decisions are priorities
+      var f = Object.assign({}, f0, { confirmed: cr ? cr.act === 'buy' || cr.act === 'scale' : f0.confirmed }); if (cr) c = Object.assign({}, c || {}, { lo: Lc.buy ? Lc.buy[0] : c && c.lo, hi: Lc.buy ? Lc.buy[1] : c && c.hi, stop: isF(Lc.stop) ? Lc.stop : c && c.stop, tp1: (Lc.tp || [])[0], tp2: (Lc.tp || [])[1], tp3: (Lc.tp || [])[2], rr2: isF(cr.rr) ? cr.rr : c && c.rr2 });
+      P.push({ tier: f.confirmed ? 2 : 4, kind: f.confirmed ? 'now' : 'wait', key: f.key, asset: f.sym, market: CLSFA[f.cls] || f.cls, action: cr ? cr.actFa : f.confirmed ? 'خرید' : 'انتظار برای تأیید', a9: cr ? cr.act : null, ver: cr ? cr.ver || null : null, horizon: c ? hzFa(c) : 'میان‌مدت', risk: c ? riskFa(c.vol) : 'متوسط', grade: f.grade, att: f.score,
         why: f.drivers[0] ? f.drivers[0] + (isF(f.expRet) ? '؛ بازده مورد انتظار هر معامله ' + pct(f.expRet, 1) : '') : f.label, cond: f.confirmed ? (c ? 'ورود ' + fa(c.lo, 0) + '–' + fa(c.hi, 0) : f.scen[0].act) : 'فعال‌شدن: ' + f.confirm, inval: f.invalid,
         entry: c && f.confirmed ? [c.lo, c.hi] : null, stop: c ? c.stop : null, tp: c ? [c.tp1, c.tp2, c.tp3] : null, rr: c ? c.rr2 : NaN, expR: f.expRet, last: f.last, date: c ? c.date : '' }); });
-    if (D.best.kind === 'cash' || !D.top.some(function (f) { return f.confirmed; })) P.push({ tier: 5, kind: D.best.kind === 'cash' ? 'none' : 'cashalt', asset: 'وجه نقد', market: 'همهٔ بازارهای تحت پوشش', action: D.best.kind === 'cash' ? 'نگه‌داری نقد' : 'نقد تا فعال‌شدن خرید مشروط', horizon: '—', risk: 'کم', grade: '—', why: D.best.kind === 'cash' ? D.best.why : 'هیچ خرید تأییدشده‌ای نیست؛ تا شرط فعال‌شدن گزینه‌های بالا برقرار نشده، نقد بمانید.', cond: '—', inval: D.best.reinvest });
+    var anyBuy = Object.keys(CB).some(function (k) { return CB[k].act === 'buy' || CB[k].act === 'scale'; });
+    if (D.best.kind === 'cash' || !anyBuy) P.push({ tier: 5, kind: D.best.kind === 'cash' ? 'none' : 'cashalt', asset: 'وجه نقد', market: 'همهٔ بازارهای تحت پوشش', action: D.best.kind === 'cash' ? 'نگه‌داری نقد' : 'نقد تا فعال‌شدن خرید مشروط', horizon: '—', risk: 'کم', grade: '—', why: D.best.kind === 'cash' ? D.best.why : 'هیچ خرید تأییدشده‌ای نیست؛ تا شرط فعال‌شدن گزینه‌های بالا برقرار نشده، نقد بمانید.', cond: '—', inval: D.best.reinvest });
     P.forEach(function (p, i) { p.rank = i + 1; });
     return P;
   }
@@ -1104,9 +1106,9 @@
       var fk = 'FC|' + name + '|' + r.length + '|' + L.date + '|' + L.close; if (!CACHE[fk]) { try { CACHE[fk] = indexForecast(r, { h: [5, 20] }); } catch (e) { CACHE[fk] = null; } }
       var F = CACHE[fk]; o.fc = F ? F.H.filter(function (q) { return q.ok; }).map(function (q) { return { h: q.h, p: q.p, skill: q.skill }; }) : []; if (F && !o.fc.length) o.fcNote = F.H[0] && F.H[0].note;
       // levels: from the engine's own card for this asset (confirmed signal, or plan levels of an unconfirmed one)
-      var cr = key && X.central && X.central.by[key]; if (cr && cr.L && isF(cr.L.stop)) { var tok = cr.tier === 'ok'; o.lv = { stop: cr.L.stop, tp: cr.sell ? null : (cr.L.tp || [])[1], side: cr.sell ? 'down' : 'up', conf: tok, grade: cr.grade || null, act: cr.actFa + ' — ' + cr.stFa, ver: cr.ver || null }; it.push(o); return; }
+      var cr = key && X.central && X.central.by[key]; if (cr && cr.L && isF(cr.L.stop)) { var tok = cr.tier === 'ok'; o.lv = { stop: cr.L.stop, tp: cr.sell ? null : (cr.L.tp || [])[1], side: cr.sell ? 'down' : 'up', conf: tok, grade: cr.grade || null, act: cr.actFa + ' — ' + cr.stFa, ver: cr.ver || null, key: key }; it.push(o); return; }
       var c = key && byKey[key]; if (c && isF(c.stop)) { var conf = (c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B');
-        o.lv = { stop: c.stop, tp: c.type === 'close' ? null : c.tp2, side: c.type === 'close' ? 'down' : 'up', conf: conf, grade: c.val ? c.val.grade : null, act: conf ? c.typeFa : c.candidate ? 'تأییدنشده' : c.type === 'close' ? 'منفی: نخرید / اگر دارید بفروشید' : 'بدون سیگنال' }; }
+        o.lv = { stop: c.stop, tp: c.type === 'close' ? null : c.tp2, side: c.type === 'close' ? 'down' : 'up', conf: conf, grade: c.val ? c.val.grade : null, act: 'بدون رکورد مرکزی (ورودی مدل، حکم نیست)' }; }
       it.push(o); };
     add('شاخص کل بورس', U && U.idx, 'واحد');
     var byTg = {}; (X.list || []).forEach(function (z) { if (z.a.tg) byTg[z.a.tg] = z.a; });
@@ -1117,10 +1119,10 @@
   }
   function widget(X, E, U) {
     var P = priorities(X, E).filter(function (p) { return !p.personal; }), F = X.ixf, alerts = [];
-    X.cards.filter(function (c) { return c.type === 'long' && c.val && (c.val.grade === 'A' || c.val.grade === 'B'); }).forEach(function (c) { if (c.close <= c.stop * 1.02) alerts.push(c.sym + ': قیمت به حد ضرر نزدیک است'); });
+    var CBw = X.central && X.central.by || {}; Object.keys(CBw).forEach(function (k) { var r = CBw[k], L = r.L || {}; if (!(r.held || r.act === 'buy' || r.act === 'scale') || !isF(L.stop) || !isF(r.px)) return; if (r.px <= L.stop * 1.02) alerts.push(r.sym + ': قیمت به حد ضرر نزدیک است (' + r.actFa + ')'); });
     var maxD = 0; (X.list || []).forEach(function (z) { if (!z.a.sample) maxD = Math.max(maxD, z.R.X.d[z.R.X.n - 1]); });
     var D = X.decide ? X.decide() : null, num0 = function (v) { return isF(v) ? Math.round(v * 100) / 100 : null; };
-    var dec = D ? { best: { kind: D.best.kind, text: D.best.text, why: D.best.why, reinvest: D.best.reinvest, grade: D.best.f ? D.best.f.grade : null, horizon: D.best.f ? 'میان‌مدت' : null },
+    var P0 = P[0] || null, dec = D ? { best: P0 ? { kind: P0.kind, text: P0.action + (P0.asset ? ' — ' + P0.asset : ''), why: P0.why, reinvest: D.best.reinvest, grade: P0.grade || null, horizon: P0.horizon || null, src: 'central' } : { kind: 'none', text: 'عدم اقدام', why: '' },
       screened: D.screened, ranked: D.ranked,
       opps: D.top.slice().sort(function (a, b) { var CB = X.central && X.central.by || {}, ra = CB[a.key] && isF(CB[a.key].rank) ? CB[a.key].rank : 1e9, rb = CB[b.key] && isF(CB[b.key].rank) ? CB[b.key].rank : 1e9; return ra - rb; }).map(function (f) { var cr = X.central && X.central.by[f.key]; return { rank: cr ? cr.rank : null, verdict: cr ? cr.actFa + ' — ' + cr.stFa : null, ver: cr ? cr.ver : null, asset: f.sym, market: CLSFA[f.cls] || f.cls, dir: f.dir, label: f.label, grade: f.grade, last: num0(f.last), lo20: num0(f.lo20), hi20: num0(f.hi20), r20: f.r20 ? f.r20.map(num0) : null, expRet: num0(f.expRet), confirm: f.confirm, invalid: f.invalid, act: f.scen[0].act, prob: f.prob, entry: f.desk ? [num0(f.desk.S.bull.lo), num0(f.desk.S.bull.hi)] : null, exit: f.desk ? [num0(f.desk.S.bull.exitLo), num0(f.desk.S.bull.exitHi)] : null, stop: f.desk ? num0(f.desk.S.bull.stop) : null, tp: f.desk ? f.desk.S.bull.tp.map(num0) : null, status: f.desk ? (f.desk.track ? ST8[f.desk.track.st] : f.desk.S.stateFa) : null }; }),
       markets: D.markets.map(function (m) { return { name: m.name, dir: m.dir, note: m.note }; }) } : null;
@@ -1871,7 +1873,9 @@
       xg.inst.forEach(function (o) { if (o.signal === 'buy') { xgr[o.grade]++; if (!xgr.best || o.grade < xgr.best.g) xgr.best = { g: o.grade, o: o }; } else if (o.signal === 'unconfirmed') xgr.gated++; });
       xgr.score = 2 * xgr.A + xgr.B; rows.push(xgr); rows.sort(function (a, b) { return b.score - a.score; }); }
     var xtop = xg && xg.inst ? xg.inst.filter(function (o) { return o.signal === 'buy'; }) : [];
-    var top = cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.val && (c.val.grade === 'A' || c.val.grade === 'B'); }).sort(function (a, b) { return a.val.grade.localeCompare(b.val.grade) || b.conf - a.conf || b.rr2 - a.rr2; }).slice(0, 8);
+    // directive 31: the market tab lists the central buys (cards stay «long» only when the final action is a buy), in the central order
+    var crk = function (c) { return c.central && isF(c.central.rank) ? c.central.rank : 1e9; };
+    var top = cards.filter(function (c) { return (c.type === 'long' || c.type === 'short') && c.central && (c.central.act === 'buy' || c.central.act === 'scale'); }).sort(function (a, b) { return crk(a) - crk(b) || b.conf - a.conf; }).slice(0, 8);
     return { rows: rows, top: top, xtop: xtop, none: !top.length && !xtop.length, th: th };
   }
 
@@ -2013,6 +2017,9 @@
     var v = x.v6 || {}, st = v.st, c = x.c, bear = x.dir === 'down' || c.type === 'close' || c.type === 'short', p = x.path && x.path.st;
     if (pos) {   // the user holds it: the decision is about the position
       if (p === 'invalid' || v.en === 'stop') return ['close', 'حد ضرر یا شرط ابطال فعال شده است: موقعیت را کامل ببندید.'];
+      // directive 31: the monitor of YOUR position (your own entry and stop) is an input of the same decision, never a second verdict
+      var pm0 = pos.mon || {}; if (/^خروج/.test(pm0.act || '')) return ['close', 'پایش موقعیت شما: ' + pm0.act];
+      if (/کاهش|یک‌سوم|فروش پله/.test(pm0.act || '')) return ['reduce', 'پایش موقعیت شما: ' + pm0.act];
       if (bear && c.strength === 'قوی') return ['sell', 'سیگنال فروش قوی و معتبر روی دارایی‌ای که دارید: خروج کامل.'];
       if (bear) return ['reduce', 'دید نزولی با قدرت متوسط: بخشی از موقعیت را کم کنید و حد ضرر را نزدیک کنید.'];
       if (p === 'target') return ['reduce', 'هدف قیمتی محقق شده: بخشی را بفروشید و حد ضرر را به نقطهٔ ورود ببرید.'];
@@ -2247,7 +2254,7 @@
         rec.why = 'اجرای سفارش: ' + rec.xo.whyNot + ' تا رفع این مورد سفارش خرید صادر نمی‌شود.' + (rec.why ? ' (حکم پیشین: ' + rec.why + ')' : ''); }
       rec.days = x.hz && isF(x.hz.days) ? x.hz.days : null; rec.liqOK = x.c ? x.c.liqOK !== false : true;
       // directive 22: strength, validity date and data state are part of the one central signal (pages read them, never recompute them)
-      rec.strength = isF(rec.conf) ? (rec.conf >= 70 ? 'قوی' : rec.conf >= 55 ? 'متوسط' : 'ضعیف') : null; rec.deskRank = rec.rank; rec.hzc = 'M';
+      rec.strength = isF(rec.conf) ? (rec.conf >= 70 ? 'قوی' : rec.conf >= 55 ? 'متوسط' : 'ضعیف') : null; rec.deskRank = rec.rank; rec.hzc = ({ s: 'S', m: 'M', l: 'L' })[x.hk] || 'M';
       var tk = x.track; rec.validUntil = tk && tk.d0 && isF(tk.hz) ? (function () { var dd = new Date((d2days(tk.d0) + Math.ceil(tk.hz * 7 / 5 + 2)) * 864e5); return dd.getUTCFullYear() * 10000 + (dd.getUTCMonth() + 1) * 100 + dd.getUTCDate(); })() : null;
       rec.dataState = c.sample ? 'sample' : rec.st === 'nodata' ? 'nodata' : isF(c.age) && c.age > 96 ? 'stale' : 'fresh';
       rec.near = x.tz && x.tz.zone ? (x.tz.side === 'down' ? 'floor' : 'ceil') : null; rec.tzState = x.tz ? x.tz.state : null; rec.ev = x.tz && x.tz.ev ? x.tz.ev.slice(0, 4) : [];
@@ -2277,8 +2284,29 @@
     Object.keys(by).forEach(function (k) { var r = by[k]; if (r.cls === 'option') return; r.rank = r.pri && isF(r.pri.rank) ? r.pri.rank : null; });
     // time-cycle engine (directive 21): an independent verdict carried on the record; it changes no tier or level of the signal
     if (Hub.cycles) { try { Hub.cycles.central(by, R0); } catch (e) { /* the cycle view is optional */ } }
-    return { at: Date.now(), by: by, ACT8: ACT8, funnel: funnelOf(by, R0), alloc: alloc };
+    // directive 31: the ONE final action of every record (nine standard actions, live entry validity, position) — written on the record itself,
+    // so every page, list, alert and report reads the same field; the engine's position-aware proposal is kept as engAct (diagnostic / input)
+    var at0 = Date.now(); if (Hub.central && Hub.central.settle) Hub.central.settle(by, { at: at0 });
+    return { at: at0, by: by, ACT8: ACT8, funnel: funnelOf(by, R0), alloc: alloc };
   }
+  /* directive 31 · project: the decision desk's working lists (top ten, opportunities, items) are pipeline stages; before ANY page shows them
+     they are projected onto the central record — the final action, status, levels and order are the record's. The pipeline's own values
+     stay on the item as act0 / v60 (diagnostic). Re-run after a live decision change (Hub.central.refresh) — it is idempotent. */
+  var A2K = { buy: 'zone', scale: 'zone', wait: 'wait', hold: 'hold', reduce: 'reduce', tp: 'reduce', sell: 'exit', close: 'exit', none: 'none' };
+  function project(X) {
+    var C = X && X.central, D = X && X.decide ? X.decide() : null, K = D && D.desk; if (!C || !C.by || !K) return 0; var n = 0;
+    (K.items || []).forEach(function (x) { var r = C.by[x.key]; if (!r) return; if (!x.act0) x.act0 = x.act; if (!x.v60 && x.v6) x.v60 = x.v6; var L = r.L || {}, lv = L.buy ? { entry: [Math.min(L.buy[0], L.buy[1]), Math.max(L.buy[0], L.buy[1])], stop: L.stop, tp: L.tp || [], rr: r.rr } : null;
+      x.act = { k: A2K[r.act] || 'none', fa: r.actFa, why: r.actWhy || '', chg: x.act0 ? x.act0.chg : '', lv: lv, st: r.held ? 'pos' : undefined, a9: r.act };
+      if (x.v60) x.v6 = Object.assign({}, x.v60, { st: r.st, stFa: r.stFa, lv: lv || x.v60.lv, why: r.why }); x.conf = r.conf; x.cenRank = r.rank; n++; });
+    var byK = {}; (K.items || []).forEach(function (x) { byK[x.key] = x; });
+    var ranked = Object.keys(C.by).map(function (k) { return C.by[k]; }).filter(function (r) { return isF(r.rank) && byK[r.key || ''] !== undefined; });
+    var rk = function (x) { var r = C.by[x.key]; return r && isF(r.rank) ? r.rank : 1e9; };
+    if (!K.opp0) { K.opp0 = K.opp; K.top100 = K.top10; }
+    // the opportunity lists: the desk's screen, in the central order; an asset whose final action is no action is not an opportunity
+    var keep = function (x) { var r = C.by[x.key]; return r && r.act !== 'none' && r.st !== 'rej' && r.st !== 'exp' && r.st !== 'nodata'; };
+    K.opp = K.opp0.filter(keep).sort(function (a, b) { return rk(a) - rk(b); }); K.top10 = K.opp.slice(0, 10);
+    if (X.prio && X.E) { try { X.prio = priorities(X, X.E); } catch (e) { /* the list keeps its last version */ } }   // the priorities follow a live decision change
+    return n + (ranked.length ? 0 : 0); }
   /* «why no buy» — every asset examined is counted once: tier, first blocking reason, and the five root causes (directive 15 · 3, test 4) */
   function funnelOf(by, R0) {
     var F = { n: 0, tier: {}, rc: {}, cause: {}, byCls: {}, at: Date.now() }, all = (R0 && R0.cards) || [];
@@ -2296,7 +2324,7 @@
   // cards follow the central verdict: a buy card whose central status is not «confirmed» is not executable anywhere
   function centralApply(cards, C) {
     cards.forEach(function (c) {
-      var r = C.by[c.key]; if (!r || c.cls === 'option') return; c.central = r; c.typeFa0 = c.typeFa; c.typeFa = r.actFa + ' — ' + r.stFa;   // one label everywhere
+      var r = C.by[c.key]; if (!r) return; if (c.cls === 'option') { c.central = r; c.typeFa0 = c.typeFa; c.typeFa = r.actFa + ' — ' + r.stFa; return; } c.central = r; c.typeFa0 = c.typeFa; c.typeFa = r.actFa + ' — ' + r.stFa;   // one label everywhere
       // directive 22 · 4: one set of levels everywhere — the card shows the central entry zone, stop and targets (its own plan is kept as c.lv0);
       // a confirmed card's size is rescaled to the central risk distance (same risk budget, same caps as a ratio)
       var Lr = r.L || {}; if (Lr.buy && isF(Lr.buy[0]) && isF(Lr.stop)) { var lo = Math.min(Lr.buy[0], Lr.buy[1]), hi = Math.max(Lr.buy[0], Lr.buy[1]);
@@ -2304,11 +2332,13 @@
         var e0 = c.entry, d0 = isF(c.entry) && isF(c.stop) ? c.entry - c.stop : NaN; c.lo = lo; c.hi = hi; c.entry = isF(c.entry) ? Math.min(hi, Math.max(lo, c.entry)) : (lo + hi) / 2; c.stop = Lr.stop;
         var T = (Lr.tp || []).filter(isF); if (T.length) { c.tp1 = T[0]; if (T[1] != null) c.tp2 = T[1]; if (T[2] != null) c.tp3 = T[2]; }
         var d1 = c.entry - c.stop; if (d1 > 0) { c.rr1 = (c.tp1 - c.entry) / d1; c.rr2 = (c.tp2 - c.entry) / d1; if (isF(c.posPct) && c.posPct > 0 && d0 > 0) { c.posPct = c.posPct * (d0 / d1) * (c.entry / e0); var eqA = Number(c.eq) || NaN; if (isF(c.units) && isF(eqA)) c.units = Math.floor(eqA * c.posPct / c.entry); } } }
-      else if (Lr.far || r.dataBad) { c.lv0 = { lo: c.lo, hi: c.hi, entry: c.entry, stop: c.stop, tp1: c.tp1, tp2: c.tp2, tp3: c.tp3, rr2: c.rr2, posPct: c.posPct };
-        c.lo = c.hi = c.entry = c.stop = c.tp1 = c.tp2 = c.tp3 = c.rr1 = c.rr2 = NaN; c.posPct = 0; c.units = NaN; if (c.why) c.why.unshift(r.dataBad ? r.why : Lr.farTxt); }
-      if ((c.type === 'long' || c.type === 'short') && r.st !== 'ok') {
+      else { c.lv0 = { lo: c.lo, hi: c.hi, entry: c.entry, stop: c.stop, tp1: c.tp1, tp2: c.tp2, tp3: c.tp3, rr2: c.rr2, posPct: c.posPct };
+        // directive 31: the central record has no trade plan for this asset → the card shows none either (its own model plan is only an input, in words)
+        var mtxt = isF(c.lo) ? 'طرح خود مدل (ورودی مدل، بخشی از حکم مرکزی نیست): ' + (c.type === 'close' || c.type === 'short' ? 'محدودهٔ فروش ' : 'محدودهٔ ورود ') + fa(c.lo) + '–' + fa(c.hi) + '، حد ضرر ' + fa(c.stop) + '، هدف ۱ ' + fa(c.tp1) + '.' : '';
+        c.lo = c.hi = c.entry = c.stop = c.tp1 = c.tp2 = c.tp3 = c.rr1 = c.rr2 = NaN; c.posPct = 0; c.units = NaN; if (c.why) { if (mtxt) c.why.unshift(mtxt); if (r.dataBad || Lr.far) c.why.unshift(r.dataBad ? r.why : Lr.farTxt); } }
+      if ((c.type === 'long' || c.type === 'short') && !(r.st === 'ok' && (r.act === 'buy' || r.act === 'scale'))) {
         c.candidate = c.candidate || { type: c.type, typeFa: c.typeFa, strength: c.strength, conf: c.conf, status: c.status };
-        c.type = 'hold'; c.status = 'وضعیت مرکزی: ' + r.stFa; c.why.unshift('موتور مرکزی: ' + r.stFa + ' — ' + r.why);
+        c.type = 'hold'; c.status = 'حکم مرکزی: ' + r.actFa + ' · ' + r.stFa; c.why.unshift('موتور مرکزی: ' + r.actFa + ' — ' + (r.actWhy || r.why));
         c.posPct = 0; c.riskPct = 0; c.units = NaN;
       }
     });
@@ -2342,12 +2372,12 @@
       // directive 23 · 6-7: a newer run whose data failed quality control does not replace the last valid decision; the valid one is
       // kept (with its own date and version) and marked as held, until data that passes control produces a new decision
       Object.keys(C.by).forEach(function (k) { var r = C.by[k], o = old.by && old.by[k]; if (!o || !(r.dataBad || r.dataState === 'sample') || o.dataBad || o.st === 'nodata' || o.dataState === 'sample') return;
-        ['st', 'stFa', 'act', 'actFa', 'tier', 'tierFa', 'rank', 'px', 'date', 'conf'].forEach(function (f) { if (o[f] !== undefined) r[f] = o[f]; });
+        ['st', 'stFa', 'act', 'actFa', 'engAct', 'engActFa', 'engWhy', 'actWhy', 'stage', 'sig', 'tier', 'tierFa', 'rank', 'px', 'date', 'conf'].forEach(function (f) { if (o[f] !== undefined) r[f] = o[f]; });
         if (o.lv) { r.L = Object.assign({}, r.L || {}, { buy: o.lv.buy, stop: o.lv.stop, tp: o.lv.tp || [], upConf: o.lv.up, dnConf: o.lv.dn }); r.lo = o.lv.buy ? o.lv.buy[0] : NaN; r.hi = o.lv.buy ? o.lv.buy[1] : NaN; r.stop = o.lv.stop; r.tp = o.lv.tp || []; }
         r.heldPrev = true; r.dataBad = false; r.why = 'دادهٔ تازه از کنترل کیفیت عبور نکرد (' + String(r.why || '').slice(0, 80) + ')؛ آخرین حکم معتبر (داده ' + (o.date || '—') + (o.ver ? '، نسخهٔ ' + o.ver : '') + ') حفظ شد. ' + String(o.why || ''); });
       var slim = {}; Object.keys(C.by).forEach(function (k) { var r = C.by[k], o = old.by && old.by[k]; var L = r.L || {}; slim[k] = { sym: r.sym, cls: r.cls, st: r.st, stFa: r.stFa, act: r.act, actFa: r.actFa, rank: r.rank, px: r.px, sid: r.sid, why: r.why.slice(0, 200), held: r.held, tier: r.tier, rc: r.rc, tzState: r.tzState, near: r.near, sell: r.sell, date: r.date,
-          lv: { buy: L.buy, stop: L.stop, tp: (L.tp || []).slice(0, 3), up: L.upConf, dn: L.dnConf, floor: L.floor, ceil: L.ceil, tzConf: L.tzConf, rr: r.rr }, pri: r.pri ? Math.round(r.pri.s) : null, ex: r.exec || null, s4: r.st4 || null, grp: r.grp || null, bt: r.bt && isF(r.bt.hit) ? { hit: +r.bt.hit.toFixed(3), n: r.bt.n, oos: r.bt.oos ? { n: r.bt.oos.n, pf: isF(r.bt.oos.pf) ? +r.bt.oos.pf.toFixed(2) : null, avgR: isF(r.bt.oos.avgR) ? +r.bt.oos.avgR.toFixed(2) : null } : null } : null, pxAt: r.pxAt || null, grpFa: r.grpFa || null, execFa: r.execFa || null, name: r.name || null, pxKind: r.pxKind || null, mkt: r.mkt || null, val20: isF(r.val20) ? Math.round(r.val20 / 1e6) * 1e6 : null, days: isF(r.days) ? r.days : null, cy: r.cyc ? { l: r.cyc.lvl, w: r.cyc.win, s: r.cyc.st, pt: r.cyc.pt && Hub.cycles && Hub.cycles.ptPack ? Hub.cycles.ptPack(r.cyc.pt) : null } : null,
-          tierFa: r.tierFa || null, rankCls: r.rankCls || null, pm: r.pm ? { u: r.pm.up ? [r.pm.up.p, r.pm.up.thr, r.pm.up.on ? 1 : r.pm.up.watch ? 2 : 0] : null, d: r.pm.dn ? [r.pm.dn.p, r.pm.dn.thr, r.pm.dn.on ? 1 : r.pm.dn.watch ? 2 : 0] : null, w: (r.pm.up || r.pm.dn || {}).why || [], v: (r.pm.up || r.pm.dn || {}).ver || null } : null, conf: isF(r.conf) ? r.conf : null, mvx: slimMv(r.mvx), sl: Hub.moves && o && o.px > 0 && r.px > 0 && o.date ? Hub.moves.sinceLast(o.px, old.at, r.px, C.at, r.mvx && r.mvx.sig, Math.max(1, Math.round((C.at - (old.at || C.at)) / 864e5))) : null, dcx: r.dcx || null, n: r.n || null, strength: r.strength || null, hz: r.hz || null, hzc: r.hzc || 'M', validUntil: r.validUntil || null, dataState: r.dataState || null, model: r.model || null, mv: MODEL_VER, hzk: r.hz || null, tr: r.trx ? { s: r.trx.s.v, m: r.trx.m.v, l: r.trx.l.v, sb: r.trx.s.sub, mb: r.trx.m.sub, lb: r.trx.l.sub, d: r.trx.date } : null, xo: r.xo && !r.xo.na ? { ty: r.xo.type, ord: r.xo.order, w: r.xo.worst, fp: isF(r.xo.fillP) ? Math.round(r.xo.fillP * 100) / 100 : null, rw: isF(r.xo.rrWorst) ? Math.round(r.xo.rrWorst * 10) / 10 : null, ok: r.xo.ok, ref: r.xo.ref, rd: r.xo.refDate, at: r.xo.calcAt } : null }; slim[k].lv.inv = L.inv; });
+          lv: { buy: L.buy, stop: L.stop, tp: (L.tp || []).slice(0, 3), up: L.upConf, dn: L.dnConf, floor: L.floor, ceil: L.ceil, tzConf: L.tzConf, rr: r.rr, inv: isF(L.inv) ? L.inv : null, tzInv: isF(L.tzInv) ? L.tzInv : null, tzStop: isF(L.tzStop) ? L.tzStop : null, tzT: (L.tzT || []).filter(isF).slice(0, 3), dnTp: (L.dnTp || []).filter(isF).slice(0, 3), win: L.win && L.win.from ? { from: L.win.from, to: L.win.to } : null, far: L.far ? 1 : null }, pri: r.pri ? Math.round(r.pri.s) : null, ex: r.exec || null, s4: r.st4 || null, grp: r.grp || null, bt: r.bt && isF(r.bt.hit) ? { hit: +r.bt.hit.toFixed(3), n: r.bt.n, oos: r.bt.oos ? { n: r.bt.oos.n, pf: isF(r.bt.oos.pf) ? +r.bt.oos.pf.toFixed(2) : null, avgR: isF(r.bt.oos.avgR) ? +r.bt.oos.avgR.toFixed(2) : null } : null } : null, pxAt: r.pxAt || null, grpFa: r.grpFa || null, execFa: r.execFa || null, name: r.name || null, pxKind: r.pxKind || null, mkt: r.mkt || null, val20: isF(r.val20) ? Math.round(r.val20 / 1e6) * 1e6 : null, days: isF(r.days) ? r.days : null, cy: r.cyc ? { l: r.cyc.lvl, w: r.cyc.win, s: r.cyc.st, pt: r.cyc.pt && Hub.cycles && Hub.cycles.ptPack ? Hub.cycles.ptPack(r.cyc.pt) : null } : null,
+          tierFa: r.tierFa || null, rankCls: r.rankCls || null, pm: r.pm ? { u: r.pm.up ? [r.pm.up.p, r.pm.up.thr, r.pm.up.on ? 1 : r.pm.up.watch ? 2 : 0] : null, d: r.pm.dn ? [r.pm.dn.p, r.pm.dn.thr, r.pm.dn.on ? 1 : r.pm.dn.watch ? 2 : 0] : null, w: (r.pm.up || r.pm.dn || {}).why || [], v: (r.pm.up || r.pm.dn || {}).ver || null } : null, conf: isF(r.conf) ? r.conf : null, mvx: slimMv(r.mvx), sl: Hub.moves && o && o.px > 0 && r.px > 0 && o.date ? Hub.moves.sinceLast(o.px, old.at, r.px, C.at, r.mvx && r.mvx.sig, Math.max(1, Math.round((C.at - (old.at || C.at)) / 864e5))) : null, dcx: r.dcx || null, n: r.n || null, strength: r.strength || null, hz: r.hz || null, hzc: r.hzc || 'M', engAct: r.engAct || null, engActFa: r.engActFa || null, engWhy: r.engWhy ? String(r.engWhy).slice(0, 160) : null, stage: r.stage || null, sig: r.sig || null, actWhy: r.actWhy ? String(r.actWhy).slice(0, 200) : null, hzv: r.hzv || null, decVer: r.decVer || null, decAt: r.decAt || null, validUntil: r.validUntil || null, dataState: r.dataState || null, model: r.model || null, mv: MODEL_VER, hzk: r.hz || null, tr: r.trx ? { s: r.trx.s.v, m: r.trx.m.v, l: r.trx.l.v, sb: r.trx.s.sub, mb: r.trx.m.sub, lb: r.trx.l.sub, d: r.trx.date } : null, xo: r.xo && !r.xo.na ? { ty: r.xo.type, ord: r.xo.order, w: r.xo.worst, fp: isF(r.xo.fillP) ? Math.round(r.xo.fillP * 100) / 100 : null, rw: isF(r.xo.rrWorst) ? Math.round(r.xo.rrWorst * 10) / 10 : null, ok: r.xo.ok, ref: r.xo.ref, rd: r.xo.refDate, at: r.xo.calcAt } : null }; slim[k].lv.inv = L.inv; });
       // directive 22: AID, signal ID and version on every record, and a ledger entry for every change — the live records get the same stamps
       Object.keys(slim).forEach(function (k) { if (C.by[k]) C.by[k].sl = slim[k].sl; });   // change since the last update, also on the live record (alerts read it)
       var stp = Hub.central ? Hub.central.stamp(slim, C.at, U0 && U0.upd ? U0.upd : (Hub.util.store.get('hub.updrun.v1', null) || {}).id) : null;
@@ -2399,7 +2429,7 @@
     var Xc = { E: E, zmap: zmap, cards: cards, mon: mon, ixf: ixF0, xg: xg0, valDb: db, valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', skipped: skipped, nUni: (U.assets || []).length }, DC0 = null;
     try { DC0 = decide(Xc, E, U); } catch (e) { DC0 = { best: { kind: 'error', text: 'خطا در تحلیل', why: e.message }, top: [], markets: [], screened: 0, ranked: 0, all: [] }; }
     tm('decide');
-    var CEN = centralBuild(Xc, DC0); centralApply(cards, CEN);
+    var CEN = centralBuild(Xc, DC0); centralApply(cards, CEN); Xc.central = CEN; Xc.decide = function () { return DC0; }; try { project(Xc); } catch (e) { /* the desk lists keep their own order */ }
     tm('central');
     var pf = portfolio(cards, zmap, E, mon), rk = risk(E, zmap, mon, pf, U), plan2 = actionPlan(E, cards, pf, mon, rk, CEN);
     tm('portfolio');
@@ -2409,7 +2439,8 @@
     var idxv = []; try { if (U.idxAll) { idxv.push(indexView(U.idxAll.total, 'شاخص کل بورس', E, U.idxSample)); idxv.push(indexView(U.idxAll.ew, 'شاخص کل (هم‌وزن)', E, U.idxSample)); } } catch (e) { idxv = [{ name: 'شاخص‌ها', ok: false, why: 'خطا: ' + e.message }]; }
     tm('index');
     var bt = btF, xgS = xg0;
-    var counts = { long: cards.filter(function (c) { return c.type === 'long'; }).length, strong: cards.filter(function (c) { return c.type === 'long' && c.strength === 'قوی'; }).length, close: cards.filter(function (c) { return c.type === 'close'; }).length, hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
+    var cA = function (f) { return Object.keys(CEN.by).filter(function (k) { return f(CEN.by[k]); }).length; };
+    var counts = { long: cA(function (r) { return r.act === 'buy' || r.act === 'scale'; }), strong: cA(function (r) { return (r.act === 'buy' || r.act === 'scale') && r.strength === 'قوی'; }), close: cA(function (r) { return r.act === 'close' || r.act === 'sell'; }), hold: cards.filter(function (c) { return c.type === 'hold'; }).length, gated: gated };
     var sample = (U.assets || []).some(function (a) { return a.sample; });
     var R0 = { E: E, zmap: zmap, cards: cards, optSkip: optionSkipped(U.opt && U.opt.R ? U.opt : null), pf: pf, mon: mon, risk: rk, plan: plan2, mode: MODES[E.mode] || MODES.full, ml: ml, pairs: pr, market: mk, bt: bt, valDb: db, ixf: ixF, idxv: idxv, xg: xgS, markets: rankMarkets(cards, db, list, E, xgS), valState: db ? (db.sample ? 'sample' : db.sig !== valSig(E) ? 'stale' : 'ok') : 'none', list: list, counts: counts, sample: sample, n: list.length };
     R0.decide = function () { return DC0; }; R0.central = CEN; R0.pulse = pulse(R0, U);
@@ -2460,6 +2491,6 @@
     return { sc: sc, card: c, pass: !!c && sc.check(c) };
   }
 
-  Hub.tradeEngine = { trendEv: trendEv, trendRows: trendRows, prep: prep, indexView: indexView, poolKey: poolKey, TIERFA: TIERFA, RCFA: RCFA, CAUSEFA: CAUSEFA, POOLFA: POOLFA, ptAnalysis: ptAnalysis, ptCalib: ptCalib, goldLink: goldLink, toWeekly: toWeekly, PTKEY: PTKEY, FAV: FAV, ADV: ADV, PTW: PTW, turnZones: turnZones, tzCalib: tzCalib, tzCases: tzCases, tzPivots: tzPivots, tzText: tzText, TZH: TZH, actOf: actOf, ACT8: ACT8, centralBuild: centralBuild, consistency: consistency, trendView: trendView, validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
+  Hub.tradeEngine = { project: project, trendEv: trendEv, trendRows: trendRows, prep: prep, indexView: indexView, poolKey: poolKey, TIERFA: TIERFA, RCFA: RCFA, CAUSEFA: CAUSEFA, POOLFA: POOLFA, ptAnalysis: ptAnalysis, ptCalib: ptCalib, goldLink: goldLink, toWeekly: toWeekly, PTKEY: PTKEY, FAV: FAV, ADV: ADV, PTW: PTW, turnZones: turnZones, tzCalib: tzCalib, tzCases: tzCases, tzPivots: tzPivots, tzText: tzText, TZH: TZH, actOf: actOf, ACT8: ACT8, centralBuild: centralBuild, consistency: consistency, trendView: trendView, validateAsync: validateAsync, ENG_VER: ENG_VER, HIST: HIST, HZ: HZN, GST: GST, STRATS: STRATS, ST9: ST9, ACT9: ACT9, STRFA: STRFA, ST8: ST8, MKFA: MKFA, scenariosOf: scenariosOf,  limitOf: limitOf, LIMD: LIMD, journalAdd: journalAdd, journalEval: journalEval, learnStats: learnStats, learnPropose: learnPropose, learnApply: learnApply, learnRevert: learnRevert, LMIN: LMIN, optionCards: optionCards, optionSkipped: optionSkipped, MODES: MODES, defaults: defaults, run: run, universe: universe, backtest: function (E, U) { return run(E, U, { backtest: true }).bt; }, validate: validate, indexForecast: indexForecast, DIRFA: DIRFA, priorities: priorities, widgetData: widget, MARKETS: MARKETS, xgStrategy: xgStrategy, XGD: XGD, shamsi: shamsi, gradeCard: gradeCard, valSig: valSig, VTH: VTH, VLIM: VLIM, GRD: GRD, RULEFA: RULEFA, ENG_VER: ENG_VER, SCEN: SCEN, runScenario: runScenario, scenSeries: scenSeries, REG: REG, BASEW: BASEW, FAMOF: FAMOF, TYPE: TYPE, fa: fa, pct: pct, merge: merge, clearCache: function () { CACHE = {}; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Hub.tradeEngine;
 })(typeof window !== 'undefined' ? window : globalThis);

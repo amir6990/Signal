@@ -87,10 +87,11 @@
   function catsOf(r) {
     var c = [], L = r.L || {}, a = r.act;
     if (r.held) {
-      if (a === 'close' || a === 'sell') c.push('close', 'sell'); else if (a === 'reduce') { c.push(/هدف|سقف/.test(r.actWhy || '') ? 'tp' : 'reduce', 'sell'); } else if (a === 'scale') c.push('scale', 'buy'); else c.push('hold');
+      if (a === 'close' || a === 'sell') c.push('close', 'sell'); else if (a === 'reduce' || a === 'tp') { c.push(a === 'tp' || /هدف|سقف/.test(r.actWhy || '') ? 'tp' : 'reduce', 'sell'); } else if (a === 'scale') c.push('scale', 'buy'); else c.push('hold');
       if (isF(L.stop) && isF(r.px) && isF(r.atrAbs) && r.px - L.stop <= r.atrAbs) c.push('risk');
     } else {
-      if (r.tier === 'ok') c.push(a === 'scale' ? 'scale' : 'buy'); if (r.tier === 'ok' && a === 'scale') c.push('buy');
+      var fin = !!r.decVer && a !== 'buy' && a !== 'scale';   // directive 31: a final action that is not a buy keeps the asset out of «buy»
+      if (r.tier === 'ok' && !fin) c.push(a === 'scale' ? 'scale' : 'buy'); if (r.tier === 'ok' && a === 'scale') c.push('buy'); if (r.tier === 'ok' && fin) c.push('wait');
       if (r.tier === 'wait' || r.tier === 'floor') c.push('wait');
       if (r.sell === 'confirmed' || r.sell === 'inZone') c.push('sell', 'tp'); else if (r.sell === 'bear') c.push('sell');
       // not a new buy, but fine to keep for someone who already holds it: up trend on the medium / long horizon, no sell condition
@@ -103,7 +104,7 @@
   function sellWhy(r) {
     var L = r.L || {};
     if (r.held && (r.act === 'close' || r.act === 'sell')) return r.en === 'stop' || /حد ضرر|ابطال/.test(r.actWhy || '') ? ['stop', 'فعال‌شدن حد ضرر / شرط ابطال'] : ['exit', 'خروج کامل از معامله'];
-    if (r.held && r.act === 'reduce') return /هدف|سقف/.test(r.actWhy || '') ? ['tp', 'فروش برای ذخیرهٔ سود'] : ['reduce', 'کاهش بخشی از موقعیت'];
+    if (r.held && (r.act === 'reduce' || r.act === 'tp')) return /هدف|سقف/.test(r.actWhy || '') ? ['tp', 'فروش برای ذخیرهٔ سود'] : ['reduce', 'کاهش بخشی از موقعیت'];
     if (r.sell === 'confirmed' || r.sell === 'inZone') return ['tp', 'ذخیرهٔ سود در محدودهٔ سقف احتمالی'];
     if (isF(L.dnConf) && isF(r.px) && r.px < L.dnConf) return ['support', 'خروج به دلیل شکست حمایت (زیر سطح تأیید نزولی)'];
     return ['weak', 'فروش به دلیل تضعیف روند'];
@@ -138,7 +139,7 @@
       var buySide = r.cls !== 'option' && (r.tier === 'ok' || r.tier === 'wait' || r.tier === 'floor' || (r.held && r.act === 'scale'));   // options have their own market rank (directive 22 · 9)
       if (buySide) { var P = partsOf(r, r.liqPct), s = 0; Object.keys(W).forEach(function (q) { s += W[q] * P[q]; }); r.pri = { base: s, s: s, parts: P, pen: [] }; } else r.pri = null;
       // sell side: positions first (exit > stop near > reduce), then the analytic sell views
-      r.spri = r.held ? ((r.act === 'close' || r.act === 'sell') ? 100 : r.act === 'reduce' ? 80 : r.cats.indexOf('risk') >= 0 ? 70 : 0) : r.sell === 'confirmed' ? 55 : r.sell === 'inZone' ? 40 : r.sell === 'bear' ? 20 + (isF(r.conf) ? r.conf / 10 : 0) : 0;
+      r.spri = r.held ? ((r.act === 'close' || r.act === 'sell') ? 100 : r.act === 'reduce' || r.act === 'tp' ? 80 : r.cats.indexOf('risk') >= 0 ? 70 : 0) : r.sell === 'confirmed' ? 55 : r.sell === 'inZone' ? 40 : r.sell === 'bear' ? 20 + (isF(r.conf) ? r.conf / 10 : 0) : 0;
     });
     // concentration and correlation: walk down the ranking; each further pick from the same group, or highly correlated (ρ > 0.8)
     // with a better-ranked pick, is discounted — so the list is not five copies of one bet

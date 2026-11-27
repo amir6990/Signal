@@ -150,10 +150,12 @@
       if (!stale) moveEvents(r, held || WL.indexOf(k) >= 0, mv);
       if (!p && first) { S.snap[k] = { tier: r.tier, act: r.act, st: r.st, sell: r.sell, tzState: r.tzState, held: held, s4: r.st4 || r.s4 || null, cy: r.cyc ? r.cyc.lvl : r.cy ? r.cy.l : 'none' }; return; }   // the first run only records the baseline: nothing is «new» yet
       var was = p || {};
-      if (r.tier === 'ok' && was.tier !== 'ok') out.push(ev(stale ? 'data' : 'buyOk', r, null, stale ? 'سیگنال خرید روی دادهٔ قدیمی؛ تا دریافت دادهٔ تازه قابل اقدام نیست.' : r.why));
-      else if (was.tier === 'ok' && r.tier !== 'ok') out.push(ev(r.st === 'exp' ? 'expired' : 'weak', r, null, r.stFa + ' — ' + (r.rcWhy || r.why)));
+      // directive 31: the buy alerts follow the FINAL central action (a «confirmed» tier whose entry has passed is not a buy alert)
+      var isB = function (a) { return a === 'buy' || a === 'scale'; }, nowB = r.decVer ? isB(r.act) : r.tier === 'ok', wasB = was.act != null && r.decVer ? isB(was.act) : was.tier === 'ok';
+      if (!held && nowB && !wasB) out.push(ev(stale ? 'data' : 'buyOk', r, null, stale ? 'سیگنال خرید روی دادهٔ قدیمی؛ تا دریافت دادهٔ تازه قابل اقدام نیست.' : (r.actWhy || r.why)));
+      else if (!held && wasB && !nowB) out.push(ev(r.st === 'exp' ? 'expired' : 'weak', r, null, (r.actFa ? r.actFa + ' — ' : '') + (r.actWhy || r.rcWhy || r.why)));
       if (held && (r.act === 'close' || r.act === 'sell') && was.act !== r.act) out.push(ev(r.en === 'stop' ? 'stop' : 'sellOk', r, null, r.actWhy));
-      else if (held && r.act === 'reduce' && was.act !== 'reduce') out.push(ev('reduce', r, null, r.actWhy));
+      else if (held && (r.act === 'reduce' || r.act === 'tp') && was.act !== r.act) out.push(ev('reduce', r, null, r.actWhy));
       else if (!held && r.sell === 'confirmed' && was.sell !== 'confirmed') out.push(ev('sellOk', r, null, 'برگشت نزولی در محدودهٔ سقف احتمالی تأیید شد. ' + (r.actWhy || '')));
       var Lr = r.L || {}, upL = isF(Lr.upConf) ? Lr.upConf : r.lv && r.lv.up, nearUp = (r.tier === 'wait' || (r.tier === 'none' && r.rc === 'expired')) && !(r.rc === 'model' || r.rc === 'valNone' || r.rc === 'data') && isF(upL) && r.px < upL && upL / r.px - 1 <= np;
       /* a snapshot from before this rule has no nearUp: that run is its baseline (otherwise every asset already near its level fires at once);
@@ -187,6 +189,8 @@
   function evaluatePrices(map, meta) {
     // keep the latest live quote per asset: Hub.central.entryNow checks every displayed buy against it
     try { var LQ = U().store.get('hub.livepx.v1', null) || { by: {} }, now0 = Date.now(); Object.keys(map || {}).forEach(function (k) { var q = map[k]; if (q && q.px > 0) LQ.by[k] = [q.px, q.at || now0]; }); LQ.at = now0; U().store.set('hub.livepx.v1', LQ); } catch (e) { /* optional */ }
+    // directive 31: a new live quote can change the final decision (entry left the zone, stop hit): it is re-taken on the central record first
+    try { if (Hub.central && Hub.central.refresh) Hub.central.refresh(); } catch (e) { /* the stored decision stands */ }
     var S = load(), cen = U().store.get('hub.central.v1', null), by = cen && cen.by || {}, out = [], near = [], touched = [], np = (S.set.nearPct || 1.5) / 100;
     // a level matters only where the central verdict can still turn into a trade: blocked by the model gate, by data or by an ended setup → no pre-alert
     var BLOCK = { model: 1, valNone: 1, data: 1, expired: 1 };
